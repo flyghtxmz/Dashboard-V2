@@ -394,9 +394,6 @@ function Filters({
           </select>
         </label>
       </div>
-      <p className="muted small">
-        O token é lido via variável de ambiente JOINADS_ACCESS_TOKEN em /api/*. A chamada é segura no backend da Vercel.
-      </p>
     </section>
   `;
 }
@@ -425,37 +422,6 @@ function Status({ error, lastRefreshed }) {
   `;
 }
 
-function DomainList({ domains, loading, onReload, error }) {
-  return html`
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <span className="eyebrow">Token</span>
-          <h2 className="section-title">Domínios disponíveis</h2>
-        </div>
-        <button className="ghost" onClick=${onReload} disabled=${loading}>
-          ${loading ? "Buscando..." : "Listar"}
-        </button>
-      </div>
-      ${error
-        ? html`
-            <div className="status error">
-              <strong>Erro:</strong> ${error}
-            </div>
-          `
-        : domains.length === 0
-        ? html`<p className="muted small">Clique em "Listar" para ver os domínios deste token.</p>`
-        : html`
-            <div className="domains-grid">
-              ${domains.map(
-                (domain) => html`<span className="domain-chip" key=${domain}>${domain}</span>`
-              )}
-            </div>
-          `}
-    </section>
-  `;
-}
-
 function App() {
   const [filters, setFilters] = useState({
     ...defaultDates(),
@@ -474,13 +440,22 @@ function App() {
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [domains, setDomains] = useState([]);
   const [domainsLoading, setDomainsLoading] = useState(false);
-  const [domainsError, setDomainsError] = useState("");
 
   const totals = useTotals(superFilter);
 
   const handleLoad = async () => {
+    if (domainsLoading && !filters.domain.trim()) {
+      setError("Aguarde carregar os domínios ou selecione manualmente.");
+      return;
+    }
+
     if (!filters.domain.trim()) {
-      setError("Informe o domínio para consultar.");
+      setError("Selecione um domínio para consultar.");
+      return;
+    }
+
+    if (!domainsLoading && domains.length === 0 && !filters.domain.trim()) {
+      setError("Nenhum domínio retornado para este token/período.");
       return;
     }
 
@@ -537,7 +512,6 @@ function App() {
 
   const handleLoadDomains = async () => {
     setDomainsLoading(true);
-    setDomainsError("");
     try {
       const params = new URLSearchParams();
       params.set("start_date", filters.startDate);
@@ -549,7 +523,7 @@ function App() {
         setFilters((prev) => ({ ...prev, domain: list[0] }));
       }
     } catch (err) {
-      setDomainsError(err.message || "Erro ao listar domínios.");
+      setError(err.message || "Erro ao listar domínios.");
       setDomains([]);
     } finally {
       setDomainsLoading(false);
@@ -571,7 +545,11 @@ function App() {
           </p>
         </div>
         <div className="actions">
-          <button className="ghost" onClick=${handleLoad} disabled=${loading}>
+          <button
+            className="ghost"
+            onClick=${handleLoad}
+            disabled=${loading || !filters.domain}
+          >
             ${loading ? "Atualizando..." : "Atualizar"}
           </button>
           <button className="primary" disabled>
@@ -590,15 +568,6 @@ function App() {
           loading=${loading}
           domains=${domains}
           domainsLoading=${domainsLoading}
-        />
-      `}
-
-      ${html`
-        <${DomainList}
-          domains=${domains}
-          loading=${domainsLoading}
-          onReload=${handleLoadDomains}
-          error=${domainsError}
         />
       `}
 
