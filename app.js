@@ -125,7 +125,7 @@ function Metrics({ totals, usdToBrl }) {
     {
       label: "Receita cliente",
       value: currency.format(totals.revenueClient || 0),
-      helper: "Apos revshare",
+      helper: "Após revshare",
       tone: "primary",
     },
     {
@@ -138,7 +138,7 @@ function Metrics({ totals, usdToBrl }) {
               maximumFractionDigits: 2,
             }).format((totals.revenueClient || 0) * usdToBrl)
           : "ÔÇö",
-      helper: usdToBrl ? "Conversao USD->BRL" : "Aguardando cotacao",
+      helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotação",
       tone: "primary",
     },
     {
@@ -147,19 +147,19 @@ function Metrics({ totals, usdToBrl }) {
       helper: "Valor total",
     },
     {
-      label: "Impressoes",
+      label: "Impressões",
       value: number.format(totals.impressions || 0),
       helper: "Volume exibido",
     },
     {
       label: "Cliques",
       value: number.format(totals.clicks || 0),
-      helper: "Interacoes",
+      helper: "Interações",
     },
     {
       label: "CTR",
       value: `${(totals.ctr || 0).toFixed(2)}%`,
-      helper: "Cliques / impressoes",
+      helper: "Cliques / impressões",
     },
     {
       label: "eCPM cliente",
@@ -174,7 +174,7 @@ function Metrics({ totals, usdToBrl }) {
     {
       label: "Active view",
       value: `${(totals.activeView || 0).toFixed(1)}%`,
-      helper: "Visibilidade media",
+      helper: "Visibilidade média",
     },
   ];
 
@@ -263,7 +263,7 @@ function EarningsTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Earnings</span>
-          <h2 className="section-title">Relatorio de ganhos</h2>
+          <h2 className="section-title">Relatório de ganhos</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -273,7 +273,7 @@ function EarningsTable({ rows }) {
             <tr>
               <th>Data</th>
               <th>Dominio</th>
-              <th>Impressoes</th>
+              <th>Impressões</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -451,7 +451,7 @@ function Filters({
             onChange=${(e) => setFilters((p) => ({ ...p, sort: e.target.value }))}
           >
             <option value="revenue">Receita</option>
-            <option value="impressions">Impressoes</option>
+            <option value="impressions">Impressões</option>
             <option value="clicks">Cliques</option>
             <option value="ctr">CTR</option>
             <option value="ecpm">eCPM</option>
@@ -879,4 +879,5 @@ function toNumber(value) {
   }
   return 0;
 }
+
 
