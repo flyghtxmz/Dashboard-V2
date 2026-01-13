@@ -221,61 +221,6 @@ function Metrics({ totals, usdToBrl }) {
   `;
 }
 
-function TopUrlTable({ rows }) {
-  return html`
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <span className="eyebrow">Ranking</span>
-          <h2 className="section-title">Top URLs</h2>
-        </div>
-        <span className="chip neutral">Ordenado</span>
-      </div>
-      <div className="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>URL</th>
-              <th>Impressões</th>
-              <th>Cliques</th>
-              <th>CTR</th>
-              <th>eCPM</th>
-              <th>Receita</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.length === 0
-              ? html`
-                  <tr>
-                    <td colSpan="7" className="muted">
-                      Sem URLs para este filtro.
-                    </td>
-                  </tr>
-                `
-              : rows.map(
-                  (row, idx) => html`
-                    <tr key=${row.url || idx}>
-                      <td>${idx + 1}</td>
-                      <td className="url-cell">
-                        <div className="url">${row.url || "-"}</div>
-                        <div className="muted small">${row.domain || ""}</div>
-                      </td>
-                      <td>${number.format(row.impressions || 0)}</td>
-                      <td>${number.format(row.clicks || 0)}</td>
-                      <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
-                      <td>${currencyUSD.format(row.ecpm || 0)}</td>
-                      <td>${currencyUSD.format(row.revenue || 0)}</td>
-                    </tr>
-                  `
-                )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
-}
-
 function EarningsTable({ rows }) {
   return html`
     <section className="card wide">
@@ -454,33 +399,6 @@ function Filters({
             <option value="Synthetic">Synthetic</option>
           </select>
         </label>
-        <label className="field">
-          <span>Limite (top URL)</span>
-          <input
-            type="number"
-            min="1"
-            max="50"
-            value=${filters.topLimit}
-            onChange=${(e) =>
-              setFilters((p) => ({
-                ...p,
-                topLimit: Number(e.target.value || 5),
-              }))}
-          />
-        </label>
-        <label className="field">
-          <span>Ordenar por</span>
-          <select
-            value=${filters.sort}
-            onChange=${(e) => setFilters((p) => ({ ...p, sort: e.target.value }))}
-          >
-            <option value="revenue">Receita</option>
-            <option value="impressions">Impressões</option>
-            <option value="clicks">Cliques</option>
-            <option value="ctr">CTR</option>
-            <option value="ecpm">eCPM</option>
-          </select>
-        </label>
       </div>
       <div className="actions presets">
         <span className="muted small">Atalhos:</span>
@@ -639,13 +557,10 @@ function App() {
     ...defaultDates(),
     domain: "",
     reportType: "Analytical",
-    topLimit: 5,
-    sort: "revenue",
     metaAccountId: "act_728792692620145",
     adsetFilter: "",
   });
   const [superFilter, setSuperFilter] = useState([]);
-  const [topUrls, setTopUrls] = useState([]);
   const [earnings, setEarnings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -699,14 +614,7 @@ function App() {
     setError("");
 
     try {
-      const topParams = new URLSearchParams();
-      topParams.set("start_date", filters.startDate);
-      topParams.set("end_date", filters.endDate);
-      topParams.append("domain[]", filters.domain.trim());
-      topParams.set("limit", filters.topLimit || 5);
-      topParams.set("sort", filters.sort);
-
-      const [superRes, topRes, earningsRes] = await Promise.all([
+      const [superRes, earningsRes] = await Promise.all([
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -717,7 +625,6 @@ function App() {
             group: ["domain", "custom_value"],
           }),
         }),
-        fetchJson(`${API_BASE}/top-url?${topParams.toString()}`),
         fetchJson(
           `${API_BASE}/earnings?${new URLSearchParams({
             start_date: filters.startDate,
@@ -742,7 +649,6 @@ function App() {
       }
 
       setSuperFilter(superRes.data || []);
-      setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setLastRefreshed(new Date());
     } catch (err) {
@@ -750,7 +656,6 @@ function App() {
       setError(msg);
       pushLog("load", err);
       setSuperFilter([]);
-      setTopUrls([]);
       setEarnings([]);
       setMetaRows([]);
     } finally {
@@ -897,7 +802,6 @@ function App() {
               setFilters((prev) => ({ ...prev, adsetFilter: value }))}
           />
         `}
-        ${html`<${TopUrlTable} rows=${topUrls} />`}
         ${html`<${EarningsTable} rows=${earnings} />`}
       </main>
 
