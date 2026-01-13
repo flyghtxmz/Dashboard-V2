@@ -597,9 +597,13 @@ function App() {
       return;
     }
 
-    const customKey = (filters.customKey || "").trim();
-    if (!customKey) {
-      setError("Informe um custom key (ex: utm_campaign).");
+    // Restringir intervalo a 15 dias conforme docs JoinAds
+    const start = new Date(filters.startDate);
+    const end = new Date(filters.endDate);
+    const diffMs = end.getTime() - start.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays > 15) {
+      setError("Intervalo máximo permitido é de 15 dias.");
       return;
     }
 
@@ -611,7 +615,7 @@ function App() {
       const topParams = new URLSearchParams();
       topParams.set("start_date", filters.startDate);
       topParams.set("end_date", filters.endDate);
-      topParams.set("domain", filters.domain.trim());
+      topParams.append("domain[]", filters.domain.trim());
       topParams.set("limit", filters.topLimit || 5);
       topParams.set("sort", filters.sort);
 
@@ -622,7 +626,7 @@ function App() {
             start_date: filters.startDate,
             end_date: filters.endDate,
             domain: [filters.domain.trim()],
-            group: [],
+            group: ["domain"],
           }),
         }),
         fetchJson(`${API_BASE}/top-url?${topParams.toString()}`),
