@@ -323,6 +323,8 @@ function Filters({
       start = new Date(end);
     } else if (preset === "last7") {
       start.setDate(end.getDate() - 6);
+    } else if (preset === "last15") {
+      start.setDate(end.getDate() - 14);
     }
 
     const startStr = formatDate(start);
@@ -431,6 +433,9 @@ function Filters({
         </button>
         <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
           Últimos 7 dias
+        </button>
+        <button className="ghost" onClick=${() => setPreset("last15")} disabled=${loading}>
+          Últimos 15 dias
         </button>
       </div>
     </section>
