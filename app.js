@@ -29,11 +29,10 @@ const formatDate = (date) => {
 };
 
 const defaultDates = () => {
-  const end = new Date();
-  const start = new Date(end);
+  const today = new Date();
   return {
-    startDate: formatDate(start),
-    endDate: formatDate(end),
+    startDate: formatDate(today),
+    endDate: formatDate(today),
   };
 };
 
@@ -50,7 +49,11 @@ function toNumber(value) {
   if (typeof value === "object" && value.value !== undefined) {
     return toNumber(value.value);
   }
-  if (typeof value === "object" && Array.isArray(value.values) && value.values.length) {
+  if (
+    typeof value === "object" &&
+    Array.isArray(value.values) &&
+    value.values.length
+  ) {
     return toNumber(value.values[0].value);
   }
   return 0;
@@ -153,7 +156,7 @@ function Metrics({ totals, usdToBrl }) {
       value:
         usdToBrl && totals.revenueClient != null
           ? currencyBRL.format((totals.revenueClient || 0) * usdToBrl)
-          : "—",
+          : "-",
       helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotação",
       tone: "primary",
     },
@@ -403,7 +406,8 @@ function Filters({
             ? html`
                 <select
                   value=${filters.domain}
-                  onChange=${(e) => setFilters((p) => ({ ...p, domain: e.target.value }))}
+                  onChange=${(e) =>
+                    setFilters((p) => ({ ...p, domain: e.target.value }))}
                   disabled=${domainsLoading}
                 >
                   <option value="">Selecione</option>
@@ -419,29 +423,32 @@ function Filters({
             : html`
                 <input
                   type="text"
-                  placeholder="ex: exemplo.com.br"
+                  placeholder="ex.: exemplo.com.br"
                   value=${filters.domain}
-                  onChange=${(e) => setFilters((p) => ({ ...p, domain: e.target.value }))}
+                  onChange=${(e) =>
+                    setFilters((p) => ({ ...p, domain: e.target.value }))}
                 />
               `}
           ${domainsLoading
-            ? html`<span className="muted small">Carregando domínios…</span>`
+            ? html`<span className="muted small">Carregando domínios...</span>`
             : null}
         </label>
         <label className="field">
           <span>ID da conta Meta *</span>
           <input
             type="text"
-            placeholder="ex: act_123456789"
+            placeholder="ex.: act_123456789"
             value=${filters.metaAccountId || ""}
-            onChange=${(e) => setFilters((p) => ({ ...p, metaAccountId: e.target.value }))}
+            onChange=${(e) =>
+              setFilters((p) => ({ ...p, metaAccountId: e.target.value }))}
           />
         </label>
         <label className="field">
           <span>Tipo de relatório</span>
           <select
             value=${filters.reportType}
-            onChange=${(e) => setFilters((p) => ({ ...p, reportType: e.target.value }))}
+            onChange=${(e) =>
+              setFilters((p) => ({ ...p, reportType: e.target.value }))}
           >
             <option value="Analytical">Analytical</option>
             <option value="Synthetic">Synthetic</option>
@@ -455,7 +462,10 @@ function Filters({
             max="50"
             value=${filters.topLimit}
             onChange=${(e) =>
-              setFilters((p) => ({ ...p, topLimit: Number(e.target.value || 5) }))}
+              setFilters((p) => ({
+                ...p,
+                topLimit: Number(e.target.value || 5),
+              }))}
           />
         </label>
         <label className="field">
@@ -477,7 +487,11 @@ function Filters({
         <button className="ghost" onClick=${() => setPreset("today")} disabled=${loading}>
           Hoje
         </button>
-        <button className="ghost" onClick=${() => setPreset("yesterday")} disabled=${loading}>
+        <button
+          className="ghost"
+          onClick=${() => setPreset("yesterday")}
+          disabled=${loading}
+        >
           Ontem
         </button>
         <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
@@ -507,7 +521,7 @@ function Status({ error, lastRefreshed }) {
 
   return html`
     <div className="status neutral">
-      Informe domínio e clique em "Carregar dados".
+      Informe o domínio e clique em "Carregar dados".
     </div>
   `;
 }
@@ -535,7 +549,7 @@ function LogsCard({ logs, onClear }) {
                       <span className="pill neutral">${entry.source || "app"}</span>
                       <span className="muted small">
                         ${entry.time.toLocaleString("pt-BR")}
-                        ${entry.status ? ` · ${entry.status}` : ""}
+                        ${entry.status ? ` • ${entry.status}` : ""}
                       </span>
                     </div>
                     <div className="log-message">${entry.message}</div>
@@ -551,7 +565,7 @@ function LogsCard({ logs, onClear }) {
   `;
 }
 
-function MetaJoinTable({ rows }) {
+function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
@@ -566,6 +580,17 @@ function MetaJoinTable({ rows }) {
           <h2 className="section-title">Campanhas</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
+      </div>
+      <div className="filters">
+        <label className="field">
+          <span>Filtrar por conjunto</span>
+          <input
+            type="text"
+            placeholder="Digite parte do nome do conjunto"
+            value=${adsetFilter}
+            onChange=${(e) => onFilterChange(e.target.value)}
+          />
+        </label>
       </div>
       <div className="table-wrapper">
         <table>
@@ -597,9 +622,7 @@ function MetaJoinTable({ rows }) {
                       <td>${asText(row.cost_per_result)}</td>
                       <td>${asText(row.spend_brl)}</td>
                       <td>
-                        ${row.ecpm_client != null
-                          ? asText(row.ecpm_client)
-                          : "-"}
+                        ${row.ecpm_client != null ? asText(row.ecpm_client) : "-"}
                       </td>
                     </tr>
                   `
@@ -619,6 +642,7 @@ function App() {
     topLimit: 5,
     sort: "revenue",
     metaAccountId: "act_728792692620145",
+    adsetFilter: "",
   });
   const [superFilter, setSuperFilter] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
@@ -654,11 +678,6 @@ function App() {
 
     if (!filters.domain.trim()) {
       setError("Selecione um domínio para consultar.");
-      return;
-    }
-
-    if (!domainsLoading && domains.length === 0 && !filters.domain.trim()) {
-      setError("Nenhum domínio retornado para este token/período.");
       return;
     }
 
@@ -805,10 +824,19 @@ function App() {
         date,
         cost_per_result: currencyBRL.format(cost),
         spend_brl: currencyBRL.format(spend),
-        ecpm_client: ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : null,
+        ecpm_client:
+          ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : null,
       };
     });
-  }, [metaRows, earnings, superFilter, brlRate]);
+  }, [metaRows, earnings, superFilter]);
+
+  const filteredMeta = useMemo(() => {
+    const term = filters.adsetFilter.trim().toLowerCase();
+    if (!term) return mergedMeta;
+    return mergedMeta.filter((row) =>
+      (row.adset_name || "").toLowerCase().includes(term)
+    );
+  }, [mergedMeta, filters.adsetFilter]);
 
   useEffect(() => {
     fetch("https://open.er-api.com/v6/latest/USD")
@@ -861,7 +889,14 @@ function App() {
 
       <main className="grid">
         ${html`<${Metrics} totals=${totals} usdToBrl=${brlRate} />`}
-        ${html`<${MetaJoinTable} rows=${mergedMeta} />`}
+        ${html`
+          <${MetaJoinTable}
+            rows=${filteredMeta}
+            adsetFilter=${filters.adsetFilter}
+            onFilterChange=${(value) =>
+              setFilters((prev) => ({ ...prev, adsetFilter: value }))}
+          />
+        `}
         ${html`<${TopUrlTable} rows=${topUrls} />`}
         ${html`<${EarningsTable} rows=${earnings} />`}
       </main>
