@@ -571,6 +571,12 @@ function LogsCard({ logs, onClear }) {
 }
 
 function MetaJoinTable({ rows }) {
+  const asText = (value) => {
+    if (value === null || value === undefined) return "—";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+
   return html`
     <section className="card wide">
       <div className="card-head">
@@ -603,11 +609,11 @@ function MetaJoinTable({ rows }) {
               : rows.map(
                   (row, idx) => html`
                     <tr key=${idx}>
-                      <td>${row.date || "—"}</td>
-                      <td>${row.objective || "—"}</td>
-                      <td>${row.adset_name || "—"}</td>
-                      <td>${row.ad_name || "—"}</td>
-                      <td>${row.cost_per_result || "—"}</td>
+                      <td>${asText(row.date)}</td>
+                      <td>${asText(row.objective)}</td>
+                      <td>${asText(row.adset_name)}</td>
+                      <td>${asText(row.ad_name)}</td>
+                      <td>${asText(row.cost_per_result)}</td>
                       <td>${currency.format(Number(row.spend || 0))}</td>
                       <td>
                         ${row.ecpm_client != null
