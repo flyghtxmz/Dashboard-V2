@@ -491,7 +491,7 @@ function Filters({
       </div>
       <div className="actions presets">
         <span className="muted small">Atalhos:</span>
-        <button className="ghost" onClick=${() => setPreset(0)} disabled=${loading}>
+        <button className="ghost" onClick=${() => setPreset("today")} disabled=${loading}>
           Hoje
         </button>
         <button className="ghost" onClick=${() => setPreset("yesterday")} disabled=${loading}>
@@ -718,8 +718,6 @@ function App() {
         ),
       ]);
 
-      ]);
-
       // Meta insights (se falhar, loga mas nÃ£o quebra)
       try {
         const metaRes = await fetchJson(
@@ -735,7 +733,6 @@ function App() {
         setMetaRows([]);
       }
 
-      Promise.all([superRes, topRes, earningsRes]).catch(() => {});
       setSuperFilter(superRes.data || []);
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
