@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
+﻿import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
@@ -30,7 +30,6 @@ const formatDate = (date) => {
 const defaultDates = () => {
   const end = new Date();
   const start = new Date(end);
-  start.setDate(end.getDate() - 6);
   return {
     startDate: formatDate(start),
     endDate: formatDate(end),
@@ -138,7 +137,7 @@ function Metrics({ totals, usdToBrl }) {
               currency: "BRL",
               maximumFractionDigits: 2,
             }).format((totals.revenueClient || 0) * usdToBrl)
-          : "—",
+          : "ÔÇö",
       helper: usdToBrl ? "Conversao USD->BRL" : "Aguardando cotacao",
       tone: "primary",
     },
@@ -240,7 +239,7 @@ function TopUrlTable({ rows }) {
                     <tr key=${row.url || idx}>
                       <td>${idx + 1}</td>
                       <td className="url-cell">
-                        <div className="url">${row.url || "—"}</div>
+                        <div className="url">${row.url || "ÔÇö"}</div>
                         <div className="muted small">${row.domain || ""}</div>
                       </td>
                       <td>${number.format(row.impressions || 0)}</td>
@@ -292,8 +291,8 @@ function EarningsTable({ rows }) {
               : rows.map(
                   (row, idx) => html`
                     <tr key=${row.date || idx}>
-                      <td>${row.date || "—"}</td>
-                      <td>${row.domain || "—"}</td>
+                      <td>${row.date || "ÔÇö"}</td>
+                      <td>${row.domain || "ÔÇö"}</td>
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
                       <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
@@ -412,7 +411,7 @@ function Filters({
                 />
               `}
           ${domainsLoading
-            ? html`<span className="muted small">Carregando dominios…</span>`
+            ? html`<span className="muted small">Carregando dominiosÔÇª</span>`
             : null}
         </label>
         <label className="field">
@@ -522,7 +521,7 @@ function LogsCard({ logs, onClear }) {
                       <span className="pill neutral">${entry.source || "app"}</span>
                       <span className="muted small">
                         ${entry.time.toLocaleString("pt-BR")}
-                        ${entry.status ? ` · ${entry.status}` : ""}
+                        ${entry.status ? ` ┬À ${entry.status}` : ""}
                       </span>
                     </div>
                     <div className="log-message">${entry.message}</div>
@@ -540,7 +539,7 @@ function LogsCard({ logs, onClear }) {
 
 function MetaJoinTable({ rows }) {
   const asText = (value) => {
-    if (value === null || value === undefined) return "—";
+    if (value === null || value === undefined) return "ÔÇö";
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
   };
@@ -586,7 +585,7 @@ function MetaJoinTable({ rows }) {
                       <td>
                         ${row.ecpm_client != null
                           ? asText(row.ecpm_client)
-                          : "—"}
+                          : "ÔÇö"}
                       </td>
                     </tr>
                   `
@@ -845,8 +844,6 @@ function App() {
         />
       `}
 
-      ${html`<${LogsCard} logs=${logs} onClear=${() => setLogs([])} />`}
-
       <main className="grid">
         ${html`<${Metrics} totals=${totals} usdToBrl=${brlRate} />`}
         ${html`<${MetaJoinTable} rows=${mergedMeta} />`}
@@ -882,3 +879,4 @@ function toNumber(value) {
   }
   return 0;
 }
+
