@@ -1,15 +1,16 @@
-﻿import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
+import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
 
-const currency = new Intl.NumberFormat("en-US", {
+const currencyUSD = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 2,
 });
+
 const currencyBRL = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -36,6 +37,25 @@ const defaultDates = () => {
   };
 };
 
+function toNumber(value) {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const n = Number(value.replace?.(",", ".") || value);
+    return Number.isNaN(n) ? 0 : n;
+  }
+  if (Array.isArray(value)) {
+    return value.length ? toNumber(value[0]) : 0;
+  }
+  if (typeof value === "object" && value.value !== undefined) {
+    return toNumber(value.value);
+  }
+  if (typeof value === "object" && Array.isArray(value.values) && value.values.length) {
+    return toNumber(value.values[0].value);
+  }
+  return 0;
+}
+
 async function fetchJson(path, options = {}) {
   const res = await fetch(path, {
     ...options,
@@ -50,7 +70,7 @@ async function fetchJson(path, options = {}) {
       data?.error ||
       data?.message ||
       data?.detail ||
-      `Erro na requisicao (${res.status})`;
+      `Erro na requisição (${res.status})`;
     const error = new Error(message);
     error.status = res.status;
     error.data = data;
@@ -124,7 +144,7 @@ function Metrics({ totals, usdToBrl }) {
   const items = [
     {
       label: "Receita cliente",
-      value: currency.format(totals.revenueClient || 0),
+      value: currencyUSD.format(totals.revenueClient || 0),
       helper: "Após revshare",
       tone: "primary",
     },
@@ -132,18 +152,14 @@ function Metrics({ totals, usdToBrl }) {
       label: "Receita cliente (BRL)",
       value:
         usdToBrl && totals.revenueClient != null
-          ? new Intl.NumberFormat("pt-BR", {
-              style: "currency",
-              currency: "BRL",
-              maximumFractionDigits: 2,
-            }).format((totals.revenueClient || 0) * usdToBrl)
-          : "ÔÇö",
+          ? currencyBRL.format((totals.revenueClient || 0) * usdToBrl)
+          : "—",
       helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotação",
       tone: "primary",
     },
     {
       label: "Receita bruta",
-      value: currency.format(totals.revenue || 0),
+      value: currencyUSD.format(totals.revenue || 0),
       helper: "Valor total",
     },
     {
@@ -163,12 +179,12 @@ function Metrics({ totals, usdToBrl }) {
     },
     {
       label: "eCPM cliente",
-      value: currency.format(totals.ecpmClient || 0),
+      value: currencyUSD.format(totals.ecpmClient || 0),
       helper: "Receita por mil",
     },
     {
       label: "eCPM bruto",
-      value: currency.format(totals.ecpm || 0),
+      value: currencyUSD.format(totals.ecpm || 0),
       helper: "Antes do revshare",
     },
     {
@@ -183,7 +199,7 @@ function Metrics({ totals, usdToBrl }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Performance</span>
-          <h2 className="section-title">Visao geral</h2>
+          <h2 className="section-title">Visão geral</h2>
         </div>
         <span className="chip neutral">JoinAds</span>
       </div>
@@ -218,7 +234,7 @@ function TopUrlTable({ rows }) {
             <tr>
               <th>#</th>
               <th>URL</th>
-              <th>Impressoes</th>
+              <th>Impressões</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -239,14 +255,14 @@ function TopUrlTable({ rows }) {
                     <tr key=${row.url || idx}>
                       <td>${idx + 1}</td>
                       <td className="url-cell">
-                        <div className="url">${row.url || "ÔÇö"}</div>
+                        <div className="url">${row.url || "-"}</div>
                         <div className="muted small">${row.domain || ""}</div>
                       </td>
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
                       <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
-                      <td>${currency.format(row.ecpm || 0)}</td>
-                      <td>${currency.format(row.revenue || 0)}</td>
+                      <td>${currencyUSD.format(row.ecpm || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue || 0)}</td>
                     </tr>
                   `
                 )}
@@ -272,7 +288,7 @@ function EarningsTable({ rows }) {
           <thead>
             <tr>
               <th>Data</th>
-              <th>Dominio</th>
+              <th>Domínio</th>
               <th>Impressões</th>
               <th>Cliques</th>
               <th>CTR</th>
@@ -291,13 +307,13 @@ function EarningsTable({ rows }) {
               : rows.map(
                   (row, idx) => html`
                     <tr key=${row.date || idx}>
-                      <td>${row.date || "ÔÇö"}</td>
-                      <td>${row.domain || "ÔÇö"}</td>
+                      <td>${row.date || "-"}</td>
+                      <td>${row.domain || "-"}</td>
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
                       <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
-                      <td>${currency.format(row.ecpm || 0)}</td>
-                      <td>${currency.format(row.revenue_client || 0)}</td>
+                      <td>${currencyUSD.format(row.ecpm || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue_client || 0)}</td>
                       <td>${`${Number(row.active_view || 0).toFixed(2)}%`}</td>
                     </tr>
                   `
@@ -320,11 +336,9 @@ function Filters({
   const setDate = (key, value) => {
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
-      // Garantir intervalo valido: se inicio ultrapassar fim, alinhar fim = inicio
       if (key === "startDate" && value > prev.endDate) {
         next.endDate = value;
       }
-      // Se fim for antes de inicio, alinhar inicio = fim
       if (key === "endDate" && value < prev.startDate) {
         next.startDate = value;
       }
@@ -338,7 +352,7 @@ function Filters({
     let start = new Date(end);
 
     if (preset === "today") {
-      // nada a fazer, usa hoje
+      // mantém hoje
     } else if (preset === "yesterday") {
       end.setDate(end.getDate() - 1);
       start = new Date(end);
@@ -360,7 +374,7 @@ function Filters({
       <div className="card-head">
         <div>
           <span className="eyebrow">Filtros</span>
-          <h2 className="section-title">Janela e segmentacao</h2>
+          <h2 className="section-title">Janela e segmentação</h2>
         </div>
         <button className="ghost" onClick=${onSubmit} disabled=${loading}>
           ${loading ? "Carregando..." : "Carregar dados"}
@@ -368,7 +382,7 @@ function Filters({
       </div>
       <div className="filters">
         <label className="field">
-          <span>Inicio</span>
+          <span>Início</span>
           <input
             type="date"
             value=${filters.startDate}
@@ -384,7 +398,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>Dominio *</span>
+          <span>Domínio *</span>
           ${domains && domains.length > 0
             ? html`
                 <select
@@ -411,7 +425,7 @@ function Filters({
                 />
               `}
           ${domainsLoading
-            ? html`<span className="muted small">Carregando dominiosÔÇª</span>`
+            ? html`<span className="muted small">Carregando domínios…</span>`
             : null}
         </label>
         <label className="field">
@@ -424,7 +438,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>Tipo de relatorio</span>
+          <span>Tipo de relatório</span>
           <select
             value=${filters.reportType}
             onChange=${(e) => setFilters((p) => ({ ...p, reportType: e.target.value }))}
@@ -467,7 +481,7 @@ function Filters({
           Ontem
         </button>
         <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
-          Ultimos 7 dias
+          Últimos 7 dias
         </button>
       </div>
     </section>
@@ -493,7 +507,7 @@ function Status({ error, lastRefreshed }) {
 
   return html`
     <div className="status neutral">
-      Informe dominio e clique em "Carregar dados".
+      Informe domínio e clique em "Carregar dados".
     </div>
   `;
 }
@@ -504,7 +518,7 @@ function LogsCard({ logs, onClear }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Logs</span>
-          <h2 className="section-title">Ultimas mensagens</h2>
+          <h2 className="section-title">Últimas mensagens</h2>
         </div>
         <button className="ghost" onClick=${onClear} disabled=${logs.length === 0}>
           Limpar
@@ -521,7 +535,7 @@ function LogsCard({ logs, onClear }) {
                       <span className="pill neutral">${entry.source || "app"}</span>
                       <span className="muted small">
                         ${entry.time.toLocaleString("pt-BR")}
-                        ${entry.status ? ` ┬À ${entry.status}` : ""}
+                        ${entry.status ? ` · ${entry.status}` : ""}
                       </span>
                     </div>
                     <div className="log-message">${entry.message}</div>
@@ -539,7 +553,7 @@ function LogsCard({ logs, onClear }) {
 
 function MetaJoinTable({ rows }) {
   const asText = (value) => {
-    if (value === null || value === undefined) return "ÔÇö";
+    if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
   };
@@ -560,7 +574,7 @@ function MetaJoinTable({ rows }) {
               <th>Data</th>
               <th>Tipo (campanha)</th>
               <th>Conjunto</th>
-              <th>Anuncio</th>
+              <th>Anúncio</th>
               <th>Custo por resultado</th>
               <th>Valor gasto</th>
               <th>eCPM JoinAds (cliente)</th>
@@ -570,7 +584,7 @@ function MetaJoinTable({ rows }) {
             ${rows.length === 0
               ? html`
                   <tr>
-                    <td colSpan="7" className="muted">Sem dados para o periodo.</td>
+                    <td colSpan="7" className="muted">Sem dados para o período.</td>
                   </tr>
                 `
               : rows.map(
@@ -585,7 +599,7 @@ function MetaJoinTable({ rows }) {
                       <td>
                         ${row.ecpm_client != null
                           ? asText(row.ecpm_client)
-                          : "ÔÇö"}
+                          : "-"}
                       </td>
                     </tr>
                   `
@@ -620,6 +634,7 @@ function App() {
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
+
   const pushLog = (source, err) => {
     const entry = {
       time: new Date(),
@@ -633,22 +648,22 @@ function App() {
 
   const handleLoad = async () => {
     if (domainsLoading && !filters.domain.trim()) {
-      setError("Aguarde carregar os dominios ou selecione manualmente.");
+      setError("Aguarde carregar os domínios ou selecione manualmente.");
       return;
     }
 
     if (!filters.domain.trim()) {
-      setError("Selecione um dominio para consultar.");
+      setError("Selecione um domínio para consultar.");
       return;
     }
 
     if (!domainsLoading && domains.length === 0 && !filters.domain.trim()) {
-      setError("Nenhum dominio retornado para este token/periodo.");
+      setError("Nenhum domínio retornado para este token/período.");
       return;
     }
 
     if (!filters.metaAccountId.trim()) {
-      setError("Informe o ID da conta de anuncios (Meta).");
+      setError("Informe o ID da conta de anúncios (Meta).");
       return;
     }
 
@@ -657,7 +672,7 @@ function App() {
     const diffMs = end.getTime() - start.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     if (diffDays > 15) {
-      setError("Intervalo maximo permitido e de 15 dias.");
+      setError("Intervalo máximo permitido é de 15 dias.");
       return;
     }
 
@@ -737,7 +752,7 @@ function App() {
         setFilters((prev) => ({ ...prev, domain: list[0] }));
       }
     } catch (err) {
-      const msg = formatError(err) || "Erro ao listar dominios.";
+      const msg = formatError(err) || "Erro ao listar domínios.";
       setError(msg);
       pushLog("domains", err);
       setDomains([]);
@@ -790,7 +805,7 @@ function App() {
         date,
         cost_per_result: currencyBRL.format(cost),
         spend_brl: currencyBRL.format(spend),
-        ecpm_client: ecpmClient != null ? currency.format(Number(ecpmClient)) : null,
+        ecpm_client: ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : null,
       };
     });
   }, [metaRows, earnings, superFilter, brlRate]);
@@ -811,12 +826,12 @@ function App() {
         <div>
           <h1>Dashboard de Publisher</h1>
           <p className="subtitle">
-            Arbitragem de trafego com dados em tempo real da JoinAds.
+            Arbitragem de tráfego com dados em tempo real da JoinAds.
           </p>
         </div>
         <div className="actions">
           <div className="muted small">
-            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotacao..."}
+            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotação..."}
           </div>
           <button
             className="ghost"
@@ -831,7 +846,7 @@ function App() {
         </div>
       </header>
 
-        ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
+      ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
 
       ${html`
         <${Filters}
@@ -861,23 +876,3 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-function toNumber(value) {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const n = Number(value.replace?.(",", ".") || value);
-    return Number.isNaN(n) ? 0 : n;
-  }
-  if (Array.isArray(value)) {
-    return value.length ? toNumber(value[0]) : 0;
-  }
-  if (typeof value === "object" && value.value !== undefined) {
-    return toNumber(value.value);
-  }
-  if (typeof value === "object" && Array.isArray(value.values) && value.values.length) {
-    return toNumber(value.values[0].value);
-  }
-  return 0;
-}
-
-
