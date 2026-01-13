@@ -326,3 +326,11 @@ tbody tr:last-child td {
   color: var(--ink);
   box-shadow: 0 4px 12px rgba(26, 22, 56, 0.08);
 }
+
+.logs { display:flex; flex-direction:column; gap:10px; max-height:240px; overflow:auto; }
+.log-line { padding:10px; border:1px solid var(--border); border-radius:12px; background:#f8f9ff; }
+.log-meta { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.log-message { font-weight:700; color:var(--ink); }
+.log-detail { background:#fff; border:1px solid var(--border); padding:8px; border-radius:8px; font-size:0.8rem; margin-top:6px; white-space:pre-wrap; word-break:break-word; }
+.pill.neutral { background:#eef0f7; color:#4f5b66; padding:4px 8px; border-radius:999px; font-size:0.75rem; font-weight:700; }
+

@@ -42,7 +42,10 @@ async function fetchJson(path, options = {}) {
       data?.message ||
       data?.detail ||
       `Erro na requisição (${res.status})`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    error.data = data;
+    throw error;
   }
   return data;
 }
@@ -94,6 +97,17 @@ function useTotals(superFilter) {
 
     return sum;
   }, [superFilter]);
+}
+
+function formatError(err) {
+  if (!err) return "Erro inesperado";
+  if (err.data) {
+    if (typeof err.data === "string") return err.data;
+    if (err.data.error) return err.data.error;
+    if (err.data.message) return err.data.message;
+    if (err.data.detail) return err.data.detail;
+  }
+  return err.message || "Erro inesperado";
 }
 
 function Metrics({ totals }) {
@@ -474,6 +488,45 @@ function Status({ error, lastRefreshed }) {
   `;
 }
 
+function LogsCard({ logs, onClear }) {
+  return html`
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Logs</span>
+          <h2 className="section-title">Últimas mensagens</h2>
+        </div>
+        <button className="ghost" onClick=${onClear} disabled=${logs.length === 0}>
+          Limpar
+        </button>
+      </div>
+      ${logs.length === 0
+        ? html`<p className="muted small">Sem logs ainda.</p>`
+        : html`
+            <div className="logs">
+              ${logs.map(
+                (entry, idx) => html`
+                  <div className="log-line" key=${idx}>
+                    <div className="log-meta">
+                      <span className="pill neutral">${entry.source || "app"}</span>
+                      <span className="muted small">
+                        ${entry.time.toLocaleString("pt-BR")}
+                        ${entry.status ? ` · ${entry.status}` : ""}
+                      </span>
+                    </div>
+                    <div className="log-message">${entry.message}</div>
+                    ${entry.detail
+                      ? html`<pre className="log-detail">${JSON.stringify(entry.detail)}</pre>`
+                      : null}
+                  </div>
+                `
+              )}
+            </div>
+          `}
+    </section>
+  `;
+}
+
 function App() {
   const [filters, setFilters] = useState({
     ...defaultDates(),
@@ -493,8 +546,19 @@ function App() {
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [domains, setDomains] = useState([]);
   const [domainsLoading, setDomainsLoading] = useState(false);
+  const [logs, setLogs] = useState([]);
 
   const totals = useTotals(superFilter);
+  const pushLog = (source, err) => {
+    const entry = {
+      time: new Date(),
+      source,
+      message: formatError(err),
+      detail: err?.data || null,
+      status: err?.status,
+    };
+    setLogs((prev) => [entry, ...prev].slice(0, 50));
+  };
 
   const handleLoad = async () => {
     if (domainsLoading && !filters.domain.trim()) {
@@ -563,7 +627,9 @@ function App() {
       setEarnings(earningsRes.data || []);
       setLastRefreshed(new Date());
     } catch (err) {
-      setError(err.message || "Erro ao buscar dados.");
+      const msg = formatError(err) || "Erro ao buscar dados.";
+      setError(msg);
+      pushLog("load", err);
       setKeyValue([]);
       setSuperFilter([]);
       setTopUrls([]);
@@ -586,7 +652,9 @@ function App() {
         setFilters((prev) => ({ ...prev, domain: list[0] }));
       }
     } catch (err) {
-      setError(err.message || "Erro ao listar domínios.");
+      const msg = formatError(err) || "Erro ao listar domínios.";
+      setError(msg);
+      pushLog("domains", err);
       setDomains([]);
     } finally {
       setDomainsLoading(false);
@@ -633,6 +701,8 @@ function App() {
           domainsLoading=${domainsLoading}
         />
       `}
+
+      ${html`<${LogsCard} logs=${logs} onClear=${() => setLogs([])} />`}
 
       <main className="grid">
         ${html`<${Metrics} totals=${totals} />`}
