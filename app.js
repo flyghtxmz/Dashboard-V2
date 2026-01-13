@@ -625,8 +625,6 @@ function App() {
           body: JSON.stringify({
             start_date: filters.startDate,
             end_date: filters.endDate,
-            // Alguns ambientes exigem domain[]; enviamos nos dois formatos
-            domain: [filters.domain.trim()],
             "domain[]": [filters.domain.trim()],
             group: ["domain"],
           }),
