@@ -294,7 +294,7 @@ function EarningsTable({ rows }) {
 
 function PerformanceTable({ rows }) {
   return html`
-    <section className="card">
+    <section className="card wide">
       <div className="card-head">
         <div>
           <span className="eyebrow">Performance</span>
@@ -857,8 +857,9 @@ function App() {
 
       <main className="grid">
         ${html`<${Metrics} totals=${totals} />`}
-        ${html`<${EarningsTable} rows=${earnings} />`}
         ${html`<${PerformanceTable} rows=${superFilter} />`}
+        ${html`<${TopUrlTable} rows=${topUrls} />`}
+        ${html`<${EarningsTable} rows=${earnings} />`}
         ${html`<${TopUrlTable} rows=${topUrls} />`}
         ${html`<${MetaJoinTable} rows=${mergedMeta} />`}
       </main>
