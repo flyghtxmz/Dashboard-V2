@@ -310,3 +310,19 @@ tbody tr:last-child td {
     align-items: flex-start;
   }
 }
+
+.domains-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.domain-chip {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #f1f2f6;
+  font-weight: 600;
+  color: var(--ink);
+  box-shadow: 0 4px 12px rgba(26, 22, 56, 0.08);
+}

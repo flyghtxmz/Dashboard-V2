@@ -396,6 +396,37 @@ function Status({ error, lastRefreshed }) {
   `;
 }
 
+function DomainList({ domains, loading, onReload, error }) {
+  return html`
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Token</span>
+          <h2 className="section-title">Domínios disponíveis</h2>
+        </div>
+        <button className="ghost" onClick=${onReload} disabled=${loading}>
+          ${loading ? "Buscando..." : "Listar"}
+        </button>
+      </div>
+      ${error
+        ? html`
+            <div className="status error">
+              <strong>Erro:</strong> ${error}
+            </div>
+          `
+        : domains.length === 0
+        ? html`<p className="muted small">Clique em "Listar" para ver os domínios deste token.</p>`
+        : html`
+            <div className="domains-grid">
+              ${domains.map(
+                (domain) => html`<span className="domain-chip" key=${domain}>${domain}</span>`
+              )}
+            </div>
+          `}
+    </section>
+  `;
+}
+
 function App() {
   const [filters, setFilters] = useState({
     ...defaultDates(),
@@ -412,6 +443,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [domains, setDomains] = useState([]);
+  const [domainsLoading, setDomainsLoading] = useState(false);
+  const [domainsError, setDomainsError] = useState("");
 
   const totals = useTotals(superFilter);
 
@@ -472,6 +506,23 @@ function App() {
     }
   };
 
+  const handleLoadDomains = async () => {
+    setDomainsLoading(true);
+    setDomainsError("");
+    try {
+      const params = new URLSearchParams();
+      params.set("start_date", filters.startDate);
+      params.set("end_date", filters.endDate);
+      const res = await fetchJson(`${API_BASE}/domains?${params.toString()}`);
+      setDomains(res.data || []);
+    } catch (err) {
+      setDomainsError(err.message || "Erro ao listar domínios.");
+      setDomains([]);
+    } finally {
+      setDomainsLoading(false);
+    }
+  };
+
   return html`
     <div className="layout">
       <header className="topbar">
@@ -499,6 +550,15 @@ function App() {
           setFilters=${setFilters}
           onSubmit=${handleLoad}
           loading=${loading}
+        />
+      `}
+
+      ${html`
+        <${DomainList}
+          domains=${domains}
+          loading=${domainsLoading}
+          onReload=${handleLoadDomains}
+          error=${domainsError}
         />
       `}
 
