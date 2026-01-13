@@ -143,7 +143,16 @@ function formatError(err) {
   return err.message || "Erro inesperado";
 }
 
-function Metrics({ totals, usdToBrl }) {
+function Metrics({ totals, usdToBrl, metaSpendBrl }) {
+  const revenueClientBrl =
+    usdToBrl && totals.revenueClient != null
+      ? (totals.revenueClient || 0) * usdToBrl
+      : null;
+  const roiPct =
+    revenueClientBrl != null && metaSpendBrl > 0
+      ? ((revenueClientBrl - metaSpendBrl) / metaSpendBrl) * 100
+      : null;
+
   const items = [
     {
       label: "Receita cliente",
@@ -153,11 +162,19 @@ function Metrics({ totals, usdToBrl }) {
     },
     {
       label: "Receita cliente (BRL)",
-      value:
-        usdToBrl && totals.revenueClient != null
-          ? currencyBRL.format((totals.revenueClient || 0) * usdToBrl)
-          : "-",
+      value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
       helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotação",
+      tone: "primary",
+    },
+    {
+      label: "Valor gasto (Meta)",
+      value: currencyBRL.format(metaSpendBrl || 0),
+      helper: "Gasto total do período",
+    },
+    {
+      label: "ROI (BRL)",
+      value: roiPct != null ? `${roiPct.toFixed(1)}%` : "-",
+      helper: "((Receita BRL - gasto) / gasto)",
       tone: "primary",
     },
     {
@@ -579,6 +596,13 @@ function App() {
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
+  const metaTotals = useMemo(() => {
+    const spendBrl = (metaRows || []).reduce(
+      (acc, row) => acc + toNumber(row.spend),
+      0
+    );
+    return { spendBrl };
+  }, [metaRows]);
 
   const pushLog = (source, err) => {
     const entry = {
@@ -805,7 +829,11 @@ function App() {
       `}
 
       <main className="grid">
-        ${html`<${Metrics} totals=${totals} usdToBrl=${brlRate} />`}
+        ${html`<${Metrics}
+          totals=${totals}
+          usdToBrl=${brlRate}
+          metaSpendBrl=${metaTotals.spendBrl}
+        />`}
         ${html`
           <${MetaJoinTable}
             rows=${filteredMeta}
