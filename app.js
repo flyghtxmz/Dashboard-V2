@@ -617,6 +617,12 @@ function App() {
       return;
     }
 
+    const customKey = (filters.customKey || "").trim();
+    if (!customKey) {
+      setError("Informe um custom key (ex: utm_campaign).");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -626,7 +632,7 @@ function App() {
       keyParams.set("end_date", filters.endDate);
       keyParams.set("domain", filters.domain.trim());
       keyParams.set("report_type", filters.reportType);
-      keyParams.set("custom_key", filters.customKey || "utm_campaign");
+      keyParams.set("custom_key", customKey);
       if (filters.customValue) {
         keyParams.set("custom_value", filters.customValue);
       }
