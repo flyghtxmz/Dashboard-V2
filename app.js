@@ -310,56 +310,6 @@ function EarningsTable({ rows }) {
   `;
 }
 
-function PerformanceTable({ rows }) {
-  return html`
-    <section className="card wide">
-      <div className="card-head">
-        <div>
-          <span className="eyebrow">Performance</span>
-          <h2 className="section-title">Resumo por dominio</h2>
-        </div>
-        <span className="chip neutral">${rows.length} linhas</span>
-      </div>
-      <div className="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Dominio</th>
-              <th>Impressoes</th>
-              <th>Cliques</th>
-              <th>CTR</th>
-              <th>eCPM</th>
-              <th>Receita</th>
-              <th>Receita cliente</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.length === 0
-              ? html`
-                  <tr>
-                    <td colSpan="7" className="muted">Sem dados para o periodo.</td>
-                  </tr>
-                `
-              : rows.map(
-                  (row, idx) => html`
-                    <tr key=${row.domain || idx}>
-                      <td>${row.domain || "—"}</td>
-                      <td>${number.format(row.impressions || 0)}</td>
-                      <td>${number.format(row.clicks || 0)}</td>
-                      <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
-                      <td>${currency.format(row.ecpm || 0)}</td>
-                      <td>${currency.format(row.revenue || 0)}</td>
-                      <td>${currency.format(row.revenue_client || 0)}</td>
-                    </tr>
-                  `
-                )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
-}
-
 function Filters({
   filters,
   setFilters,
@@ -899,12 +849,12 @@ function App() {
 
       <main className="grid">
         ${html`<${Metrics} totals=${totals} usdToBrl=${brlRate} />`}
-        ${html`<${PerformanceTable} rows=${superFilter} />`}
+        ${html`<${MetaJoinTable} rows=${mergedMeta} />`}
         ${html`<${TopUrlTable} rows=${topUrls} />`}
         ${html`<${EarningsTable} rows=${earnings} />`}
-        ${html`<${TopUrlTable} rows=${topUrls} />`}
-        ${html`<${MetaJoinTable} rows=${mergedMeta} />`}
       </main>
+
+      ${html`<${LogsCard} logs=${logs} onClear=${() => setLogs([])} />`}
     </div>
   `;
 }
