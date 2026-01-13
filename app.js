@@ -152,6 +152,10 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     revenueClientBrl != null && metaSpendBrl > 0
       ? ((revenueClientBrl - metaSpendBrl) / metaSpendBrl) * 100
       : null;
+  const roas =
+    revenueClientBrl != null && metaSpendBrl > 0
+      ? revenueClientBrl / metaSpendBrl
+      : null;
 
   const items = [
     {
@@ -175,6 +179,12 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       label: "ROI (BRL)",
       value: roiPct != null ? `${roiPct.toFixed(1)}%` : "-",
       helper: "((Receita BRL - gasto) / gasto)",
+      tone: "primary",
+    },
+    {
+      label: "ROAS (BRL)",
+      value: roas != null ? `${roas.toFixed(2)}x` : "-",
+      helper: "Receita BRL / gasto",
       tone: "primary",
     },
     {
@@ -542,8 +552,10 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               <th>Anúncio</th>
               <th>Custo por resultado</th>
               <th>Valor gasto</th>
+              <th>ROAS</th>
               <th>Receita JoinAds (cliente)</th>
               <th>eCPM JoinAds (cliente)</th>
+              <th>Impressões JoinAds</th>
             </tr>
           </thead>
           <tbody>
@@ -562,6 +574,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       <td>${asText(row.ad_name)}</td>
                       <td>${asText(row.cost_per_result)}</td>
                       <td>${asText(row.spend_brl)}</td>
+                      <td>${row.roas_joinads || "-"}</td>
                       <td>
                         ${row.revenue_client_joinads != null
                           ? asText(row.revenue_client_joinads)
@@ -569,6 +582,11 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       </td>
                       <td>
                         ${row.ecpm_client != null ? asText(row.ecpm_client) : "-"}
+                      </td>
+                      <td>
+                        ${row.impressions_joinads != null
+                          ? number.format(row.impressions_joinads)
+                          : "-"}
                       </td>
                     </tr>
                   `
@@ -757,9 +775,15 @@ function App() {
         null;
       const revenueClient =
         fromCustom.revenue_client ?? fromCustom.revenue ?? null;
+      const revenueClientBrl =
+        revenueClient != null && brlRate ? revenueClient * brlRate : null;
 
       const cost = toNumber(row.cost_per_result);
       const spend = toNumber(row.spend);
+      const roas =
+        revenueClientBrl != null && spend > 0
+          ? revenueClientBrl / spend
+          : null;
 
       return {
         ...row,
@@ -772,9 +796,11 @@ function App() {
           revenueClient != null
             ? currencyUSD.format(Number(revenueClient))
             : null,
+        roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
+        impressions_joinads: fromCustom.impressions ?? null,
       };
     });
-  }, [metaRows, earnings, superFilter]);
+  }, [metaRows, earnings, superFilter, brlRate]);
 
   const filteredMeta = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
