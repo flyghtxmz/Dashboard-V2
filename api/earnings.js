@@ -7,13 +7,21 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // A API retornou que só aceita GET para earnings.
-  if (req.method !== "GET") {
-    res.status(405).json({ error: "Method not allowed, use GET" });
+  // Aceita GET ou POST, mas sempre chama a JoinAds via GET (documentação retornou que POST não é aceito).
+  const fromQuery = req.query || {};
+  const fromBody =
+    typeof req.body === "string"
+      ? JSON.parse(req.body || "{}")
+      : req.body || {};
+
+  const { start_date, end_date, domain } =
+    req.method === "GET" ? fromQuery : fromBody;
+
+  if (req.method !== "GET" && req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed, use GET or POST" });
     return;
   }
 
-  const { start_date, end_date, domain } = req.query || {};
   const missing = [];
   if (!start_date) missing.push("start_date");
   if (!end_date) missing.push("end_date");
