@@ -55,9 +55,10 @@ async function fetchJson(path, options = {}) {
   return data;
 }
 
-function useTotals(superFilter) {
+function useTotalsFromEarnings(earnings, fallbackSuper) {
   return useMemo(() => {
-    if (!superFilter?.length) {
+    const source = earnings?.length ? earnings : fallbackSuper || [];
+    if (!source.length) {
       return {
         revenue: 0,
         revenueClient: 0,
@@ -70,14 +71,14 @@ function useTotals(superFilter) {
       };
     }
 
-    const sum = superFilter.reduce(
+    const sum = source.reduce(
       (acc, row) => {
-        acc.revenue += Number(row.revenue || 0);
+        acc.revenue += Number(row.revenue || row.revenue_client || 0);
         acc.revenueClient += Number(row.revenue_client || 0);
         acc.impressions += Number(row.impressions || 0);
         acc.clicks += Number(row.clicks || 0);
         acc.ecpm += Number(row.ecpm || 0);
-        acc.ecpmClient += Number(row.ecpm_client || 0);
+        acc.ecpmClient += Number(row.ecpm_client || row.ecpm || 0);
         acc.activeView += Number(row.active_view || 0);
         return acc;
       },
@@ -98,10 +99,10 @@ function useTotals(superFilter) {
     sum.ecpmClient = sum.impressions
       ? (sum.revenueClient / sum.impressions) * 1000
       : 0;
-    sum.activeView = sum.activeView / superFilter.length;
+    sum.activeView = sum.activeView / source.length;
 
     return sum;
-  }, [superFilter]);
+  }, [earnings, fallbackSuper]);
 }
 
 function formatError(err) {
@@ -569,7 +570,7 @@ function App() {
   const [domainsLoading, setDomainsLoading] = useState(false);
   const [logs, setLogs] = useState([]);
 
-  const totals = useTotals(superFilter);
+  const totals = useTotalsFromEarnings(earnings, superFilter);
   const pushLog = (source, err) => {
     const entry = {
       time: new Date(),
