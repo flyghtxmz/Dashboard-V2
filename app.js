@@ -121,12 +121,25 @@ function formatError(err) {
   return err.message || "Erro inesperado";
 }
 
-function Metrics({ totals }) {
+function Metrics({ totals, usdToBrl }) {
   const items = [
     {
       label: "Receita cliente",
       value: currency.format(totals.revenueClient || 0),
       helper: "Apos revshare",
+      tone: "primary",
+    },
+    {
+      label: "Receita cliente (BRL)",
+      value:
+        usdToBrl && totals.revenueClient != null
+          ? new Intl.NumberFormat("pt-BR", {
+              style: "currency",
+              currency: "BRL",
+              maximumFractionDigits: 2,
+            }).format((totals.revenueClient || 0) * usdToBrl)
+          : "—",
+      helper: usdToBrl ? "Conversao USD->BRL" : "Aguardando cotacao",
       tone: "primary",
     },
     {
@@ -869,7 +882,7 @@ function App() {
         </div>
       </header>
 
-      ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
+        ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
 
       ${html`
         <${Filters}
@@ -885,7 +898,7 @@ function App() {
       ${html`<${LogsCard} logs=${logs} onClear=${() => setLogs([])} />`}
 
       <main className="grid">
-        ${html`<${Metrics} totals=${totals} />`}
+        ${html`<${Metrics} totals=${totals} usdToBrl=${brlRate} />`}
         ${html`<${PerformanceTable} rows=${superFilter} />`}
         ${html`<${TopUrlTable} rows=${topUrls} />`}
         ${html`<${EarningsTable} rows=${earnings} />`}
