@@ -10,6 +10,11 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 2,
 });
+const currencyBRL = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  maximumFractionDigits: 2,
+});
 
 const number = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 0,
@@ -614,10 +619,10 @@ function MetaJoinTable({ rows }) {
                       <td>${asText(row.adset_name)}</td>
                       <td>${asText(row.ad_name)}</td>
                       <td>${asText(row.cost_per_result)}</td>
-                      <td>${currency.format(Number(row.spend || 0))}</td>
+                      <td>${asText(row.spend_brl)}</td>
                       <td>
                         ${row.ecpm_client != null
-                          ? currency.format(Number(row.ecpm_client))
+                          ? asText(row.ecpm_client)
                           : "—"}
                       </td>
                     </tr>
@@ -652,6 +657,7 @@ function App() {
   const [usdBrl, setUsdBrl] = useState(null);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
+  const brlRate = usdBrl || 0;
   const pushLog = (source, err) => {
     const entry = {
       time: new Date(),
@@ -711,7 +717,8 @@ function App() {
             start_date: filters.startDate,
             end_date: filters.endDate,
             "domain[]": [filters.domain.trim()],
-            group: ["domain"],
+            custom_key: "utm_campaign",
+            group: ["domain", "custom_value"],
           }),
         }),
         fetchJson(`${API_BASE}/top-url?${topParams.toString()}`),
@@ -784,6 +791,7 @@ function App() {
 
   const mergedMeta = useMemo(() => {
     if (!metaRows?.length) return [];
+
     const earningsByDate = {};
     (earnings || []).forEach((row) => {
       const parts = (row.date || "").split("/");
@@ -793,16 +801,37 @@ function App() {
       }
       earningsByDate[iso] = row;
     });
+
+    const superByCustom = {};
+    (superFilter || []).forEach((row) => {
+      if (row.custom_value) {
+        superByCustom[row.custom_value] = row;
+      }
+    });
+
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
       const join = earningsByDate[date] || {};
+      const fromCustom = superByCustom[row.adset_name || ""] || {};
+      const ecpmClient =
+        fromCustom.ecpm_client ??
+        fromCustom.ecpm ??
+        join.ecpm_client ??
+        join.ecpm ??
+        null;
+
+      const cost = toNumber(row.cost_per_result);
+      const spend = toNumber(row.spend);
+
       return {
         ...row,
         date,
-        ecpm_client: join.ecpm_client ?? join.ecpm ?? null,
+        cost_per_result: brlRate ? currencyBRL.format(cost * brlRate) : currency.format(cost),
+        spend_brl: brlRate ? currencyBRL.format(spend * brlRate) : currency.format(spend),
+        ecpm_client: ecpmClient != null ? currency.format(Number(ecpmClient)) : null,
       };
     });
-  }, [metaRows, earnings]);
+  }, [metaRows, earnings, superFilter, brlRate]);
 
   useEffect(() => {
     fetch("https://open.er-api.com/v6/latest/USD")
@@ -871,4 +900,19 @@ const rootElement = document.getElementById("root");
 if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
+}
+function toNumber(value) {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const n = Number(value.replace?.(",", ".") || value);
+    return Number.isNaN(n) ? 0 : n;
+  }
+  if (Array.isArray(value)) {
+    return value.length ? toNumber(value[0]) : 0;
+  }
+  if (typeof value === "object" && value.value !== undefined) {
+    return toNumber(value.value);
+  }
+  return 0;
 }
