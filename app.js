@@ -520,6 +520,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               <th>Anúncio</th>
               <th>Custo por resultado</th>
               <th>Valor gasto</th>
+              <th>Receita JoinAds (cliente)</th>
               <th>eCPM JoinAds (cliente)</th>
             </tr>
           </thead>
@@ -539,6 +540,11 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       <td>${asText(row.ad_name)}</td>
                       <td>${asText(row.cost_per_result)}</td>
                       <td>${asText(row.spend_brl)}</td>
+                      <td>
+                        ${row.revenue_client_joinads != null
+                          ? asText(row.revenue_client_joinads)
+                          : "-"}
+                      </td>
                       <td>
                         ${row.ecpm_client != null ? asText(row.ecpm_client) : "-"}
                       </td>
@@ -720,6 +726,8 @@ function App() {
         join.ecpm_client ??
         join.ecpm ??
         null;
+      const revenueClient =
+        fromCustom.revenue_client ?? fromCustom.revenue ?? null;
 
       const cost = toNumber(row.cost_per_result);
       const spend = toNumber(row.spend);
@@ -731,6 +739,10 @@ function App() {
         spend_brl: currencyBRL.format(spend),
         ecpm_client:
           ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : null,
+        revenue_client_joinads:
+          revenueClient != null
+            ? currencyUSD.format(Number(revenueClient))
+            : null,
       };
     });
   }, [metaRows, earnings, superFilter]);
