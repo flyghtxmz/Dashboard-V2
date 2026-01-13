@@ -611,14 +611,13 @@ function App() {
           }),
         }),
         fetchJson(`${API_BASE}/top-url?${topParams.toString()}`),
-        fetchJson(`${API_BASE}/earnings`, {
-          method: "POST",
-          body: JSON.stringify({
+        fetchJson(
+          `${API_BASE}/earnings?${new URLSearchParams({
             start_date: filters.startDate,
             end_date: filters.endDate,
             domain: filters.domain.trim(),
-          }),
-        }),
+          }).toString()}`
+        ),
       ]);
 
       setKeyValue(keyRes.data || []);
