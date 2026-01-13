@@ -826,8 +826,8 @@ function App() {
       return {
         ...row,
         date,
-        cost_per_result: brlRate ? currencyBRL.format(cost * brlRate) : currency.format(cost),
-        spend_brl: brlRate ? currencyBRL.format(spend * brlRate) : currency.format(spend),
+        cost_per_result: currencyBRL.format(cost),
+        spend_brl: currencyBRL.format(spend),
         ecpm_client: ecpmClient != null ? currency.format(Number(ecpmClient)) : null,
       };
     });
@@ -913,6 +913,9 @@ function toNumber(value) {
   }
   if (typeof value === "object" && value.value !== undefined) {
     return toNumber(value.value);
+  }
+  if (typeof value === "object" && Array.isArray(value.values) && value.values.length) {
+    return toNumber(value.values[0].value);
   }
   return 0;
 }
