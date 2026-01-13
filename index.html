@@ -3,116 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Dashboard Simples</title>
+  <title>JoinAds Dashboard</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="bg-orb orb-a"></div>
   <div class="bg-orb orb-b"></div>
-
-  <header class="topbar">
-    <div>
-      <h1>Resumo Operacional</h1>
-      <p class="subtitle">Visao rapida do desempenho desta semana</p>
-    </div>
-    <div class="actions">
-      <button class="ghost">Exportar</button>
-      <button class="primary">Criar alerta</button>
-    </div>
-  </header>
-
-  <main class="grid">
-    <section class="card highlight">
-      <div class="card-head">
-        <span class="eyebrow">Receita</span>
-        <span class="chip up">+12.4%</span>
-      </div>
-      <div class="metric">R$ 128.430</div>
-      <div class="sparkline" id="spark-revenue"></div>
-    </section>
-
-    <section class="card">
-      <div class="card-head">
-        <span class="eyebrow">Conversoes</span>
-        <span class="chip down">-3.2%</span>
-      </div>
-      <div class="metric">4.312</div>
-      <div class="subtext">Meta mensal: 5.000</div>
-      <div class="progress">
-        <div class="bar" style="width: 86%"></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-head">
-        <span class="eyebrow">Satisfacao</span>
-        <span class="chip up">+1.1</span>
-      </div>
-      <div class="metric">8,7</div>
-      <div class="rating">?????</div>
-      <div class="subtext">Ultimos 30 dias</div>
-    </section>
-
-    <section class="card wide">
-      <div class="card-head">
-        <div>
-          <span class="eyebrow">Fluxo de pedidos</span>
-          <h2 class="section-title">Volume diario</h2>
-        </div>
-        <div class="legend">
-          <span class="dot dot-a"></span> Pedidos
-          <span class="dot dot-b"></span> Cancelados
-        </div>
-      </div>
-      <canvas id="orders-chart" width="640" height="240"></canvas>
-    </section>
-
-    <section class="card">
-      <div class="card-head">
-        <span class="eyebrow">Alertas</span>
-        <span class="chip neutral">2 pendentes</span>
-      </div>
-      <ul class="list">
-        <li>Estoque baixo - Linha A</li>
-        <li>Checkout lento - Regiao Sul</li>
-        <li>Atualizacao de precos as 18:00</li>
-      </ul>
-    </section>
-
-    <section class="card">
-      <div class="card-head">
-        <span class="eyebrow">Ultimas vendas</span>
-        <span class="chip">Hoje</span>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Cliente</th>
-            <th>Status</th>
-            <th>Valor</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Maria L.</td>
-            <td><span class="pill ok">Pago</span></td>
-            <td>R$ 2.180</td>
-          </tr>
-          <tr>
-            <td>Studio Norte</td>
-            <td><span class="pill wait">Pendente</span></td>
-            <td>R$ 980</td>
-          </tr>
-          <tr>
-            <td>Helio Shop</td>
-            <td><span class="pill ok">Pago</span></td>
-            <td>R$ 1.240</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-  </main>
-
-  <script src="script.js"></script>
+  <div id="root"></div>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
