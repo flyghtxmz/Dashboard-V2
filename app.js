@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
+import htm from "https://esm.sh/htm@3.1.1";
 
+const html = htm.bind(React.createElement);
 const API_BASE = "/api";
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -139,7 +141,7 @@ function Metrics({ totals }) {
     },
   ];
 
-  return (
+  return html`
     <section className="card wide">
       <div className="card-head">
         <div>
@@ -149,27 +151,29 @@ function Metrics({ totals }) {
         <span className="chip neutral">JoinAds</span>
       </div>
       <div className="metrics-grid">
-        {items.map((item) => (
-          <div className="metric-card" key={item.label} data-tone={item.tone}>
-            <div className="metric-label">{item.label}</div>
-            <div className="metric-value">{item.value}</div>
-            <div className="metric-helper">{item.helper}</div>
-          </div>
-        ))}
+        ${items.map(
+          (item) => html`
+            <div className="metric-card" data-tone=${item.tone || ""} key=${item.label}>
+              <div className="metric-label">${item.label}</div>
+              <div className="metric-value">${item.value}</div>
+              <div className="metric-helper">${item.helper}</div>
+            </div>
+          `
+        )}
       </div>
     </section>
-  );
+  `;
 }
 
 function KeyValueTable({ rows }) {
-  return (
+  return html`
     <section className="card">
       <div className="card-head">
         <div>
           <span className="eyebrow">Breakdown</span>
           <h2 className="section-title">Receita por key</h2>
         </div>
-        <span className="chip up">{rows.length} linhas</span>
+        <span className="chip up">${rows.length} linhas</span>
       </div>
       <div className="table-wrapper">
         <table>
@@ -185,33 +189,36 @@ function KeyValueTable({ rows }) {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan="7" className="muted">
-                  Nenhum dado retornado para o filtro.
-                </td>
-              </tr>
-            )}
-            {rows.map((row, idx) => (
-              <tr key={`${row.date}-${row.custon_value || idx}`}>
-                <td>{row.date || "—"}</td>
-                <td>{row.name || row.domain || "—"}</td>
-                <td>{row.custon_value || row.custom_value || "—"}</td>
-                <td>{number.format(row.impressions || 0)}</td>
-                <td>{number.format(row.clicks || 0)}</td>
-                <td>{currency.format(row.earnings || 0)}</td>
-                <td>{currency.format(row.earnings_client || 0)}</td>
-              </tr>
-            ))}
+            ${rows.length === 0
+              ? html`
+                  <tr>
+                    <td colSpan="7" className="muted">
+                      Nenhum dado retornado para o filtro.
+                    </td>
+                  </tr>
+                `
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${`${row.date}-${row.custon_value || row.custom_value || idx}`}>
+                      <td>${row.date || "—"}</td>
+                      <td>${row.name || row.domain || "—"}</td>
+                      <td>${row.custon_value || row.custom_value || "—"}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${currency.format(row.earnings || 0)}</td>
+                      <td>${currency.format(row.earnings_client || 0)}</td>
+                    </tr>
+                  `
+                )}
           </tbody>
         </table>
       </div>
     </section>
-  );
+  `;
 }
 
 function TopUrlTable({ rows }) {
-  return (
+  return html`
     <section className="card">
       <div className="card-head">
         <div>
@@ -234,32 +241,35 @@ function TopUrlTable({ rows }) {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan="7" className="muted">
-                  Sem URLs para este filtro.
-                </td>
-              </tr>
-            )}
-            {rows.map((row, idx) => (
-              <tr key={row.url || idx}>
-                <td>{idx + 1}</td>
-                <td className="url-cell">
-                  <div className="url">{row.url || "—"}</div>
-                  <div className="muted small">{row.domain}</div>
-                </td>
-                <td>{number.format(row.impressions || 0)}</td>
-                <td>{number.format(row.clicks || 0)}</td>
-                <td>{`${Number(row.ctr || 0).toFixed(2)}%`}</td>
-                <td>{currency.format(row.ecpm || 0)}</td>
-                <td>{currency.format(row.revenue || 0)}</td>
-              </tr>
-            ))}
+            ${rows.length === 0
+              ? html`
+                  <tr>
+                    <td colSpan="7" className="muted">
+                      Sem URLs para este filtro.
+                    </td>
+                  </tr>
+                `
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${row.url || idx}>
+                      <td>${idx + 1}</td>
+                      <td className="url-cell">
+                        <div className="url">${row.url || "—"}</div>
+                        <div className="muted small">${row.domain || ""}</div>
+                      </td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
+                      <td>${currency.format(row.ecpm || 0)}</td>
+                      <td>${currency.format(row.revenue || 0)}</td>
+                    </tr>
+                  `
+                )}
           </tbody>
         </table>
       </div>
     </section>
-  );
+  `;
 }
 
 function Filters({ filters, setFilters, onSubmit, loading }) {
@@ -269,15 +279,15 @@ function Filters({ filters, setFilters, onSubmit, loading }) {
       [key]: value,
     }));
 
-  return (
+  return html`
     <section className="card">
       <div className="card-head">
         <div>
           <span className="eyebrow">Filtros</span>
           <h2 className="section-title">Janela e segmentação</h2>
         </div>
-        <button className="ghost" onClick={onSubmit} disabled={loading}>
-          {loading ? "Carregando..." : "Carregar dados"}
+        <button className="ghost" onClick=${onSubmit} disabled=${loading}>
+          ${loading ? "Carregando..." : "Carregar dados"}
         </button>
       </div>
       <div className="filters">
@@ -285,16 +295,16 @@ function Filters({ filters, setFilters, onSubmit, loading }) {
           <span>Início</span>
           <input
             type="date"
-            value={filters.startDate}
-            onChange={(e) => update("startDate", e.target.value)}
+            value=${filters.startDate}
+            onChange=${(e) => update("startDate", e.target.value)}
           />
         </label>
         <label className="field">
           <span>Fim</span>
           <input
             type="date"
-            value={filters.endDate}
-            onChange={(e) => update("endDate", e.target.value)}
+            value=${filters.endDate}
+            onChange=${(e) => update("endDate", e.target.value)}
           />
         </label>
         <label className="field">
@@ -302,33 +312,33 @@ function Filters({ filters, setFilters, onSubmit, loading }) {
           <input
             type="text"
             placeholder="ex: exemplo.com.br"
-            value={filters.domain}
-            onChange={(e) => update("domain", e.target.value)}
+            value=${filters.domain}
+            onChange=${(e) => update("domain", e.target.value)}
           />
         </label>
         <label className="field">
           <span>Custom key</span>
           <input
             type="text"
-            value={filters.customKey}
+            value=${filters.customKey}
             placeholder="utm_campaign"
-            onChange={(e) => update("customKey", e.target.value)}
+            onChange=${(e) => update("customKey", e.target.value)}
           />
         </label>
         <label className="field">
           <span>Custom value</span>
           <input
             type="text"
-            value={filters.customValue}
+            value=${filters.customValue}
             placeholder="opcional"
-            onChange={(e) => update("customValue", e.target.value)}
+            onChange=${(e) => update("customValue", e.target.value)}
           />
         </label>
         <label className="field">
           <span>Tipo de relatório</span>
           <select
-            value={filters.reportType}
-            onChange={(e) => update("reportType", e.target.value)}
+            value=${filters.reportType}
+            onChange=${(e) => update("reportType", e.target.value)}
           >
             <option value="Analytical">Analytical</option>
             <option value="Synthetic">Synthetic</option>
@@ -340,16 +350,13 @@ function Filters({ filters, setFilters, onSubmit, loading }) {
             type="number"
             min="1"
             max="50"
-            value={filters.topLimit}
-            onChange={(e) => update("topLimit", Number(e.target.value || 5))}
+            value=${filters.topLimit}
+            onChange=${(e) => update("topLimit", Number(e.target.value || 5))}
           />
         </label>
         <label className="field">
           <span>Ordenar por</span>
-          <select
-            value={filters.sort}
-            onChange={(e) => update("sort", e.target.value)}
-          >
+          <select value=${filters.sort} onChange=${(e) => update("sort", e.target.value)}>
             <option value="revenue">Receita</option>
             <option value="impressions">Impressões</option>
             <option value="clicks">Cliques</option>
@@ -359,35 +366,34 @@ function Filters({ filters, setFilters, onSubmit, loading }) {
         </label>
       </div>
       <p className="muted small">
-        O token é lido via variável de ambiente JOINADS_ACCESS_TOKEN em
-        /api/*. A chamada é segura no backend da Vercel.
+        O token é lido via variável de ambiente JOINADS_ACCESS_TOKEN em /api/*. A chamada é segura no backend da Vercel.
       </p>
     </section>
-  );
+  `;
 }
 
 function Status({ error, lastRefreshed }) {
   if (error) {
-    return (
+    return html`
       <div className="status error">
-        <strong>Erro:</strong> {error}
+        <strong>Erro:</strong> ${error}
       </div>
-    );
+    `;
   }
 
   if (lastRefreshed) {
-    return (
+    return html`
       <div className="status ok">
-        Atualizado em {lastRefreshed.toLocaleString("pt-BR")}
+        Atualizado em ${lastRefreshed.toLocaleString("pt-BR")}
       </div>
-    );
+    `;
   }
 
-  return (
+  return html`
     <div className="status neutral">
       Informe domínio e clique em "Carregar dados".
     </div>
-  );
+  `;
 }
 
 function App() {
@@ -466,7 +472,7 @@ function App() {
     }
   };
 
-  return (
+  return html`
     <div className="layout">
       <header className="topbar">
         <div>
@@ -476,8 +482,8 @@ function App() {
           </p>
         </div>
         <div className="actions">
-          <button className="ghost" onClick={handleLoad} disabled={loading}>
-            {loading ? "Atualizando..." : "Atualizar"}
+          <button className="ghost" onClick=${handleLoad} disabled=${loading}>
+            ${loading ? "Atualizando..." : "Atualizar"}
           </button>
           <button className="primary" disabled>
             Exportar CSV (breve)
@@ -485,26 +491,28 @@ function App() {
         </div>
       </header>
 
-      <Status error={error} lastRefreshed={lastRefreshed} />
+      ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
 
-      <Filters
-        filters={filters}
-        setFilters={setFilters}
-        onSubmit={handleLoad}
-        loading={loading}
-      />
+      ${html`
+        <${Filters}
+          filters=${filters}
+          setFilters=${setFilters}
+          onSubmit=${handleLoad}
+          loading=${loading}
+        />
+      `}
 
       <main className="grid">
-        <Metrics totals={totals} />
-        <KeyValueTable rows={keyValue} />
-        <TopUrlTable rows={topUrls} />
+        ${html`<${Metrics} totals=${totals} />`}
+        ${html`<${KeyValueTable} rows=${keyValue} />`}
+        ${html`<${TopUrlTable} rows=${topUrls} />`}
       </main>
     </div>
-  );
+  `;
 }
 
 const rootElement = document.getElementById("root");
 if (rootElement) {
   const root = createRoot(rootElement);
-  root.render(<App />);
+  root.render(html`<${App} />`);
 }
