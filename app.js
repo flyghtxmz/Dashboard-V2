@@ -5,9 +5,9 @@ import htm from "https://esm.sh/htm@3.1.1";
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
 
-const currency = new Intl.NumberFormat("pt-BR", {
+const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
-  currency: "BRL",
+  currency: "USD",
   maximumFractionDigits: 2,
 });
 
@@ -346,6 +346,35 @@ function Filters({
   domains,
   domainsLoading,
 }) {
+  const setDate = (key, value) => {
+    setFilters((prev) => {
+      const next = { ...prev, [key]: value };
+      // Garantir intervalo válido: se início ultrapassar fim, alinhar fim = início
+      if (key === "startDate" && value > prev.endDate) {
+        next.endDate = value;
+      }
+      // Se fim for antes de início, alinhar início = fim
+      if (key === "endDate" && value < prev.startDate) {
+        next.startDate = value;
+      }
+      return next;
+    });
+  };
+
+  const setPreset = (daysAgo) => {
+    const end = new Date();
+    end.setHours(0, 0, 0, 0);
+    end.setDate(end.getDate() - daysAgo);
+    const start = new Date(end);
+    const startStr = formatDate(start);
+    const endStr = formatDate(end);
+    setFilters((prev) => ({
+      ...prev,
+      startDate: startStr,
+      endDate: endStr,
+    }));
+  };
+
   const update = (key, value) =>
     setFilters((prev) => ({
       ...prev,
@@ -369,7 +398,7 @@ function Filters({
           <input
             type="date"
             value=${filters.startDate}
-            onChange=${(e) => update("startDate", e.target.value)}
+            onChange=${(e) => setDate("startDate", e.target.value)}
           />
         </label>
         <label className="field">
@@ -377,7 +406,7 @@ function Filters({
           <input
             type="date"
             value=${filters.endDate}
-            onChange=${(e) => update("endDate", e.target.value)}
+            onChange=${(e) => setDate("endDate", e.target.value)}
           />
         </label>
         <label className="field">
@@ -459,6 +488,18 @@ function Filters({
             <option value="ecpm">eCPM</option>
           </select>
         </label>
+      </div>
+      <div className="actions presets">
+        <span className="muted small">Atalhos:</span>
+        <button className="ghost" onClick=${() => setPreset(0)} disabled=${loading}>
+          Hoje
+        </button>
+        <button className="ghost" onClick=${() => setPreset(1)} disabled=${loading}>
+          Ontem
+        </button>
+        <button className="ghost" onClick=${() => setPreset(6)} disabled=${loading}>
+          Últimos 7 dias
+        </button>
       </div>
     </section>
   `;

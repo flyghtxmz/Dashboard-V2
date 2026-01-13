@@ -110,6 +110,13 @@ button.ghost {
   background: transparent;
 }
 
+.actions.presets {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .status {
   margin: 16px 0;
   padding: 12px 16px;
