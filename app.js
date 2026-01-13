@@ -446,6 +446,15 @@ function Filters({
             : null}
         </label>
         <label className="field">
+          <span>ID da conta Meta *</span>
+          <input
+            type="text"
+            placeholder="ex: act_123456789"
+            value=${filters.metaAccountId || ""}
+            onChange=${(e) => setFilters((p) => ({ ...p, metaAccountId: e.target.value }))}
+          />
+        </label>
+        <label className="field">
           <span>Tipo de relatório</span>
           <select
             value=${filters.reportType}
@@ -559,6 +568,60 @@ function LogsCard({ logs, onClear }) {
   `;
 }
 
+function MetaJoinTable({ rows }) {
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Meta x JoinAds</span>
+          <h2 className="section-title">Campanhas</h2>
+        </div>
+        <span className="chip neutral">${rows.length} linhas</span>
+      </div>
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Tipo (campanha)</th>
+              <th>Conjunto</th>
+              <th>Anúncio</th>
+              <th>Custo por resultado</th>
+              <th>Valor gasto</th>
+              <th>eCPM JoinAds (cliente)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0
+              ? html`
+                  <tr>
+                    <td colSpan="7" className="muted">Sem dados para o período.</td>
+                  </tr>
+                `
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${idx}>
+                      <td>${row.date || "—"}</td>
+                      <td>${row.objective || "—"}</td>
+                      <td>${row.adset_name || "—"}</td>
+                      <td>${row.ad_name || "—"}</td>
+                      <td>${row.cost_per_result || "—"}</td>
+                      <td>${currency.format(Number(row.spend || 0))}</td>
+                      <td>
+                        ${row.ecpm_client != null
+                          ? currency.format(Number(row.ecpm_client))
+                          : "—"}
+                      </td>
+                    </tr>
+                  `
+                )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function App() {
   const [filters, setFilters] = useState({
     ...defaultDates(),
@@ -576,6 +639,8 @@ function App() {
   const [domains, setDomains] = useState([]);
   const [domainsLoading, setDomainsLoading] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [metaRows, setMetaRows] = useState([]);
+  const [usdBrl, setUsdBrl] = useState(null);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const pushLog = (source, err) => {
@@ -602,6 +667,11 @@ function App() {
 
     if (!domainsLoading && domains.length === 0 && !filters.domain.trim()) {
       setError("Nenhum domínio retornado para este token/período.");
+      return;
+    }
+
+    if (!filters.metaAccountId.trim()) {
+      setError("Informe o ID da conta de anúncios (Meta).");
       return;
     }
 
@@ -647,6 +717,24 @@ function App() {
         ),
       ]);
 
+      ]);
+
+      // Meta insights (se falhar, loga mas não quebra)
+      try {
+        const metaRes = await fetchJson(
+          `${API_BASE}/meta-insights?${new URLSearchParams({
+            account_id: filters.metaAccountId.trim(),
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+          }).toString()}`
+        );
+        setMetaRows(metaRes.data || []);
+      } catch (err) {
+        pushLog("meta", err);
+        setMetaRows([]);
+      }
+
+      Promise.all([superRes, topRes, earningsRes]).catch(() => {});
       setSuperFilter(superRes.data || []);
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
@@ -658,6 +746,7 @@ function App() {
       setSuperFilter([]);
       setTopUrls([]);
       setEarnings([]);
+      setMetaRows([]);
     } finally {
       setLoading(false);
     }
@@ -690,6 +779,41 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Merge Meta rows with JoinAds earnings by date
+  const mergedMeta = useMemo(() => {
+    if (!metaRows?.length) return [];
+    const earningsByDate = {};
+    (earnings || []).forEach((row) => {
+      const parts = (row.date || "").split("/");
+      let iso = row.date;
+      if (parts.length === 3) {
+        // dd/mm/yyyy
+        iso = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+      earningsByDate[iso] = row;
+    });
+    return metaRows.map((row) => {
+      const date = row.date_start || row.date || "";
+      const join = earningsByDate[date] || {};
+      return {
+        ...row,
+        date,
+        ecpm_client: join.ecpm_client ?? join.ecpm ?? null,
+      };
+    });
+  }, [metaRows, earnings]);
+
+  useEffect(() => {
+    // Cotação USD/BRL diária
+    fetch("https://open.er-api.com/v6/latest/USD")
+      .then((r) => r.json())
+      .then((data) => {
+        const rate = data?.rates?.BRL;
+        if (rate) setUsdBrl(rate);
+      })
+      .catch((err) => pushLog("dollar", err));
+  }, []);
+
   return html`
     <div className="layout">
       <header className="topbar">
@@ -700,6 +824,9 @@ function App() {
           </p>
         </div>
         <div className="actions">
+          <div className="muted small">
+            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotação..."}
+          </div>
           <button
             className="ghost"
             onClick=${handleLoad}
@@ -733,6 +860,7 @@ function App() {
         ${html`<${EarningsTable} rows=${earnings} />`}
         ${html`<${PerformanceTable} rows=${superFilter} />`}
         ${html`<${TopUrlTable} rows=${topUrls} />`}
+        ${html`<${MetaJoinTable} rows=${mergedMeta} />`}
       </main>
     </div>
   `;
