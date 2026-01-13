@@ -1,4 +1,4 @@
-const API_BASE = "https://graph.facebook.com/v18.0";
+const API_BASE = "https://graph.facebook.com/v24.0";
 
 module.exports = async function handler(req, res) {
   const token = process.env.META_ACCESS_TOKEN || process.env.META_TOKEN;
