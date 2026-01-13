@@ -1,7 +1,7 @@
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
 module.exports = async function handler(req, res) {
-  if (req.method !== "GET") {
+  if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
     return;
   }
@@ -12,30 +12,15 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const {
-    start_date,
-    end_date,
-    domain,
-    sort,
-    limit,
-    "domain[]": domainArrayParam,
-  } = req.query || {};
+  const body =
+    typeof req.body === "string"
+      ? JSON.parse(req.body || "{}")
+      : req.body || {};
 
-  const domains = [];
-  if (Array.isArray(domainArrayParam)) {
-    domains.push(...domainArrayParam);
-  } else if (domainArrayParam) {
-    domains.push(domainArrayParam);
-  }
-  if (Array.isArray(domain)) {
-    domains.push(...domain);
-  } else if (domain) {
-    domains.push(domain);
-  }
+  const { start_date, end_date, domain } = body;
   const missing = [];
   if (!start_date) missing.push("start_date");
   if (!end_date) missing.push("end_date");
-  if (!domains.length) missing.push("domain[]");
 
   if (missing.length) {
     res
@@ -44,19 +29,24 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const params = new URLSearchParams();
-  params.set("start_date", start_date);
-  params.set("end_date", end_date);
-  domains.forEach((d) => params.append("domain[]", d));
-  if (limit) params.set("limit", limit);
-  if (sort) params.set("sort", sort);
+  const payload = {
+    start_date,
+    end_date,
+  };
+
+  if (domain) {
+    payload.domain = domain;
+  }
 
   try {
-    const response = await fetch(`${API_BASE}/top-url?${params.toString()}`, {
+    const response = await fetch(`${API_BASE}/earnings`, {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify(payload),
     });
 
     const data = await response.json().catch(() => ({}));

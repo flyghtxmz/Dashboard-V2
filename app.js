@@ -272,6 +272,58 @@ function TopUrlTable({ rows }) {
   `;
 }
 
+function EarningsTable({ rows }) {
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Earnings</span>
+          <h2 className="section-title">Relatório de ganhos</h2>
+        </div>
+        <span className="chip neutral">${rows.length} linhas</span>
+      </div>
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Domínio</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>CTR</th>
+              <th>eCPM</th>
+              <th>Receita cliente</th>
+              <th>Active view</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0
+              ? html`
+                  <tr>
+                    <td colSpan="8" className="muted">Sem dados de ganhos.</td>
+                  </tr>
+                `
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${row.date || idx}>
+                      <td>${row.date || "—"}</td>
+                      <td>${row.domain || "—"}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
+                      <td>${currency.format(row.ecpm || 0)}</td>
+                      <td>${currency.format(row.revenue_client || 0)}</td>
+                      <td>${`${Number(row.active_view || 0).toFixed(2)}%`}</td>
+                    </tr>
+                  `
+                )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function Filters({
   filters,
   setFilters,
@@ -435,6 +487,7 @@ function App() {
   const [keyValue, setKeyValue] = useState([]);
   const [superFilter, setSuperFilter] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
+  const [earnings, setEarnings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState(null);
@@ -476,11 +529,11 @@ function App() {
       const topParams = new URLSearchParams();
       topParams.set("start_date", filters.startDate);
       topParams.set("end_date", filters.endDate);
-      topParams.append("domain[]", filters.domain.trim());
+      topParams.set("domain", filters.domain.trim());
       topParams.set("limit", filters.topLimit || 5);
       topParams.set("sort", filters.sort);
 
-      const [keyRes, superRes, topRes] = await Promise.all([
+      const [keyRes, superRes, topRes, earningsRes] = await Promise.all([
         fetchJson(`${API_BASE}/key-value?${keyParams.toString()}`),
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
@@ -494,17 +547,27 @@ function App() {
           }),
         }),
         fetchJson(`${API_BASE}/top-url?${topParams.toString()}`),
+        fetchJson(`${API_BASE}/earnings`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            domain: filters.domain.trim(),
+          }),
+        }),
       ]);
 
       setKeyValue(keyRes.data || []);
       setSuperFilter(superRes.data || []);
       setTopUrls(topRes.data || []);
+      setEarnings(earningsRes.data || []);
       setLastRefreshed(new Date());
     } catch (err) {
       setError(err.message || "Erro ao buscar dados.");
       setKeyValue([]);
       setSuperFilter([]);
       setTopUrls([]);
+      setEarnings([]);
     } finally {
       setLoading(false);
     }
@@ -573,6 +636,7 @@ function App() {
 
       <main className="grid">
         ${html`<${Metrics} totals=${totals} />`}
+        ${html`<${EarningsTable} rows=${earnings} />`}
         ${html`<${KeyValueTable} rows=${keyValue} />`}
         ${html`<${TopUrlTable} rows=${topUrls} />`}
       </main>
