@@ -629,7 +629,7 @@ function App() {
     reportType: "Analytical",
     topLimit: 5,
     sort: "revenue",
-    metaAccountId: "",
+    metaAccountId: "act_728792692620145",
   });
   const [superFilter, setSuperFilter] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
