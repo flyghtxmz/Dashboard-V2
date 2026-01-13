@@ -777,6 +777,9 @@ function App() {
         fromCustom.revenue_client ?? fromCustom.revenue ?? null;
       const revenueClientBrl =
         revenueClient != null && brlRate ? revenueClient * brlRate : null;
+      const impressionsJoin = toNumber(
+        fromCustom.impressions ?? join.impressions
+      );
 
       const cost = toNumber(row.cost_per_result);
       const spend = toNumber(row.spend);
@@ -797,7 +800,7 @@ function App() {
             ? currencyUSD.format(Number(revenueClient))
             : null,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
-        impressions_joinads: fromCustom.impressions ?? null,
+        impressions_joinads: impressionsJoin || null,
       };
     });
   }, [metaRows, earnings, superFilter, brlRate]);
