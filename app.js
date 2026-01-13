@@ -15,7 +15,12 @@ const number = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 0,
 });
 
-const formatDate = (date) => date.toISOString().slice(0, 10);
+const formatDate = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
 
 const defaultDates = () => {
   const end = new Date();
@@ -179,58 +184,6 @@ function Metrics({ totals }) {
   `;
 }
 
-function KeyValueTable({ rows }) {
-  return html`
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <span className="eyebrow">Breakdown</span>
-          <h2 className="section-title">Receita por key</h2>
-        </div>
-        <span className="chip up">${rows.length} linhas</span>
-      </div>
-      <div className="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Domínio</th>
-              <th>Custom value</th>
-              <th>Impressões</th>
-              <th>Cliques</th>
-              <th>Receita bruta</th>
-              <th>Receita cliente</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.length === 0
-              ? html`
-                  <tr>
-                    <td colSpan="7" className="muted">
-                      Nenhum dado retornado para o filtro.
-                    </td>
-                  </tr>
-                `
-              : rows.map(
-                  (row, idx) => html`
-                    <tr key=${`${row.date}-${row.custon_value || row.custom_value || idx}`}>
-                      <td>${row.date || "—"}</td>
-                      <td>${row.name || row.domain || "—"}</td>
-                      <td>${row.custon_value || row.custom_value || "—"}</td>
-                      <td>${number.format(row.impressions || 0)}</td>
-                      <td>${number.format(row.clicks || 0)}</td>
-                      <td>${currency.format(row.earnings || 0)}</td>
-                      <td>${currency.format(row.earnings_client || 0)}</td>
-                    </tr>
-                  `
-                )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
-}
-
 function TopUrlTable({ rows }) {
   return html`
     <section className="card">
@@ -338,6 +291,56 @@ function EarningsTable({ rows }) {
   `;
 }
 
+function PerformanceTable({ rows }) {
+  return html`
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Performance</span>
+          <h2 className="section-title">Resumo por domínio</h2>
+        </div>
+        <span className="chip neutral">${rows.length} linhas</span>
+      </div>
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Domínio</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>CTR</th>
+              <th>eCPM</th>
+              <th>Receita</th>
+              <th>Receita cliente</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0
+              ? html`
+                  <tr>
+                    <td colSpan="7" className="muted">Sem dados para o período.</td>
+                  </tr>
+                `
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${row.domain || idx}>
+                      <td>${row.domain || "—"}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
+                      <td>${currency.format(row.ecpm || 0)}</td>
+                      <td>${currency.format(row.revenue || 0)}</td>
+                      <td>${currency.format(row.revenue_client || 0)}</td>
+                    </tr>
+                  `
+                )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function Filters({
   filters,
   setFilters,
@@ -375,12 +378,6 @@ function Filters({
     }));
   };
 
-  const update = (key, value) =>
-    setFilters((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-
   return html`
     <section className="card">
       <div className="card-head">
@@ -415,7 +412,7 @@ function Filters({
             ? html`
                 <select
                   value=${filters.domain}
-                  onChange=${(e) => update("domain", e.target.value)}
+                  onChange=${(e) => setFilters((p) => ({ ...p, domain: e.target.value }))}
                   disabled=${domainsLoading}
                 >
                   <option value="">Selecione</option>
@@ -433,7 +430,7 @@ function Filters({
                   type="text"
                   placeholder="ex: exemplo.com.br"
                   value=${filters.domain}
-                  onChange=${(e) => update("domain", e.target.value)}
+                  onChange=${(e) => setFilters((p) => ({ ...p, domain: e.target.value }))}
                 />
               `}
           ${domainsLoading
@@ -441,28 +438,10 @@ function Filters({
             : null}
         </label>
         <label className="field">
-          <span>Custom key</span>
-          <input
-            type="text"
-            value=${filters.customKey}
-            placeholder="utm_campaign"
-            onChange=${(e) => update("customKey", e.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>Custom value</span>
-          <input
-            type="text"
-            value=${filters.customValue}
-            placeholder="opcional"
-            onChange=${(e) => update("customValue", e.target.value)}
-          />
-        </label>
-        <label className="field">
           <span>Tipo de relatório</span>
           <select
             value=${filters.reportType}
-            onChange=${(e) => update("reportType", e.target.value)}
+            onChange=${(e) => setFilters((p) => ({ ...p, reportType: e.target.value }))}
           >
             <option value="Analytical">Analytical</option>
             <option value="Synthetic">Synthetic</option>
@@ -475,12 +454,16 @@ function Filters({
             min="1"
             max="50"
             value=${filters.topLimit}
-            onChange=${(e) => update("topLimit", Number(e.target.value || 5))}
+            onChange=${(e) =>
+              setFilters((p) => ({ ...p, topLimit: Number(e.target.value || 5) }))}
           />
         </label>
         <label className="field">
           <span>Ordenar por</span>
-          <select value=${filters.sort} onChange=${(e) => update("sort", e.target.value)}>
+          <select
+            value=${filters.sort}
+            onChange=${(e) => setFilters((p) => ({ ...p, sort: e.target.value }))}
+          >
             <option value="revenue">Receita</option>
             <option value="impressions">Impressões</option>
             <option value="clicks">Cliques</option>
@@ -573,12 +556,9 @@ function App() {
     ...defaultDates(),
     domain: "",
     reportType: "Analytical",
-    customKey: "utm_campaign",
-    customValue: "",
     topLimit: 5,
     sort: "revenue",
   });
-  const [keyValue, setKeyValue] = useState([]);
   const [superFilter, setSuperFilter] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
   const [earnings, setEarnings] = useState([]);
@@ -628,15 +608,6 @@ function App() {
 
     try {
       const keyParams = new URLSearchParams();
-      keyParams.set("start_date", filters.startDate);
-      keyParams.set("end_date", filters.endDate);
-      keyParams.set("domain", filters.domain.trim());
-      keyParams.set("report_type", filters.reportType);
-      keyParams.set("custom_key", customKey);
-      if (filters.customValue) {
-        keyParams.set("custom_value", filters.customValue);
-      }
-
       const topParams = new URLSearchParams();
       topParams.set("start_date", filters.startDate);
       topParams.set("end_date", filters.endDate);
@@ -644,16 +615,13 @@ function App() {
       topParams.set("limit", filters.topLimit || 5);
       topParams.set("sort", filters.sort);
 
-      const [keyRes, superRes, topRes, earningsRes] = await Promise.all([
-        fetchJson(`${API_BASE}/key-value?${keyParams.toString()}`),
+      const [superRes, topRes, earningsRes] = await Promise.all([
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
             start_date: filters.startDate,
             end_date: filters.endDate,
             domain: [filters.domain.trim()],
-            custom_key: filters.customKey || undefined,
-            custom_value: filters.customValue || undefined,
             group: [],
           }),
         }),
@@ -667,7 +635,6 @@ function App() {
         ),
       ]);
 
-      setKeyValue(keyRes.data || []);
       setSuperFilter(superRes.data || []);
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
@@ -676,7 +643,6 @@ function App() {
       const msg = formatError(err) || "Erro ao buscar dados.";
       setError(msg);
       pushLog("load", err);
-      setKeyValue([]);
       setSuperFilter([]);
       setTopUrls([]);
       setEarnings([]);
@@ -753,7 +719,7 @@ function App() {
       <main className="grid">
         ${html`<${Metrics} totals=${totals} />`}
         ${html`<${EarningsTable} rows=${earnings} />`}
-        ${html`<${KeyValueTable} rows=${keyValue} />`}
+        ${html`<${PerformanceTable} rows=${superFilter} />`}
         ${html`<${TopUrlTable} rows=${topUrls} />`}
       </main>
     </div>
@@ -765,3 +731,4 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
