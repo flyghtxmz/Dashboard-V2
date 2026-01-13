@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "https://esm.sh/react@18.2.0";
+import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
@@ -272,7 +272,14 @@ function TopUrlTable({ rows }) {
   `;
 }
 
-function Filters({ filters, setFilters, onSubmit, loading }) {
+function Filters({
+  filters,
+  setFilters,
+  onSubmit,
+  loading,
+  domains,
+  domainsLoading,
+}) {
   const update = (key, value) =>
     setFilters((prev) => ({
       ...prev,
@@ -309,12 +316,34 @@ function Filters({ filters, setFilters, onSubmit, loading }) {
         </label>
         <label className="field">
           <span>Domínio *</span>
-          <input
-            type="text"
-            placeholder="ex: exemplo.com.br"
-            value=${filters.domain}
-            onChange=${(e) => update("domain", e.target.value)}
-          />
+          ${domains && domains.length > 0
+            ? html`
+                <select
+                  value=${filters.domain}
+                  onChange=${(e) => update("domain", e.target.value)}
+                  disabled=${domainsLoading}
+                >
+                  <option value="">Selecione</option>
+                  ${domains.map(
+                    (d) => html`
+                      <option value=${d} key=${d}>
+                        ${d}
+                      </option>
+                    `
+                  )}
+                </select>
+              `
+            : html`
+                <input
+                  type="text"
+                  placeholder="ex: exemplo.com.br"
+                  value=${filters.domain}
+                  onChange=${(e) => update("domain", e.target.value)}
+                />
+              `}
+          ${domainsLoading
+            ? html`<span className="muted small">Carregando domínios…</span>`
+            : null}
         </label>
         <label className="field">
           <span>Custom key</span>
@@ -514,7 +543,11 @@ function App() {
       params.set("start_date", filters.startDate);
       params.set("end_date", filters.endDate);
       const res = await fetchJson(`${API_BASE}/domains?${params.toString()}`);
-      setDomains(res.data || []);
+      const list = res.data || [];
+      setDomains(list);
+      if (!filters.domain && list.length > 0) {
+        setFilters((prev) => ({ ...prev, domain: list[0] }));
+      }
     } catch (err) {
       setDomainsError(err.message || "Erro ao listar domínios.");
       setDomains([]);
@@ -522,6 +555,11 @@ function App() {
       setDomainsLoading(false);
     }
   };
+
+  useEffect(() => {
+    handleLoadDomains();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return html`
     <div className="layout">
@@ -550,6 +588,8 @@ function App() {
           setFilters=${setFilters}
           onSubmit=${handleLoad}
           loading=${loading}
+          domains=${domains}
+          domainsLoading=${domainsLoading}
         />
       `}
 
