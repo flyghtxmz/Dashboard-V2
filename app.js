@@ -365,11 +365,18 @@ function Filters({
     });
   };
 
-  const setPreset = (daysAgo) => {
+  const setPreset = (preset) => {
     const end = new Date();
     end.setHours(0, 0, 0, 0);
-    end.setDate(end.getDate() - daysAgo);
-    const start = new Date(end);
+    let start = new Date(end);
+
+    if (preset === "yesterday") {
+      end.setDate(end.getDate() - 1);
+      start = new Date(end);
+    } else if (preset === "last7") {
+      start.setDate(end.getDate() - 6); // inclui hoje e 6 dias anteriores
+    }
+
     const startStr = formatDate(start);
     const endStr = formatDate(end);
     setFilters((prev) => ({
@@ -478,10 +485,10 @@ function Filters({
         <button className="ghost" onClick=${() => setPreset(0)} disabled=${loading}>
           Hoje
         </button>
-        <button className="ghost" onClick=${() => setPreset(1)} disabled=${loading}>
+        <button className="ghost" onClick=${() => setPreset("yesterday")} disabled=${loading}>
           Ontem
         </button>
-        <button className="ghost" onClick=${() => setPreset(6)} disabled=${loading}>
+        <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
           Últimos 7 dias
         </button>
       </div>
