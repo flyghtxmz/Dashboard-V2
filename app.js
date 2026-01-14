@@ -515,6 +515,12 @@ function LogsCard({ logs, onClear }) {
   `;
 }
 
+const objectiveMap = {
+  OUTCOME_SALES: "Vendas",
+  LINK_CLICKS: "Cliques no link",
+};
+const formatObjective = (value) => objectiveMap[value] || value || "-";
+
 function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
@@ -569,7 +575,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                   (row, idx) => html`
                     <tr key=${idx}>
                       <td>${asText(row.date)}</td>
-                      <td>${asText(row.objective)}</td>
+                      <td>${formatObjective(row.objective)}</td>
                       <td>${asText(row.adset_name)}</td>
                       <td>${asText(row.ad_name)}</td>
                       <td>${asText(row.cost_per_result)}</td>
