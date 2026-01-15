@@ -165,15 +165,6 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       tone: "primary",
     },
     {
-      label: "RPM cliente",
-      value: currencyUSD.format(
-        totals.impressions
-          ? ((totals.revenueClient || 0) / totals.impressions) * 1000
-          : 0
-      ),
-      helper: "Receita cliente / mil impressões",
-    },
-    {
       label: "Receita cliente (BRL)",
       value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
       helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotação",
@@ -570,7 +561,6 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               <th>ROAS</th>
               <th>Receita JoinAds (cliente)</th>
               <th>eCPM JoinAds (cliente)</th>
-              <th>RPM JoinAds (cliente)</th>
               <th>Impressões JoinAds</th>
             </tr>
           </thead>
@@ -598,11 +588,6 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       </td>
                       <td>
                         ${row.ecpm_client != null ? asText(row.ecpm_client) : "-"}
-                      </td>
-                      <td>
-                        ${row.rpm_client_joinads != null
-                          ? asText(row.rpm_client_joinads)
-                          : "-"}
                       </td>
                       <td>
                         ${row.impressions_joinads != null
@@ -808,10 +793,6 @@ function App() {
         revenueClientBrl != null && spend > 0
           ? revenueClientBrl / spend
           : null;
-      const rpmClient =
-        impressionsJoin > 0 && revenueClient != null
-          ? (revenueClient / impressionsJoin) * 1000
-          : null;
 
       return {
         ...row,
@@ -826,8 +807,6 @@ function App() {
             : null,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
-        rpm_client_joinads:
-          rpmClient != null ? currencyUSD.format(rpmClient) : null,
       };
     });
   }, [metaRows, earnings, superFilter, brlRate]);
