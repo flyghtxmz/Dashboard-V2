@@ -515,6 +515,61 @@ function LogsCard({ logs, onClear }) {
   `;
 }
 
+function TopUrlTable({ rows }) {
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">URLs</span>
+          <h2 className="section-title">Top URLs com parâmetros</h2>
+        </div>
+        <span className="chip neutral">${rows.length} itens</span>
+      </div>
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>URL</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>CTR</th>
+              <th>eCPM</th>
+              <th>Receita</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0
+              ? html`
+                  <tr>
+                    <td colSpan="7" className="muted">
+                      Nenhuma URL para este filtro.
+                    </td>
+                  </tr>
+                `
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${row.url || idx}>
+                      <td>${idx + 1}</td>
+                      <td className="url-cell">
+                        <div className="url">${row.url || "-"}</div>
+                        <div className="muted small">${row.domain || ""}</div>
+                      </td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
+                      <td>${currencyUSD.format(row.ecpm || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue || 0)}</td>
+                    </tr>
+                  `
+                )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 const objectiveMap = {
   OUTCOME_SALES: "Vendas",
   LINK_CLICKS: "Cliques no link",
@@ -613,6 +668,7 @@ function App() {
     adsetFilter: "",
   });
   const [superFilter, setSuperFilter] = useState([]);
+  const [topUrls, setTopUrls] = useState([]);
   const [earnings, setEarnings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -622,6 +678,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [metaRows, setMetaRows] = useState([]);
   const [usdBrl, setUsdBrl] = useState(null);
+  const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -673,7 +730,7 @@ function App() {
     setError("");
 
     try {
-      const [superRes, earningsRes] = await Promise.all([
+      const [superRes, topRes, earningsRes] = await Promise.all([
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -684,6 +741,15 @@ function App() {
             group: ["domain", "custom_value"],
           }),
         }),
+        fetchJson(
+          `${API_BASE}/top-url?${new URLSearchParams({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": filters.domain.trim(),
+            limit: 100,
+            sort: "revenue",
+          }).toString()}`
+        ),
         fetchJson(
           `${API_BASE}/earnings?${new URLSearchParams({
             start_date: filters.startDate,
@@ -708,6 +774,7 @@ function App() {
       }
 
       setSuperFilter(superRes.data || []);
+      setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setLastRefreshed(new Date());
     } catch (err) {
@@ -715,6 +782,7 @@ function App() {
       setError(msg);
       pushLog("load", err);
       setSuperFilter([]);
+      setTopUrls([]);
       setEarnings([]);
       setMetaRows([]);
     } finally {
@@ -855,6 +923,21 @@ function App() {
         </div>
       </header>
 
+      <div className="tabs">
+        <button
+          className=${`tab ${activeTab === "dashboard" ? "active" : ""}`}
+          onClick=${() => setActiveTab("dashboard")}
+        >
+          Dashboard
+        </button>
+        <button
+          className=${`tab ${activeTab === "urls" ? "active" : ""}`}
+          onClick=${() => setActiveTab("urls")}
+        >
+          URLs com parâmetros
+        </button>
+      </div>
+
       ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
 
       ${html`
@@ -868,22 +951,30 @@ function App() {
         />
       `}
 
-      <main className="grid">
-        ${html`<${Metrics}
-          totals=${totals}
-          usdToBrl=${brlRate}
-          metaSpendBrl=${metaTotals.spendBrl}
-        />`}
-        ${html`
-          <${MetaJoinTable}
-            rows=${filteredMeta}
-            adsetFilter=${filters.adsetFilter}
-            onFilterChange=${(value) =>
-              setFilters((prev) => ({ ...prev, adsetFilter: value }))}
-          />
-        `}
-        ${html`<${EarningsTable} rows=${earnings} />`}
-      </main>
+      ${activeTab === "dashboard"
+        ? html`
+            <main className="grid">
+              ${html`<${Metrics}
+                totals=${totals}
+                usdToBrl=${brlRate}
+                metaSpendBrl=${metaTotals.spendBrl}
+              />`}
+              ${html`
+                <${MetaJoinTable}
+                  rows=${filteredMeta}
+                  adsetFilter=${filters.adsetFilter}
+                  onFilterChange=${(value) =>
+                    setFilters((prev) => ({ ...prev, adsetFilter: value }))}
+                />
+              `}
+              ${html`<${EarningsTable} rows=${earnings} />`}
+            </main>
+          `
+        : html`
+            <main className="grid">
+              ${html`<${TopUrlTable} rows=${topUrls} />`}
+            </main>
+          `}
 
       ${html`<${LogsCard} logs=${logs} onClear=${() => setLogs([])} />`}
     </div>

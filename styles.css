@@ -321,6 +321,30 @@ tbody tr:last-child td {
   font-weight: 700;
 }
 
+.tabs {
+  display: inline-flex;
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+.tab {
+  border: 1px solid var(--border);
+  background: #f7f8ff;
+  color: var(--muted);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.tab:not(.active):hover {
+  background: #eef0ff;
+  color: var(--ink);
+}
+
 @media (max-width: 900px) {
   .card.wide {
     grid-column: span 1;
