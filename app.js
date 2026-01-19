@@ -161,13 +161,13 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Receita cliente",
       value: currencyUSD.format(totals.revenueClient || 0),
-      helper: "ApÃ³s revshare",
+      helper: "Após revshare",
       tone: "primary",
     },
     {
       label: "Receita cliente (BRL)",
       value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
-      helper: usdToBrl ? "ConversÃ£o USD->BRL" : "Aguardando cotaÃ§Ã£o",
+      helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotaÃ§Ã£o",
       tone: "primary",
     },
     {
@@ -193,19 +193,19 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       helper: "Valor total",
     },
     {
-      label: "ImpressÃµes",
+      label: "Impressões",
       value: number.format(totals.impressions || 0),
       helper: "Volume exibido",
     },
     {
       label: "Cliques",
       value: number.format(totals.clicks || 0),
-      helper: "InteraÃ§Ãµes",
+      helper: "Interações",
     },
     {
       label: "CTR",
       value: `${(totals.ctr || 0).toFixed(2)}%`,
-      helper: "Cliques / impressÃµes",
+      helper: "Cliques / Impressões",
     },
     {
       label: "eCPM cliente",
@@ -220,7 +220,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Active view",
       value: `${(totals.activeView || 0).toFixed(1)}%`,
-      helper: "Visibilidade mÃ©dia",
+      helper: "Visibilidade média",
     },
   ];
 
@@ -263,8 +263,8 @@ function EarningsTable({ rows }) {
           <thead>
             <tr>
               <th>Data</th>
-              <th>DomÃ­nio</th>
-              <th>ImpressÃµes</th>
+              <th>Domínio</th>
+              <th>Impressões</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -375,7 +375,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>DomÃ­nio *</span>
+          <span>Domínio *</span>
           ${domains && domains.length > 0
             ? html`
                 <select
@@ -404,7 +404,7 @@ function Filters({
                 />
               `}
           ${domainsLoading
-            ? html`<span className="muted small">Carregando domÃ­nios...</span>`
+            ? html`<span className="muted small">Carregando Domínios...</span>`
             : null}
         </label>
         <label className="field">
@@ -442,10 +442,10 @@ function Filters({
           Ontem
         </button>
         <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
-          Ãšltimos 7 dias
+          Últimos 7 dias
         </button>
         <button className="ghost" onClick=${() => setPreset("last15")} disabled=${loading}>
-          Ãšltimos 15 dias
+          Últimos 15 dias
         </button>
       </div>
     </section>
@@ -471,7 +471,7 @@ function Status({ error, lastRefreshed }) {
 
   return html`
     <div className="status neutral">
-      Informe o domÃ­nio e clique em "Carregar dados".
+      Informe o Domínio e clique em "Carregar dados".
     </div>
   `;
 }
@@ -531,7 +531,7 @@ function TopUrlTable({ rows, totals }) {
             <tr>
               <th>#</th>
               <th>URL</th>
-              <th>ImpressÃµes</th>
+              <th>Impressões</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -598,7 +598,7 @@ function ParamTable({ rows }) {
             <tr>
               <th>Chave</th>
               <th>Valor</th>
-              <th>ImpressÃµes</th>
+              <th>Impressões</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>OcorrÃªncias</th>
@@ -784,12 +784,12 @@ function App() {
 
   const handleLoad = async () => {
     if (domainsLoading && !filters.domain.trim()) {
-      setError("Aguarde carregar os domÃ­nios ou selecione manualmente.");
+      setError("Aguarde carregar os Domínios ou selecione manualmente.");
       return;
     }
 
     if (!filters.domain.trim()) {
-      setError("Selecione um domÃ­nio para consultar.");
+      setError("Selecione um Domínio para consultar.");
       return;
     }
 
@@ -960,7 +960,7 @@ function App() {
         setFilters((prev) => ({ ...prev, domain: list[0] }));
       }
     } catch (err) {
-      const msg = formatError(err) || "Erro ao listar domÃ­nios.";
+      const msg = formatError(err) || "Erro ao listar Domínios.";
       setError(msg);
       pushLog("domains", err);
       setDomains([]);
@@ -1246,6 +1246,11 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
+
+
+
+
 
 
 
