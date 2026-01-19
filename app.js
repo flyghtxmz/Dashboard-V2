@@ -1014,46 +1014,78 @@ function App() {
   }, [topUrls]);
 
   const paramStats = useMemo(() => {
-    if (paramPairs?.length) {
-      return [...paramPairs].sort((a, b) => (b.impressions || 0) - (a.impressions || 0));
-    }
-    // fallback: parse URLs se key-value não retornar nada
     const map = new Map();
+
+    // 1) Dados do key-value (utm_campaign etc.)
+    (paramPairs || []).forEach((row) => {
+      const k = `${row.key}=${row.value}`;
+      if (!map.has(k)) {
+        map.set(k, {
+          key: row.key,
+          value: row.value,
+          impressions: 0,
+          clicks: 0,
+          revenue: 0,
+          count: 0,
+        });
+      }
+      const item = map.get(k);
+      item.impressions += Number(row.impressions || 0);
+      item.clicks += Number(row.clicks || 0);
+      item.revenue += Number(row.revenue || 0);
+      item.count += Number(row.count || 0);
+    });
+
+    // 2) Fallback/merge com params das URLs (para pegar utm_source/medium/etc.)
     (topUrls || []).forEach((row) => {
+      const raw = row.url || "";
+      const hasProto = raw.startsWith("http");
+      const base = hasProto ? undefined : "https://dummy.com";
       try {
-        const raw = row.url || "";
-        const hasProto = raw.startsWith("http");
-        const base = hasProto ? undefined : "https://dummy.com";
-        let parsed = null;
-        try {
-          parsed = new URL(raw, base);
-          parsed.searchParams.forEach((value, key) => {
+        const parsed = new URL(raw, base);
+        parsed.searchParams.forEach((value, key) => {
+          const k = `${key}=${value}`;
+          if (!map.has(k)) {
+            map.set(k, {
+              key,
+              value,
+              impressions: 0,
+              clicks: 0,
+              revenue: 0,
+              count: 0,
+            });
+          }
+          map.get(k).count += 1;
+        });
+      } catch (err) {
+        const idx = raw.indexOf("?");
+        if (idx >= 0) {
+          const query = raw.slice(idx + 1);
+          query.split("&").forEach((pair) => {
+            if (!pair) return;
+            const [key, value = ""] = pair.split("=");
             const k = `${key}=${value}`;
             if (!map.has(k)) {
-              map.set(k, { key, value, count: 0 });
+              map.set(k, {
+                key,
+                value,
+                impressions: 0,
+                clicks: 0,
+                revenue: 0,
+                count: 0,
+              });
             }
             map.get(k).count += 1;
           });
-        } catch (err) {
-          const idx = raw.indexOf("?");
-          if (idx >= 0) {
-            const query = raw.slice(idx + 1);
-            query.split("&").forEach((pair) => {
-              if (!pair) return;
-              const [key, value = ""] = pair.split("=");
-              const k = `${key}=${value}`;
-              if (!map.has(k)) {
-                map.set(k, { key, value, count: 0 });
-              }
-              map.get(k).count += 1;
-            });
-          }
         }
-      } catch (e) {
-        // ignora URLs malformadas
       }
     });
-    return Array.from(map.values()).sort((a, b) => b.count - a.count);
+
+    return Array.from(map.values()).sort((a, b) => {
+      const impDiff = (b.impressions || 0) - (a.impressions || 0);
+      if (impDiff !== 0) return impDiff;
+      return (b.count || 0) - (a.count || 0);
+    });
   }, [topUrls, paramPairs]);
 
   useEffect(() => {
