@@ -793,8 +793,39 @@ function App() {
     setError("");
 
     try {
-      const [superRes, topRes, earningsRes] = await Promise.all([
-        fetchJson(`${API_BASE}/super-filter`, {
+      const topPromise = fetchJson(
+        `${API_BASE}/top-url?${new URLSearchParams({
+          start_date: filters.startDate,
+          end_date: filters.endDate,
+          "domain[]": filters.domain.trim(),
+          limit: 500,
+          sort: "revenue",
+        }).toString()}`
+      );
+
+      const earningsPromise = fetchJson(
+        `${API_BASE}/earnings?${new URLSearchParams({
+          start_date: filters.startDate,
+          end_date: filters.endDate,
+          domain: filters.domain.trim(),
+        }).toString()}`
+      );
+
+      let superRes;
+      try {
+        superRes = await fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_content",
+            group: ["domain", "custom_value"],
+          }),
+        });
+      } catch (err) {
+        pushLog("super-filter", err);
+        superRes = await fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
             start_date: filters.startDate,
@@ -803,23 +834,12 @@ function App() {
             custom_key: "utm_campaign",
             group: ["domain", "custom_value"],
           }),
-        }),
-        fetchJson(
-          `${API_BASE}/top-url?${new URLSearchParams({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": filters.domain.trim(),
-            limit: 500,
-            sort: "revenue",
-          }).toString()}`
-        ),
-        fetchJson(
-          `${API_BASE}/earnings?${new URLSearchParams({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            domain: filters.domain.trim(),
-          }).toString()}`
-        ),
+        });
+      }
+
+      const [topRes, earningsRes] = await Promise.all([
+        topPromise,
+        earningsPromise,
       ]);
 
       // key-value para coletar UTMs usadas
@@ -948,7 +968,7 @@ function App() {
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
       const join = earningsByDate[date] || {};
-      const fromCustom = superByCustom[row.adset_name || ""] || {};
+      const fromCustom = superByCustom[row.ad_name || ""] || superByCustom[row.adset_name || ""] || {};
       const ecpmClient =
         fromCustom.ecpm_client ??
         fromCustom.ecpm ??
