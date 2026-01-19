@@ -176,6 +176,16 @@ button.ghost {
   background: #eef0f7;
   color: #4f5b66;
 }
+.chip.warn {
+  background: #fff4e5;
+  color: #a35b00;
+  border: 1px solid #f1c27d;
+}
+.chip-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 
 .metrics-grid {
   display: grid;

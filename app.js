@@ -652,7 +652,14 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
           <span className="eyebrow">Meta x JoinAds</span>
           <h2 className="section-title">Campanhas</h2>
         </div>
-        <span className="chip neutral">${rows.length} linhas</span>
+        <div className="chip-group">
+          <span className="chip neutral">${rows.length} linhas</span>
+          <span className="chip ${rows.find((r) => r.data_level !== "utm_content") ? "warn" : "neutral"}">
+            ${rows.find((r) => r.data_level !== "utm_content")
+              ? "Dados por conjunto (fallback)"
+              : "Dados por anúncio"}
+          </span>
+        </div>
       </div>
       <div className="filters">
         <label className="field">
@@ -716,6 +723,11 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                 )}
           </tbody>
         </table>
+        ${rows.find((r) => r.data_level !== "utm_content")
+          ? html`<div className="muted small" style=${{ marginTop: "8px" }}>
+              Alguns valores vieram agregados por conjunto (utm_campaign) por falta de UTM de anúncio.
+            </div>`
+          : null}
       </div>
     </section>
   `;
@@ -981,10 +993,7 @@ function App() {
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
       const join = earningsByDate[date] || {};
-      const fromCustom =
-        superByCustom[row.ad_name || ""] ||
-        (superKey === "utm_content" ? null : superByCustom[row.adset_name || ""]) ||
-        {};
+      const fromCustom = superByCustom[row.ad_name || ""] || {};
       const ecpmClient =
         fromCustom.ecpm_client ??
         fromCustom.ecpm ??
@@ -1019,9 +1028,10 @@ function App() {
             : null,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
+        data_level: superKey,
       };
     });
-  }, [metaRows, earnings, superFilter, brlRate]);
+  }, [metaRows, earnings, superFilter, brlRate, superKey]);
 
   const filteredMeta = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
