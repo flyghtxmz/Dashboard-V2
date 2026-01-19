@@ -836,6 +836,24 @@ function App() {
           }),
         });
       }
+      // Se a consulta por anúncio não retornar linhas, faz fallback explícito por campanha
+      if (!superRes?.data?.length) {
+        try {
+          const fallback = await fetchJson(`${API_BASE}/super-filter`, {
+            method: "POST",
+            body: JSON.stringify({
+              start_date: filters.startDate,
+              end_date: filters.endDate,
+              "domain[]": [filters.domain.trim()],
+              custom_key: "utm_campaign",
+              group: ["domain", "custom_value"],
+            }),
+          });
+          superRes = fallback;
+        } catch (err) {
+          pushLog("super-filter-fallback", err);
+        }
+      }
 
       const [topRes, earningsRes] = await Promise.all([
         topPromise,
