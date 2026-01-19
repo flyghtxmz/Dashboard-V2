@@ -742,6 +742,7 @@ function App() {
   const [usdBrl, setUsdBrl] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
   const [paramPairs, setParamPairs] = useState([]);
+  const [superKey, setSuperKey] = useState("utm_content");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -812,6 +813,8 @@ function App() {
       );
 
       let superRes;
+      let superRes;
+      let superKeyUsed = "utm_content";
       try {
         superRes = await fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
@@ -825,18 +828,8 @@ function App() {
         });
       } catch (err) {
         pushLog("super-filter", err);
-        superRes = await fetchJson(`${API_BASE}/super-filter`, {
-          method: "POST",
-          body: JSON.stringify({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": [filters.domain.trim()],
-            custom_key: "utm_campaign",
-            group: ["domain", "custom_value"],
-          }),
-        });
       }
-      // Se a consulta por anúncio não retornar linhas, faz fallback explícito por campanha
+      // Fallback se deu erro ou veio vazio
       if (!superRes?.data?.length) {
         try {
           const fallback = await fetchJson(`${API_BASE}/super-filter`, {
@@ -850,6 +843,7 @@ function App() {
             }),
           });
           superRes = fallback;
+          superKeyUsed = "utm_campaign";
         } catch (err) {
           pushLog("super-filter-fallback", err);
         }
@@ -919,6 +913,7 @@ function App() {
       }
 
       setSuperFilter(superRes.data || []);
+      setSuperKey(superKeyUsed);
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setLastRefreshed(new Date());
@@ -986,7 +981,10 @@ function App() {
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
       const join = earningsByDate[date] || {};
-      const fromCustom = superByCustom[row.ad_name || ""] || superByCustom[row.adset_name || ""] || {};
+      const fromCustom =
+        superByCustom[row.ad_name || ""] ||
+        (superKey === "utm_content" ? null : superByCustom[row.adset_name || ""]) ||
+        {};
       const ecpmClient =
         fromCustom.ecpm_client ??
         fromCustom.ecpm ??
