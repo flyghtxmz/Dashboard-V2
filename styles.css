@@ -262,6 +262,10 @@ tbody tr:hover td {
 tbody tr:last-child td {
   padding-bottom: 4px;
 }
+.summary-row td {
+  border-top: 2px solid var(--border);
+  background: #f5f7ff;
+}
 
 .url-cell .url {
   word-break: break-all;

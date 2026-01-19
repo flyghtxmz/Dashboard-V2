@@ -515,7 +515,7 @@ function LogsCard({ logs, onClear }) {
   `;
 }
 
-function TopUrlTable({ rows }) {
+function TopUrlTable({ rows, totals }) {
   return html`
     <section className="card wide">
       <div className="card-head">
@@ -563,6 +563,18 @@ function TopUrlTable({ rows }) {
                     </tr>
                   `
                 )}
+            ${rows.length
+              ? html`
+                  <tr className="summary-row">
+                    <td colspan="2"><strong>Totais</strong></td>
+                    <td><strong>${number.format(totals.impressions || 0)}</strong></td>
+                    <td><strong>${number.format(totals.clicks || 0)}</strong></td>
+                    <td><strong>${`${Number(totals.ctr || 0).toFixed(2)}%`}</strong></td>
+                    <td><strong>${currencyUSD.format(totals.ecpm || 0)}</strong></td>
+                    <td><strong>${currencyUSD.format(totals.revenue || 0)}</strong></td>
+                  </tr>
+                `
+              : null}
           </tbody>
         </table>
       </div>
@@ -931,19 +943,57 @@ function App() {
     );
   }, [mergedMeta, filters.adsetFilter]);
 
+  const topUrlTotals = useMemo(() => {
+    if (!topUrls?.length) {
+      return { impressions: 0, clicks: 0, ctr: 0, ecpm: 0, revenue: 0 };
+    }
+    const sum = topUrls.reduce(
+      (acc, row) => {
+        acc.impressions += Number(row.impressions || 0);
+        acc.clicks += Number(row.clicks || 0);
+        acc.revenue += Number(row.revenue || 0);
+        return acc;
+      },
+      { impressions: 0, clicks: 0, revenue: 0 }
+    );
+    sum.ctr = sum.impressions ? (sum.clicks / sum.impressions) * 100 : 0;
+    sum.ecpm = sum.impressions ? (sum.revenue / sum.impressions) * 1000 : 0;
+    return sum;
+  }, [topUrls]);
+
   const paramStats = useMemo(() => {
     const map = new Map();
     (topUrls || []).forEach((row) => {
       try {
-        const base = row.url?.startsWith("http") ? undefined : "https://dummy.com";
-        const u = new URL(row.url || "", base);
-        u.searchParams.forEach((value, key) => {
-          const k = `${key}=${value}`;
-          if (!map.has(k)) {
-            map.set(k, { key, value, count: 0 });
+        const raw = row.url || "";
+        const hasProto = raw.startsWith("http");
+        const base = hasProto ? undefined : "https://dummy.com";
+        let parsed = null;
+        try {
+          parsed = new URL(raw, base);
+          parsed.searchParams.forEach((value, key) => {
+            const k = `${key}=${value}`;
+            if (!map.has(k)) {
+              map.set(k, { key, value, count: 0 });
+            }
+            map.get(k).count += 1;
+          });
+        } catch (err) {
+          // fallback manual parse
+          const idx = raw.indexOf("?");
+          if (idx >= 0) {
+            const query = raw.slice(idx + 1);
+            query.split("&").forEach((pair) => {
+              if (!pair) return;
+              const [key, value = ""] = pair.split("=");
+              const k = `${key}=${value}`;
+              if (!map.has(k)) {
+                map.set(k, { key, value, count: 0 });
+              }
+              map.get(k).count += 1;
+            });
           }
-          map.get(k).count += 1;
-        });
+        }
       } catch (e) {
         // ignora URLs malformadas
       }
@@ -1036,7 +1086,7 @@ function App() {
           `
         : html`
             <main className="grid">
-              ${html`<${TopUrlTable} rows=${topUrls} />`}
+              ${html`<${TopUrlTable} rows=${topUrls} totals=${topUrlTotals} />`}
               ${html`<${ParamTable} rows=${paramStats} />`}
             </main>
           `}
