@@ -570,6 +570,50 @@ function TopUrlTable({ rows }) {
   `;
 }
 
+function ParamTable({ rows }) {
+  return html`
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Parâmetros</span>
+          <h2 className="section-title">UTMs e query params vistos</h2>
+        </div>
+        <span className="chip neutral">${rows.length} pares</span>
+      </div>
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Chave</th>
+              <th>Valor</th>
+              <th>Ocorrências</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0
+              ? html`
+                  <tr>
+                    <td colSpan="3" className="muted">
+                      Nenhum parâmetro encontrado neste intervalo.
+                    </td>
+                  </tr>
+                `
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${idx}>
+                      <td>${row.key}</td>
+                      <td>${row.value}</td>
+                      <td>${number.format(row.count)}</td>
+                    </tr>
+                  `
+                )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 const objectiveMap = {
   OUTCOME_SALES: "Vendas",
   LINK_CLICKS: "Cliques no link",
@@ -746,7 +790,7 @@ function App() {
             start_date: filters.startDate,
             end_date: filters.endDate,
             "domain[]": filters.domain.trim(),
-            limit: 100,
+            limit: 500,
             sort: "revenue",
           }).toString()}`
         ),
@@ -887,6 +931,26 @@ function App() {
     );
   }, [mergedMeta, filters.adsetFilter]);
 
+  const paramStats = useMemo(() => {
+    const map = new Map();
+    (topUrls || []).forEach((row) => {
+      try {
+        const base = row.url?.startsWith("http") ? undefined : "https://dummy.com";
+        const u = new URL(row.url || "", base);
+        u.searchParams.forEach((value, key) => {
+          const k = `${key}=${value}`;
+          if (!map.has(k)) {
+            map.set(k, { key, value, count: 0 });
+          }
+          map.get(k).count += 1;
+        });
+      } catch (e) {
+        // ignora URLs malformadas
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  }, [topUrls]);
+
   useEffect(() => {
     fetch("https://open.er-api.com/v6/latest/USD")
       .then((r) => r.json())
@@ -973,6 +1037,7 @@ function App() {
         : html`
             <main className="grid">
               ${html`<${TopUrlTable} rows=${topUrls} />`}
+              ${html`<${ParamTable} rows=${paramStats} />`}
             </main>
           `}
 
