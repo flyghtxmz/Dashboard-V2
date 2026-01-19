@@ -1004,13 +1004,17 @@ function App() {
         join.ecpm_client ??
         join.ecpm ??
         null;
-      const revenueClient =
-        fromCustom.revenue_client ?? fromCustom.revenue ?? null;
-      const revenueClientBrl =
-        revenueClient != null && brlRate ? revenueClient * brlRate : null;
       const impressionsJoin = toNumber(
         fromCustom.impressions ?? join.impressions
       );
+      const revenueClient =
+        fromCustom.revenue_client ??
+        fromCustom.revenue ??
+        (ecpmClient != null && impressionsJoin
+          ? (Number(ecpmClient) * impressionsJoin) / 1000
+          : null);
+      const revenueClientBrl =
+        revenueClient != null && brlRate ? revenueClient * brlRate : null;
 
       const cost = toNumber(row.cost_per_result);
       const spend = toNumber(row.spend);
