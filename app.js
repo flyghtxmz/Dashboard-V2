@@ -598,6 +598,9 @@ function ParamTable({ rows }) {
             <tr>
               <th>Chave</th>
               <th>Valor</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>Receita cliente</th>
               <th>Ocorrências</th>
             </tr>
           </thead>
@@ -615,7 +618,10 @@ function ParamTable({ rows }) {
                     <tr key=${idx}>
                       <td>${row.key}</td>
                       <td>${row.value}</td>
-                      <td>${number.format(row.count)}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue || 0)}</td>
+                      <td>${number.format(row.count || 0)}</td>
                     </tr>
                   `
                 )}
@@ -735,6 +741,7 @@ function App() {
   const [metaRows, setMetaRows] = useState([]);
   const [usdBrl, setUsdBrl] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
+  const [paramPairs, setParamPairs] = useState([]);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -815,6 +822,58 @@ function App() {
         ),
       ]);
 
+      // key-value para coletar UTMs usadas
+      const customKeys = [
+        "utm_campaign",
+        "utm_source",
+        "utm_medium",
+        "utm_content",
+        "utm_term",
+        "id_post",
+        "id_post_wp",
+        "land_uri",
+      ];
+      const keyValueResults = await Promise.all(
+        customKeys.map((ck) =>
+          fetchJson(
+            `${API_BASE}/key-value?${new URLSearchParams({
+              start_date: filters.startDate,
+              end_date: filters.endDate,
+              domain: filters.domain.trim(),
+              report_type: filters.reportType || "Analytical",
+              custom_key: ck,
+            }).toString()}`
+          ).catch((err) => {
+            pushLog("key-value", err);
+            return { data: [] };
+          })
+        )
+      );
+      const kvMap = new Map();
+      keyValueResults.forEach((res) => {
+        (res.data || []).forEach((row) => {
+          const key = row.custon_key || row.custom_key || "";
+          const value = row.custon_value || row.custom_value || "";
+          const mapKey = `${key}=${value}`;
+          if (!kvMap.has(mapKey)) {
+            kvMap.set(mapKey, {
+              key,
+              value,
+              impressions: 0,
+              clicks: 0,
+              revenue: 0,
+              count: 0,
+            });
+          }
+          const item = kvMap.get(mapKey);
+          item.impressions += Number(row.impressions || 0);
+          item.clicks += Number(row.clicks || 0);
+          item.revenue += Number(row.earnings_client || row.earnings || 0);
+          item.count += 1;
+        });
+      });
+      setParamPairs(Array.from(kvMap.values()));
+
       try {
         const metaRes = await fetchJson(
           `${API_BASE}/meta-insights?${new URLSearchParams({
@@ -841,6 +900,7 @@ function App() {
       setTopUrls([]);
       setEarnings([]);
       setMetaRows([]);
+      setParamPairs([]);
     } finally {
       setLoading(false);
     }
@@ -962,6 +1022,10 @@ function App() {
   }, [topUrls]);
 
   const paramStats = useMemo(() => {
+    if (paramPairs?.length) {
+      return [...paramPairs].sort((a, b) => (b.impressions || 0) - (a.impressions || 0));
+    }
+    // fallback: parse URLs se key-value não retornar nada
     const map = new Map();
     (topUrls || []).forEach((row) => {
       try {
@@ -979,7 +1043,6 @@ function App() {
             map.get(k).count += 1;
           });
         } catch (err) {
-          // fallback manual parse
           const idx = raw.indexOf("?");
           if (idx >= 0) {
             const query = raw.slice(idx + 1);
@@ -999,7 +1062,7 @@ function App() {
       }
     });
     return Array.from(map.values()).sort((a, b) => b.count - a.count);
-  }, [topUrls]);
+  }, [topUrls, paramPairs]);
 
   useEffect(() => {
     fetch("https://open.er-api.com/v6/latest/USD")
