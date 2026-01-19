@@ -824,7 +824,7 @@ function App() {
 
       // key-value para coletar UTMs usadas
       // Somente keys aceitas pelo endpoint (evita erro de validação)
-      const customKeys = ["utm_campaign", "id_post_wp"];
+      const customKeys = ["utm_campaign"];
       const keyValueResults = await Promise.all(
         customKeys.map((ck) =>
           fetchJson(
