@@ -566,7 +566,7 @@ function TopUrlTable({ rows, totals }) {
             ${rows.length
               ? html`
                   <tr className="summary-row">
-                    <td colspan="2"><strong>Totais</strong></td>
+                    <td colSpan="2"><strong>Totais</strong></td>
                     <td><strong>${number.format(totals.impressions || 0)}</strong></td>
                     <td><strong>${number.format(totals.clicks || 0)}</strong></td>
                     <td><strong>${`${Number(totals.ctr || 0).toFixed(2)}%`}</strong></td>
@@ -654,10 +654,16 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
         </div>
         <div className="chip-group">
           <span className="chip neutral">${rows.length} linhas</span>
-          <span className="chip ${rows.find((r) => r.data_level !== "utm_content") ? "warn" : "neutral"}">
-            ${rows.find((r) => r.data_level !== "utm_content")
-              ? "Dados por conjunto (fallback)"
-              : "Dados por anúncio"}
+          <span
+            className=${`chip ${
+              rows.find((r) => r.data_level !== "utm_content") ? "warn" : "neutral"
+            }`}
+          >
+            ${
+              rows.find((r) => r.data_level !== "utm_content")
+                ? "Dados por conjunto (fallback)"
+                : "Dados por anúncio"
+            }
           </span>
         </div>
       </div>
@@ -825,7 +831,7 @@ function App() {
       );
 
       let superRes;
-      let superRes;
+      let superRes = { data: [] };
       let superKeyUsed = "utm_content";
       try {
         superRes = await fetchJson(`${API_BASE}/super-filter`, {
@@ -924,8 +930,8 @@ function App() {
         setMetaRows([]);
       }
 
-      setSuperFilter(superRes.data || []);
-      setSuperKey(superKeyUsed);
+      setSuperFilter(superRes?.data || []);
+      setSuperKey(superKeyUsed || "utm_content");
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setLastRefreshed(new Date());
