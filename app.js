@@ -1055,7 +1055,11 @@ function App() {
               count: 0,
             });
           }
-          map.get(k).count += 1;
+          const item = map.get(k);
+          item.count += 1;
+          item.impressions += Number(row.impressions || 0);
+          item.clicks += Number(row.clicks || 0);
+          item.revenue += Number(row.revenue || 0);
         });
       } catch (err) {
         const idx = raw.indexOf("?");
@@ -1075,7 +1079,11 @@ function App() {
                 count: 0,
               });
             }
-            map.get(k).count += 1;
+            const item = map.get(k);
+            item.count += 1;
+            item.impressions += Number(row.impressions || 0);
+            item.clicks += Number(row.clicks || 0);
+            item.revenue += Number(row.revenue || 0);
           });
         }
       }
