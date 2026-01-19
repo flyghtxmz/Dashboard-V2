@@ -229,7 +229,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Performance</span>
-          <h2 className="section-title">VisÃ£o geral</h2>
+          <h2 className="section-title">Visão geral</h2>
         </div>
         <span className="chip neutral">JoinAds</span>
       </div>
@@ -254,7 +254,7 @@ function EarningsTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Earnings</span>
-          <h2 className="section-title">RelatÃ³rio de ganhos</h2>
+          <h2 className="section-title">Relatório de ganhos</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -351,7 +351,7 @@ function Filters({
       <div className="card-head">
         <div>
           <span className="eyebrow">Filtros</span>
-          <h2 className="section-title">Janela e segmentaÃ§Ã£o</h2>
+          <h2 className="section-title">Janela e segmentação</h2>
         </div>
         <button className="ghost" onClick=${onSubmit} disabled=${loading}>
           ${loading ? "Carregando..." : "Carregar dados"}
@@ -482,7 +482,7 @@ function LogsCard({ logs, onClear }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Logs</span>
-          <h2 className="section-title">Ãšltimas mensagens</h2>
+          <h2 className="section-title">Últimas mensagens</h2>
         </div>
         <button className="ghost" onClick=${onClear} disabled=${logs.length === 0}>
           Limpar
@@ -521,7 +521,7 @@ function TopUrlTable({ rows, totals }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">URLs</span>
-          <h2 className="section-title">Top URLs com parÃ¢metros</h2>
+          <h2 className="section-title">Top URLs com Parâmetros</h2>
         </div>
         <span className="chip neutral">${rows.length} itens</span>
       </div>
@@ -587,7 +587,7 @@ function ParamTable({ rows }) {
     <section className="card">
       <div className="card-head">
         <div>
-          <span className="eyebrow">ParÃ¢metros</span>
+          <span className="eyebrow">Parâmetros</span>
           <h2 className="section-title">UTMs e query params vistos</h2>
         </div>
         <span className="chip neutral">${rows.length} pares</span>
@@ -609,7 +609,7 @@ function ParamTable({ rows }) {
               ? html`
                   <tr>
                     <td colSpan="3" className="muted">
-                      Nenhum parÃ¢metro encontrado neste intervalo.
+                      Nenhum parâmetro encontrado neste intervalo.
                     </td>
                   </tr>
                 `
@@ -1193,7 +1193,7 @@ function App() {
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
-          URLs com parÃ¢metros
+          URLs com Parâmetros
         </button>
       </div>
 
@@ -1246,6 +1246,14 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
+
+
+
+
+
+
+
 
 
 
