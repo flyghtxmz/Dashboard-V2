@@ -755,6 +755,7 @@ function App() {
   const [superFilter, setSuperFilter] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
   const [earnings, setEarnings] = useState([]);
+  const [keyValueContent, setKeyValueContent] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState(null);
@@ -766,6 +767,7 @@ function App() {
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
   const [paramPairs, setParamPairs] = useState([]);
   const [superKey, setSuperKey] = useState("utm_content");
+  const [keyValueContent, setKeyValueContent] = useState([]);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -834,6 +836,18 @@ function App() {
           domain: filters.domain.trim(),
         }).toString()}`
       );
+      const keyValueContentPromise = fetchJson(
+        `${API_BASE}/key-value?${new URLSearchParams({
+          start_date: filters.startDate,
+          end_date: filters.endDate,
+          domain: filters.domain.trim(),
+          report_type: filters.reportType || "Analytical",
+          custom_key: "utm_content",
+        }).toString()}`
+      ).catch((err) => {
+        pushLog("key-value-content", err);
+        return { data: [] };
+      });
 
       let superRes = { data: [] };
       let superKeyUsed = "utm_content";
@@ -871,9 +885,10 @@ function App() {
         }
       }
 
-      const [topRes, earningsRes] = await Promise.all([
+      const [topRes, earningsRes, keyValueContentRes] = await Promise.all([
         topPromise,
         earningsPromise,
+        keyValueContentPromise,
       ]);
 
       // key-value para coletar UTMs usadas
@@ -938,6 +953,7 @@ function App() {
       setSuperKey(superKeyUsed || "utm_content");
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
+      setKeyValueContent(keyValueContentRes.data || []);
       setLastRefreshed(new Date());
     } catch (err) {
       const msg = formatError(err) || "Erro ao buscar dados.";
@@ -948,6 +964,7 @@ function App() {
       setEarnings([]);
       setMetaRows([]);
       setParamPairs([]);
+      setKeyValueContent([]);
     } finally {
       setLoading(false);
     }
@@ -983,6 +1000,7 @@ function App() {
   const mergedMeta = useMemo(() => {
     if (!metaRows?.length) return [];
     const superRows = Array.isArray(superFilter) ? superFilter : [];
+    const kvContent = Array.isArray(keyValueContent) ? keyValueContent : [];
 
     const earningsByDate = {};
     (earnings || []).forEach((row) => {
@@ -997,9 +1015,21 @@ function App() {
     const superByCustom = {};
     superRows.forEach((row) => {
       const keyNorm = normalizeKey(row.custom_value);
-      if (keyNorm) {
-        superByCustom[keyNorm] = row;
-      }
+      if (keyNorm) superByCustom[keyNorm] = row;
+    });
+
+    const kvByCustom = {};
+    kvContent.forEach((row) => {
+      const keyNorm = normalizeKey(row.custon_value || row.custom_value);
+      if (!keyNorm) return;
+      kvByCustom[keyNorm] = {
+        impressions: toNumber(row.impressions),
+        clicks: toNumber(row.clicks),
+        revenue: toNumber(row.earnings || row.earnings_client),
+        revenue_client: toNumber(row.earnings_client),
+        ecpm: toNumber(row.ecpm),
+        ecpm_client: toNumber(row.ecpm_client),
+      };
     });
 
     return metaRows.map((row) => {
@@ -1007,27 +1037,41 @@ function App() {
       const join = earningsByDate[date] || {};
       const nameKey = normalizeKey(row.ad_name);
       const adIdKey = normalizeKey(row.ad_id || "");
+
       const fromCustom =
         superByCustom[nameKey] ||
         superByCustom[adIdKey] ||
         {};
+
+      const fromKv =
+        kvByCustom[nameKey] ||
+        kvByCustom[adIdKey] ||
+        {};
+
       const ecpmClient =
         fromCustom.ecpm_client ??
         fromCustom.ecpm ??
+        fromKv.ecpm_client ??
+        fromKv.ecpm ??
         join.ecpm_client ??
         join.ecpm ??
         null;
+
       const impressionsJoin = toNumber(
-        fromCustom.impressions ?? join.impressions
+        fromCustom.impressions ?? fromKv.impressions ?? join.impressions
       );
-      const revenueClient =
+
+      const revenueClientRaw =
         fromCustom.revenue_client ??
         fromCustom.revenue ??
+        fromKv.revenue_client ??
+        fromKv.revenue ??
         (ecpmClient != null && impressionsJoin
           ? (Number(ecpmClient) * impressionsJoin) / 1000
           : null);
+
       const revenueClientBrl =
-        revenueClient != null && brlRate ? revenueClient * brlRate : null;
+        revenueClientRaw != null && brlRate ? revenueClientRaw * brlRate : null;
 
       const cost = toNumber(row.cost_per_result);
       const spend = toNumber(row.spend);
@@ -1044,15 +1088,15 @@ function App() {
         ecpm_client:
           ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : null,
         revenue_client_joinads:
-          revenueClient != null
-            ? currencyUSD.format(Number(revenueClient))
+          revenueClientRaw != null
+            ? currencyUSD.format(Number(revenueClientRaw))
             : null,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
         data_level: superKey,
       };
     });
-  }, [metaRows, earnings, superFilter, brlRate, superKey]);
+  }, [metaRows, earnings, superFilter, keyValueContent, brlRate, superKey]);
 
   const filteredMeta = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
