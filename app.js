@@ -1154,12 +1154,10 @@ function App() {
         fromKv.ecpm ??
         fromCustom.ecpm_client ??
         fromCustom.ecpm ??
-        join.ecpm_client ??
-        join.ecpm ??
         null;
 
       const impressionsJoin = toNumber(
-        fromKv.impressions ?? fromCustom.impressions ?? join.impressions
+        fromKv.impressions ?? fromCustom.impressions ?? null
       );
 
       const revenueClientRaw =
@@ -1187,11 +1185,11 @@ function App() {
         cost_per_result: currencyBRL.format(cost),
         spend_brl: currencyBRL.format(spend),
         ecpm_client:
-          ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : null,
+          ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : "-",
         revenue_client_joinads:
           revenueClientRaw != null
             ? currencyUSD.format(Number(revenueClientRaw))
-            : null,
+            : "-",
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
         data_level: Object.keys(fromKv).length ? "utm_content" : superKey,
