@@ -817,7 +817,11 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       <td>${asText(row.adset_name)}</td>
                       <td>${asText(row.ad_name)}</td>
                       <td>${asText(row.cost_per_result)}</td>
-                      <td>${asText(row.actions_count || row.results || "-")}</td>
+                      <td>
+                        ${row.results_meta != null
+                          ? number.format(row.results_meta)
+                          : "-"}
+                      </td>
                       <td>${asText(row.spend_brl)}</td>
                       <td>${row.roas_joinads || "-"}</td>
                       <td>
@@ -1197,6 +1201,19 @@ function App() {
 
       const cost = toNumber(row.cost_per_result);
       const spend = toNumber(row.spend);
+      let resultsCount = null;
+      const actionsCandidates = row.actions_count || row.actions;
+      if (Array.isArray(actionsCandidates)) {
+        resultsCount = actionsCandidates.reduce((acc, act) => {
+          const v =
+            toNumber(act?.value) ||
+            toNumber(act?.values && act.values[0]?.value);
+          return acc + (v || 0);
+        }, 0);
+      } else if (row.results != null) {
+        resultsCount = toNumber(row.results);
+      }
+
       const roas =
         revenueClientBrl != null && spend > 0
           ? revenueClientBrl / spend
@@ -1216,6 +1233,7 @@ function App() {
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
         data_level: Object.keys(fromKv).length ? "utm_content" : superKey,
+        results_meta: resultsCount,
       };
     });
   }, [metaRows, earnings, superFilter, keyValueContent, brlRate, superKey]);
