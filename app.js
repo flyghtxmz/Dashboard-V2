@@ -841,7 +841,8 @@ function App() {
           end_date: filters.endDate,
           domain: filters.domain.trim(),
           report_type: filters.reportType || "Analytical",
-          custom_key: "utm_content",
+          // API restringiu custom_key; usamos campanha como fallback agregado
+          custom_key: "utm_campaign",
         }).toString()}`
       ).catch((err) => {
         pushLog("key-value-content", err);
