@@ -936,13 +936,14 @@ function App() {
           domain: filters.domain.trim(),
         }).toString()}`
       );
+      // key-value mantido em utm_campaign para evitar 422 em tokens que não aceitam utm_content
       const keyValueContentPromise = fetchJson(
         `${API_BASE}/key-value?${new URLSearchParams({
           start_date: filters.startDate,
           end_date: filters.endDate,
           domain: filters.domain.trim(),
           report_type: filters.reportType || "Analytical",
-          custom_key: "utm_content",
+          custom_key: "utm_campaign",
         }).toString()}`
       ).catch((err) => {
         pushLog("key-value-content", err);
