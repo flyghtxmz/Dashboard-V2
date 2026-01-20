@@ -668,7 +668,7 @@ function DiagnosticsJoin({
         <div className="metric-card">
           <div className="metric-label">key-value (linhas)</div>
           <div className="metric-value">${kvCount}</div>
-          <div className="metric-helper">utm_content</div>
+          <div className="metric-helper">utm_campaign</div>
         </div>
         <div className="metric-card">
           <div className="metric-label">earnings (linhas)</div>
@@ -1083,25 +1083,12 @@ function App() {
             end_date: filters.endDate,
             domain: filters.domain.trim(),
             report_type: filters.reportType || "Analytical",
-            custom_key: "utm_content",
+            custom_key: "utm_campaign",
           }).toString()}`
         );
       } catch (err) {
         pushLog("key-value-content", err);
-        try {
-          keyValueContentRes = await fetchJson(
-            `${API_BASE}/key-value?${new URLSearchParams({
-              start_date: filters.startDate,
-              end_date: filters.endDate,
-              domain: filters.domain.trim(),
-              report_type: filters.reportType || "Analytical",
-              custom_key: "utm_campaign",
-            }).toString()}`
-          );
-        } catch (err2) {
-          pushLog("key-value-content-fallback", err2);
-          keyValueContentRes = { data: [] };
-        }
+        keyValueContentRes = { data: [] };
       }
 
       let metaSourceRes = { data: [] };
@@ -1127,7 +1114,7 @@ function App() {
 
       // key-value para coletar UTMs usadas
       // Somente keys aceitas pelo endpoint (evita erro de validação)
-      const customKeys = ["utm_content"];
+      const customKeys = ["utm_campaign"];
       const keyValueResults = await Promise.all(
         customKeys.map((ck) =>
           fetchJson(
