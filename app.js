@@ -794,6 +794,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               <th>Conjunto</th>
               <th>Anuncio</th>
               <th>Custo por resultado</th>
+              <th>Resultados (Meta)</th>
               <th>Valor gasto</th>
               <th>ROAS</th>
               <th>Receita JoinAds (cliente)</th>
@@ -816,6 +817,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       <td>${asText(row.adset_name)}</td>
                       <td>${asText(row.ad_name)}</td>
                       <td>${asText(row.cost_per_result)}</td>
+                      <td>${asText(row.actions_count || row.results || "-")}</td>
                       <td>${asText(row.spend_brl)}</td>
                       <td>${row.roas_joinads || "-"}</td>
                       <td>
