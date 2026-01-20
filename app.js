@@ -849,10 +849,10 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                   acc + (r.impressions_joinads ? Number(r.impressions_joinads) : 0),
                 0
               );
-              const totalSpend = rows.reduce((acc, r) => acc + toNumber(r.spend), 0);
+              const totalSpend = rows.reduce((acc, r) => acc + toNumber(r.spend_value || r.spend), 0);
               const totalRev = rows.reduce(
                 (acc, r) =>
-                  acc + (r.revenue_client_joinads ? toNumber(r.revenue_client_joinads) : 0),
+                  acc + (r.revenue_client_value ? Number(r.revenue_client_value) : 0),
                 0
               );
               return html`<div className="totals-row">
@@ -1224,12 +1224,14 @@ function App() {
         date,
         cost_per_result: currencyBRL.format(cost),
         spend_brl: currencyBRL.format(spend),
+        spend_value: spend,
         ecpm_client:
           ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : "-",
         revenue_client_joinads:
           revenueClientRaw != null
             ? currencyUSD.format(Number(revenueClientRaw))
             : "-",
+        revenue_client_value: revenueClientRaw ?? 0,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
         data_level: Object.keys(fromKv).length ? "utm_content" : superKey,
