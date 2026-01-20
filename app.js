@@ -84,7 +84,8 @@ async function fetchJson(path, options = {}) {
 
 function useTotalsFromEarnings(earnings, fallbackSuper) {
   return useMemo(() => {
-    const source = earnings?.length ? earnings : fallbackSuper || [];
+    const fb = Array.isArray(fallbackSuper) ? fallbackSuper : [];
+    const source = earnings?.length ? earnings : fb;
     if (!source.length) {
       return {
         revenue: 0,
@@ -976,6 +977,7 @@ function App() {
 
   const mergedMeta = useMemo(() => {
     if (!metaRows?.length) return [];
+    const superRows = Array.isArray(superFilter) ? superFilter : [];
 
     const earningsByDate = {};
     (earnings || []).forEach((row) => {
@@ -988,7 +990,7 @@ function App() {
     });
 
     const superByCustom = {};
-    (superFilter || []).forEach((row) => {
+    superRows.forEach((row) => {
       if (row.custom_value) {
         superByCustom[row.custom_value] = row;
       }
