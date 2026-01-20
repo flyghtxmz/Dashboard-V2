@@ -668,7 +668,7 @@ function DiagnosticsJoin({
         <div className="metric-card">
           <div className="metric-label">key-value (linhas)</div>
           <div className="metric-value">${kvCount}</div>
-          <div className="metric-helper">utm_campaign</div>
+          <div className="metric-helper">utm_content</div>
         </div>
         <div className="metric-card">
           <div className="metric-label">earnings (linhas)</div>
@@ -942,8 +942,7 @@ function App() {
           end_date: filters.endDate,
           domain: filters.domain.trim(),
           report_type: filters.reportType || "Analytical",
-          // API restringiu custom_key; usamos campanha como fallback agregado
-          custom_key: "utm_campaign",
+          custom_key: "utm_content",
         }).toString()}`
       ).catch((err) => {
         pushLog("key-value-content", err);
@@ -994,7 +993,7 @@ function App() {
 
       // key-value para coletar UTMs usadas
       // Somente keys aceitas pelo endpoint (evita erro de validaÃ§Ã£o)
-      const customKeys = ["utm_campaign"];
+      const customKeys = ["utm_content"];
       const keyValueResults = await Promise.all(
         customKeys.map((ck) =>
           fetchJson(
@@ -1429,6 +1428,9 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
+
+
 
 
 
