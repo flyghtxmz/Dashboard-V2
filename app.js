@@ -633,6 +633,107 @@ function ParamTable({ rows }) {
   `;
 }
 
+function DiagnosticsJoin({
+  superRows,
+  kvRows,
+  earnings,
+  topUrls,
+  domain,
+  superKey,
+}) {
+  const superCount = Array.isArray(superRows) ? superRows.length : 0;
+  const kvCount = Array.isArray(kvRows) ? kvRows.length : 0;
+  const earningsCount = Array.isArray(earnings) ? earnings.length : 0;
+  const topCount = Array.isArray(topUrls) ? topUrls.length : 0;
+
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">JoinAds</span>
+          <h2 className="section-title">Diagnóstico do token</h2>
+        </div>
+        <div className="chip-group">
+          <span className="chip neutral">Domínio: ${domain || "-"}</span>
+          <span className="chip neutral">super-filter key: ${superKey}</span>
+        </div>
+      </div>
+
+      <div className="metrics-grid">
+        <div className="metric-card">
+          <div className="metric-label">super-filter (linhas)</div>
+          <div className="metric-value">${superCount}</div>
+          <div className="metric-helper">custom_key=${superKey}</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">key-value (linhas)</div>
+          <div className="metric-value">${kvCount}</div>
+          <div className="metric-helper">utm_campaign</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">earnings (linhas)</div>
+          <div className="metric-value">${earningsCount}</div>
+          <div className="metric-helper">/earnings</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">top-url (linhas)</div>
+          <div className="metric-value">${topCount}</div>
+          <div className="metric-helper">/top-url</div>
+        </div>
+      </div>
+
+      <div className="table-wrapper" style=${{ marginTop: "12px" }}>
+        <table>
+          <thead>
+            <tr>
+              <th>Fonte</th>
+              <th>Chave</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>Receita cliente</th>
+              <th>eCPM cliente</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${kvCount === 0 && superCount === 0
+              ? html`<tr><td colSpan="6" className="muted">Sem dados retornados.</td></tr>`
+              : html`
+                  ${superRows?.slice(0, 20).map(
+                    (row, idx) => html`
+                      <tr key=${`s-${idx}`}>
+                        <td>super-filter</td>
+                        <td>${row.custom_value || "-"}</td>
+                        <td>${number.format(row.impressions || 0)}</td>
+                        <td>${number.format(row.clicks || 0)}</td>
+                        <td>${currencyUSD.format(row.revenue_client || row.revenue || 0)}</td>
+                        <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
+                      </tr>
+                    `
+                  )}
+                  ${kvRows?.slice(0, 20).map(
+                    (row, idx) => html`
+                      <tr key=${`k-${idx}`}>
+                        <td>key-value</td>
+                        <td>${row.custon_value || row.custom_value || "-"}</td>
+                        <td>${number.format(row.impressions || 0)}</td>
+                        <td>${number.format(row.clicks || 0)}</td>
+                        <td>${currencyUSD.format(row.earnings_client || row.earnings || 0)}</td>
+                        <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
+                      </tr>
+                    `
+                  )}
+                `}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small">
+        Se super-filter estiver vazio, a API não retornou dados para utm_content/utm_campaign.
+        Confirme UTMs nos anúncios e intervalo (&lt;=15 dias).
+      </p>
+    </section>
+  `;
+}
+
 const objectiveMap = {
   OUTCOME_SALES: "Vendas",
   LINK_CLICKS: "Cliques no link",
@@ -1256,6 +1357,12 @@ function App() {
         >
           URLs com Parâmetros
         </button>
+        <button
+          className=${`tab ${activeTab === "diag" ? "active" : ""}`}
+          onClick=${() => setActiveTab("diag")}
+        >
+          Diagnóstico JoinAds
+        </button>
       </div>
 
       ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
@@ -1290,10 +1397,25 @@ function App() {
               ${html`<${EarningsTable} rows=${earnings} />`}
             </main>
           `
-        : html`
+        : activeTab === "urls"
+        ? html`
             <main className="grid">
               ${html`<${TopUrlTable} rows=${topUrls} totals=${topUrlTotals} />`}
               ${html`<${ParamTable} rows=${paramStats} />`}
+            </main>
+          `
+        : html`
+            <main className="grid">
+              ${html`
+                <${DiagnosticsJoin}
+                  superRows=${Array.isArray(superFilter) ? superFilter : []}
+                  kvRows=${Array.isArray(keyValueContent) ? keyValueContent : []}
+                  earnings=${earnings}
+                  topUrls=${topUrls}
+                  domain=${filters.domain}
+                  superKey=${superKey}
+                />
+              `}
             </main>
           `}
 
@@ -1307,6 +1429,7 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
 
 
 
