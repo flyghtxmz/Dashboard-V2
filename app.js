@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
+import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
@@ -73,7 +73,7 @@ async function fetchJson(path, options = {}) {
       data?.error ||
       data?.message ||
       data?.detail ||
-      `Erro na requisiÃ§Ã£o (${res.status})`;
+      `Erro na requisição (${res.status})`;
     const error = new Error(message);
     error.status = res.status;
     error.data = data;
@@ -162,19 +162,19 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Receita cliente",
       value: currencyUSD.format(totals.revenueClient || 0),
-      helper: "Após revshare",
+      helper: "Ap�s revshare",
       tone: "primary",
     },
     {
       label: "Receita cliente (BRL)",
       value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
-      helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotaÃ§Ã£o",
+      helper: usdToBrl ? "Convers�o USD->BRL" : "Aguardando cotação",
       tone: "primary",
     },
     {
       label: "Valor gasto (Meta)",
       value: currencyBRL.format(metaSpendBrl || 0),
-      helper: "Gasto total do perÃ­odo",
+      helper: "Gasto total do período",
     },
     {
       label: "ROI (BRL)",
@@ -194,19 +194,19 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       helper: "Valor total",
     },
     {
-      label: "Impressões",
+      label: "Impress�es",
       value: number.format(totals.impressions || 0),
       helper: "Volume exibido",
     },
     {
       label: "Cliques",
       value: number.format(totals.clicks || 0),
-      helper: "Interações",
+      helper: "Intera��es",
     },
     {
       label: "CTR",
       value: `${(totals.ctr || 0).toFixed(2)}%`,
-      helper: "Cliques / Impressões",
+      helper: "Cliques / Impress�es",
     },
     {
       label: "eCPM cliente",
@@ -221,7 +221,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Active view",
       value: `${(totals.activeView || 0).toFixed(1)}%`,
-      helper: "Visibilidade média",
+      helper: "Visibilidade m�dia",
     },
   ];
 
@@ -230,7 +230,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Performance</span>
-          <h2 className="section-title">Visão geral</h2>
+          <h2 className="section-title">Vis�o geral</h2>
         </div>
         <span className="chip neutral">JoinAds</span>
       </div>
@@ -255,7 +255,7 @@ function EarningsTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Earnings</span>
-          <h2 className="section-title">Relatório de ganhos</h2>
+          <h2 className="section-title">Relat�rio de ganhos</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -264,8 +264,8 @@ function EarningsTable({ rows }) {
           <thead>
             <tr>
               <th>Data</th>
-              <th>Domínio</th>
-              <th>Impressões</th>
+              <th>Dom�nio</th>
+              <th>Impress�es</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -328,7 +328,7 @@ function Filters({
     let start = new Date(end);
 
     if (preset === "today") {
-      // mantÃ©m hoje
+      // mantém hoje
     } else if (preset === "yesterday") {
       end.setDate(end.getDate() - 1);
       start = new Date(end);
@@ -352,7 +352,7 @@ function Filters({
       <div className="card-head">
         <div>
           <span className="eyebrow">Filtros</span>
-          <h2 className="section-title">Janela e segmentação</h2>
+          <h2 className="section-title">Janela e segmenta��o</h2>
         </div>
         <button className="ghost" onClick=${onSubmit} disabled=${loading}>
           ${loading ? "Carregando..." : "Carregar dados"}
@@ -360,7 +360,7 @@ function Filters({
       </div>
       <div className="filters">
         <label className="field">
-          <span>InÃ­cio</span>
+          <span>Início</span>
           <input
             type="date"
             value=${filters.startDate}
@@ -376,7 +376,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>Domínio *</span>
+          <span>Dom�nio *</span>
           ${domains && domains.length > 0
             ? html`
                 <select
@@ -405,7 +405,7 @@ function Filters({
                 />
               `}
           ${domainsLoading
-            ? html`<span className="muted small">Carregando Domínios...</span>`
+            ? html`<span className="muted small">Carregando Dom�nios...</span>`
             : null}
         </label>
         <label className="field">
@@ -419,7 +419,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>Tipo de relatÃ³rio</span>
+          <span>Tipo de relatório</span>
           <select
             value=${filters.reportType}
             onChange=${(e) =>
@@ -443,10 +443,10 @@ function Filters({
           Ontem
         </button>
         <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
-          Últimos 7 dias
+          �ltimos 7 dias
         </button>
         <button className="ghost" onClick=${() => setPreset("last15")} disabled=${loading}>
-          Últimos 15 dias
+          �ltimos 15 dias
         </button>
       </div>
     </section>
@@ -472,7 +472,7 @@ function Status({ error, lastRefreshed }) {
 
   return html`
     <div className="status neutral">
-      Informe o Domínio e clique em "Carregar dados".
+      Informe o Dom�nio e clique em "Carregar dados".
     </div>
   `;
 }
@@ -483,7 +483,7 @@ function LogsCard({ logs, onClear }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Logs</span>
-          <h2 className="section-title">Últimas mensagens</h2>
+          <h2 className="section-title">�ltimas mensagens</h2>
         </div>
         <button className="ghost" onClick=${onClear} disabled=${logs.length === 0}>
           Limpar
@@ -500,7 +500,7 @@ function LogsCard({ logs, onClear }) {
                       <span className="pill neutral">${entry.source || "app"}</span>
                       <span className="muted small">
                         ${entry.time.toLocaleString("pt-BR")}
-                        ${entry.status ? ` â€¢ ${entry.status}` : ""}
+                        ${entry.status ? ` • ${entry.status}` : ""}
                       </span>
                     </div>
                     <div className="log-message">${entry.message}</div>
@@ -522,7 +522,7 @@ function TopUrlTable({ rows, totals }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">URLs</span>
-          <h2 className="section-title">Top URLs com Parâmetros</h2>
+          <h2 className="section-title">Top URLs com Par�metros</h2>
         </div>
         <span className="chip neutral">${rows.length} itens</span>
       </div>
@@ -532,7 +532,7 @@ function TopUrlTable({ rows, totals }) {
             <tr>
               <th>#</th>
               <th>URL</th>
-              <th>Impressões</th>
+              <th>Impress�es</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -588,7 +588,7 @@ function ParamTable({ rows }) {
     <section className="card">
       <div className="card-head">
         <div>
-          <span className="eyebrow">Parâmetros</span>
+          <span className="eyebrow">Par�metros</span>
           <h2 className="section-title">UTMs e query params vistos</h2>
         </div>
         <span className="chip neutral">${rows.length} pares</span>
@@ -599,10 +599,10 @@ function ParamTable({ rows }) {
             <tr>
               <th>Chave</th>
               <th>Valor</th>
-              <th>Impressões</th>
+              <th>Impress�es</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
-              <th>OcorrÃªncias</th>
+              <th>Ocorrências</th>
             </tr>
           </thead>
           <tbody>
@@ -610,7 +610,7 @@ function ParamTable({ rows }) {
               ? html`
                   <tr>
                     <td colSpan="3" className="muted">
-                      Nenhum parâmetro encontrado neste intervalo.
+                      Nenhum par�metro encontrado neste intervalo.
                     </td>
                   </tr>
                 `
@@ -651,10 +651,10 @@ function DiagnosticsJoin({
       <div className="card-head">
         <div>
           <span className="eyebrow">JoinAds</span>
-          <h2 className="section-title">Diagnóstico do token</h2>
+          <h2 className="section-title">Diagn�stico do token</h2>
         </div>
         <div className="chip-group">
-          <span className="chip neutral">Domínio: ${domain || "-"}</span>
+          <span className="chip neutral">Dom�nio: ${domain || "-"}</span>
           <span className="chip neutral">super-filter key: ${superKey}</span>
         </div>
       </div>
@@ -688,7 +688,7 @@ function DiagnosticsJoin({
             <tr>
               <th>Fonte</th>
               <th>Chave</th>
-              <th>Impressões</th>
+              <th>Impress�es</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>eCPM cliente</th>
@@ -727,9 +727,70 @@ function DiagnosticsJoin({
         </table>
       </div>
       <p className="muted small">
-        Se super-filter estiver vazio, a API não retornou dados para utm_content/utm_campaign.
-        Confirme UTMs nos anúncios e intervalo (&lt;=15 dias).
+        Se super-filter estiver vazio, a API n�o retornou dados para utm_content/utm_campaign.
+        Confirme UTMs nos an�ncios e intervalo (&lt;=15 dias).
       </p>
+    </section>
+  `;
+}
+
+function MetaSourceTable({ rows }) {
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.impressions += Number(row.impressions || 0);
+      acc.clicks += Number(row.clicks || 0);
+      acc.revenue += Number(row.revenue_client || row.revenue || 0);
+      return acc;
+    },
+    { impressions: 0, clicks: 0, revenue: 0 }
+  );
+
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Meta</span>
+          <h2 className="section-title">utm_source=fb</h2>
+        </div>
+        <span className="chip neutral">${rows.length} linhas</span>
+      </div>
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Fonte</th>
+              <th>Impress�es</th>
+              <th>Cliques</th>
+              <th>Receita cliente</th>
+              <th>eCPM cliente</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0
+              ? html`<tr><td colSpan="5" className="muted">Sem dados para utm_source=fb.</td></tr>`
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${idx}>
+                      <td>${row.custom_value || "-"}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue_client || row.revenue || 0)}</td>
+                      <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
+                    </tr>
+                  `
+                )}
+            ${rows.length
+              ? html`<tr className="summary-row">
+                  <td><strong>Total</strong></td>
+                  <td><strong>${number.format(totals.impressions)}</strong></td>
+                  <td><strong>${number.format(totals.clicks)}</strong></td>
+                  <td><strong>${currencyUSD.format(totals.revenue)}</strong></td>
+                  <td></td>
+                </tr>`
+              : null}
+          </tbody>
+        </table>
+      </div>
     </section>
   `;
 }
@@ -895,6 +956,7 @@ function App() {
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
   const [paramPairs, setParamPairs] = useState([]);
   const [superKey, setSuperKey] = useState("utm_content");
+  const [metaSourceRows, setMetaSourceRows] = useState([]);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -919,17 +981,17 @@ function App() {
 
   const handleLoad = async () => {
     if (domainsLoading && !filters.domain.trim()) {
-      setError("Aguarde carregar os Domínios ou selecione manualmente.");
+      setError("Aguarde carregar os Dom�nios ou selecione manualmente.");
       return;
     }
 
     if (!filters.domain.trim()) {
-      setError("Selecione um Domínio para consultar.");
+      setError("Selecione um Dom�nio para consultar.");
       return;
     }
 
     if (!filters.metaAccountId.trim()) {
-      setError("Informe o ID da conta de anÃºncios (Meta).");
+      setError("Informe o ID da conta de anúncios (Meta).");
       return;
     }
 
@@ -938,7 +1000,7 @@ function App() {
     const diffMs = end.getTime() - start.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     if (diffDays > 15) {
-      setError("Intervalo mÃ¡ximo permitido Ã© de 15 dias.");
+      setError("Intervalo máximo permitido é de 15 dias.");
       return;
     }
 
@@ -963,7 +1025,7 @@ function App() {
           domain: filters.domain.trim(),
         }).toString()}`
       );
-      // key-value mantido em utm_campaign para evitar 422 em tokens que não aceitam utm_content
+      // key-value mantido em utm_campaign para evitar 422 em tokens que n�o aceitam utm_content
       const keyValueContentPromise = fetchJson(
         `${API_BASE}/key-value?${new URLSearchParams({
           start_date: filters.startDate,
@@ -1013,14 +1075,58 @@ function App() {
         }
       }
 
-      const [topRes, earningsRes, keyValueContentRes] = await Promise.all([
+      let keyValueContentRes;
+      try {
+        keyValueContentRes = await fetchJson(
+          `${API_BASE}/key-value?${new URLSearchParams({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            domain: filters.domain.trim(),
+            report_type: filters.reportType || "Analytical",
+            custom_key: "utm_content",
+          }).toString()}`
+        );
+      } catch (err) {
+        pushLog("key-value-content", err);
+        try {
+          keyValueContentRes = await fetchJson(
+            `${API_BASE}/key-value?${new URLSearchParams({
+              start_date: filters.startDate,
+              end_date: filters.endDate,
+              domain: filters.domain.trim(),
+              report_type: filters.reportType || "Analytical",
+              custom_key: "utm_campaign",
+            }).toString()}`
+          );
+        } catch (err2) {
+          pushLog("key-value-content-fallback", err2);
+          keyValueContentRes = { data: [] };
+        }
+      }
+
+      let metaSourceRes = { data: [] };
+      try {
+        metaSourceRes = await fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_source",
+            group: ["domain", "custom_value"],
+          }),
+        });
+      } catch (err) {
+        pushLog("meta-utmsource", err);
+      }
+
+      const [topRes, earningsRes] = await Promise.all([
         topPromise,
         earningsPromise,
-        keyValueContentPromise,
       ]);
 
       // key-value para coletar UTMs usadas
-      // Somente keys aceitas pelo endpoint (evita erro de validaÃ§Ã£o)
+      // Somente keys aceitas pelo endpoint (evita erro de validação)
       const customKeys = ["utm_content"];
       const keyValueResults = await Promise.all(
         customKeys.map((ck) =>
@@ -1082,6 +1188,11 @@ function App() {
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setKeyValueContent(keyValueContentRes.data || []);
+      const filteredSource =
+        (metaSourceRes.data || []).filter(
+          (row) => normalizeKey(row.custom_value) === "fb"
+        ) || [];
+      setMetaSourceRows(filteredSource);
       setLastRefreshed(new Date());
     } catch (err) {
       const msg = formatError(err) || "Erro ao buscar dados.";
@@ -1093,6 +1204,7 @@ function App() {
       setMetaRows([]);
       setParamPairs([]);
       setKeyValueContent([]);
+      setMetaSourceRows([]);
     } finally {
       setLoading(false);
     }
@@ -1111,7 +1223,7 @@ function App() {
         setFilters((prev) => ({ ...prev, domain: list[0] }));
       }
     } catch (err) {
-      const msg = formatError(err) || "Erro ao listar Domínios.";
+      const msg = formatError(err) || "Erro ao listar Dom�nios.";
       setError(msg);
       pushLog("domains", err);
       setDomains([]);
@@ -1365,12 +1477,12 @@ function App() {
         <div>
           <h1>Dashboard de Publisher</h1>
           <p className="subtitle">
-            Arbitragem de trÃ¡fego com dados em tempo real da JoinAds.
+            Arbitragem de tráfego com dados em tempo real da JoinAds.
           </p>
         </div>
         <div className="actions">
           <div className="muted small">
-            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotaÃ§Ã£o..."}
+            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotação..."}
           </div>
           <button
             className="ghost"
@@ -1387,22 +1499,28 @@ function App() {
 
       <div className="tabs">
         <button
-          className=${`tab ${activeTab === "dashboard" ? "active" : ""}`}
+          className=${``tab ${activeTab === "dashboard" ? "active" : ""}``}
           onClick=${() => setActiveTab("dashboard")}
         >
           Dashboard
         </button>
         <button
-          className=${`tab ${activeTab === "urls" ? "active" : ""}`}
+          className=${``tab ${activeTab === "urls" ? "active" : ""}``}
           onClick=${() => setActiveTab("urls")}
         >
-          URLs com Parâmetros
+          URLs com Par�metros
         </button>
         <button
-          className=${`tab ${activeTab === "diag" ? "active" : ""}`}
+          className=${``tab ${activeTab === "meta" ? "active" : ""}``}
+          onClick=${() => setActiveTab("meta")}
+        >
+          Meta
+        </button>
+        <button
+          className=${``tab ${activeTab === "diag" ? "active" : ""}``}
           onClick=${() => setActiveTab("diag")}
         >
-          Diagnóstico JoinAds
+          Diagn�stico JoinAds
         </button>
       </div>
 
@@ -1443,6 +1561,12 @@ function App() {
             <main className="grid">
               ${html`<${TopUrlTable} rows=${topUrls} totals=${topUrlTotals} />`}
               ${html`<${ParamTable} rows=${paramStats} />`}
+            </main>
+          `
+        : activeTab === "meta"
+        ? html`
+            <main className="grid">
+              ${html`<${MetaSourceTable} rows=${metaSourceRows} />`}
             </main>
           `
         : html`
