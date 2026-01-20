@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color-scheme: light;
   --bg: #f4f3fb;
   --ink: #111022;
@@ -368,3 +368,6 @@ tbody tr:last-child td {
     align-items: flex-start;
   }
 }
+
+.totals-row { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 12px; background: #f8f9ff; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 0.95rem; }
+
