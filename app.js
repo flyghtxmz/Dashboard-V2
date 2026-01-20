@@ -1149,23 +1149,23 @@ function App() {
         {};
 
       const ecpmClient =
-        fromCustom.ecpm_client ??
-        fromCustom.ecpm ??
         fromKv.ecpm_client ??
         fromKv.ecpm ??
+        fromCustom.ecpm_client ??
+        fromCustom.ecpm ??
         join.ecpm_client ??
         join.ecpm ??
         null;
 
       const impressionsJoin = toNumber(
-        fromCustom.impressions ?? fromKv.impressions ?? join.impressions
+        fromKv.impressions ?? fromCustom.impressions ?? join.impressions
       );
 
       const revenueClientRaw =
-        fromCustom.revenue_client ??
-        fromCustom.revenue ??
         fromKv.revenue_client ??
         fromKv.revenue ??
+        fromCustom.revenue_client ??
+        fromCustom.revenue ??
         (ecpmClient != null && impressionsJoin
           ? (Number(ecpmClient) * impressionsJoin) / 1000
           : null);
@@ -1193,7 +1193,7 @@ function App() {
             : null,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
-        data_level: superKey,
+        data_level: Object.keys(fromKv).length ? "utm_content" : superKey,
       };
     });
   }, [metaRows, earnings, superFilter, keyValueContent, brlRate, superKey]);
