@@ -162,13 +162,13 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Receita cliente",
       value: currencyUSD.format(totals.revenueClient || 0),
-      helper: "ApÛs revshare",
+      helper: "Ap√≥s revshare",
       tone: "primary",
     },
     {
       label: "Receita cliente (BRL)",
       value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
-      helper: usdToBrl ? "Convers„o USD->BRL" : "Aguardando cota√ß√£o",
+      helper: usdToBrl ? "Convers√£o USD->BRL" : "Aguardando cota√ß√£o",
       tone: "primary",
     },
     {
@@ -194,19 +194,19 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       helper: "Valor total",
     },
     {
-      label: "Impressıes",
+      label: "Impress√µes",
       value: number.format(totals.impressions || 0),
       helper: "Volume exibido",
     },
     {
       label: "Cliques",
       value: number.format(totals.clicks || 0),
-      helper: "InteraÁıes",
+      helper: "Intera√ß√µes",
     },
     {
       label: "CTR",
       value: `${(totals.ctr || 0).toFixed(2)}%`,
-      helper: "Cliques / Impressıes",
+      helper: "Cliques / Impress√µes",
     },
     {
       label: "eCPM cliente",
@@ -221,7 +221,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Active view",
       value: `${(totals.activeView || 0).toFixed(1)}%`,
-      helper: "Visibilidade mÈdia",
+      helper: "Visibilidade m√≠dia",
     },
   ];
 
@@ -230,7 +230,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Performance</span>
-          <h2 className="section-title">Vis„o geral</h2>
+          <h2 className="section-title">Vis√£o geral</h2>
         </div>
         <span className="chip neutral">JoinAds</span>
       </div>
@@ -255,7 +255,7 @@ function EarningsTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Earnings</span>
-          <h2 className="section-title">RelatÛrio de ganhos</h2>
+          <h2 className="section-title">Relat√≥rio de ganhos</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -264,8 +264,8 @@ function EarningsTable({ rows }) {
           <thead>
             <tr>
               <th>Data</th>
-              <th>DomÌnio</th>
-              <th>Impressıes</th>
+              <th>Dom√≠nio</th>
+              <th>Impress√µes</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -352,7 +352,7 @@ function Filters({
       <div className="card-head">
         <div>
           <span className="eyebrow">Filtros</span>
-          <h2 className="section-title">Janela e segmentaÁ„o</h2>
+          <h2 className="section-title">Janela e segmenta√ß√£o</h2>
         </div>
         <button className="ghost" onClick=${onSubmit} disabled=${loading}>
           ${loading ? "Carregando..." : "Carregar dados"}
@@ -376,7 +376,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>DomÌnio *</span>
+          <span>Dom√≠nio *</span>
           ${domains && domains.length > 0
             ? html`
                 <select
@@ -405,7 +405,7 @@ function Filters({
                 />
               `}
           ${domainsLoading
-            ? html`<span className="muted small">Carregando DomÌnios...</span>`
+            ? html`<span className="muted small">Carregando Dom√≠nios...</span>`
             : null}
         </label>
         <label className="field">
@@ -443,10 +443,10 @@ function Filters({
           Ontem
         </button>
         <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
-          ⁄ltimos 7 dias
+          √öltimos 7 dias
         </button>
         <button className="ghost" onClick=${() => setPreset("last15")} disabled=${loading}>
-          ⁄ltimos 15 dias
+          √öltimos 15 dias
         </button>
       </div>
     </section>
@@ -472,7 +472,7 @@ function Status({ error, lastRefreshed }) {
 
   return html`
     <div className="status neutral">
-      Informe o DomÌnio e clique em "Carregar dados".
+      Informe o Dom√≠nio e clique em "Carregar dados".
     </div>
   `;
 }
@@ -483,7 +483,7 @@ function LogsCard({ logs, onClear }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Logs</span>
-          <h2 className="section-title">⁄ltimas mensagens</h2>
+          <h2 className="section-title">√öltimas mensagens</h2>
         </div>
         <button className="ghost" onClick=${onClear} disabled=${logs.length === 0}>
           Limpar
@@ -522,7 +522,7 @@ function TopUrlTable({ rows, totals }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">URLs</span>
-          <h2 className="section-title">Top URLs com Par‚metros</h2>
+          <h2 className="section-title">Top URLs com Par√¢metros</h2>
         </div>
         <span className="chip neutral">${rows.length} itens</span>
       </div>
@@ -532,7 +532,7 @@ function TopUrlTable({ rows, totals }) {
             <tr>
               <th>#</th>
               <th>URL</th>
-              <th>Impressıes</th>
+              <th>Impress√µes</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -588,7 +588,7 @@ function ParamTable({ rows }) {
     <section className="card">
       <div className="card-head">
         <div>
-          <span className="eyebrow">Par‚metros</span>
+          <span className="eyebrow">Par√¢metros</span>
           <h2 className="section-title">UTMs e query params vistos</h2>
         </div>
         <span className="chip neutral">${rows.length} pares</span>
@@ -599,7 +599,7 @@ function ParamTable({ rows }) {
             <tr>
               <th>Chave</th>
               <th>Valor</th>
-              <th>Impressıes</th>
+              <th>Impress√µes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>Ocorr√™ncias</th>
@@ -610,7 +610,7 @@ function ParamTable({ rows }) {
               ? html`
                   <tr>
                     <td colSpan="3" className="muted">
-                      Nenhum par‚metro encontrado neste intervalo.
+                      Nenhum par√¢metro encontrado neste intervalo.
                     </td>
                   </tr>
                 `
@@ -651,10 +651,10 @@ function DiagnosticsJoin({
       <div className="card-head">
         <div>
           <span className="eyebrow">JoinAds</span>
-          <h2 className="section-title">DiagnÛstico do token</h2>
+          <h2 className="section-title">Diagn√≥stico do token</h2>
         </div>
         <div className="chip-group">
-          <span className="chip neutral">DomÌnio: ${domain || "-"}</span>
+          <span className="chip neutral">Dom√≠nio: ${domain || "-"}</span>
           <span className="chip neutral">super-filter key: ${superKey}</span>
         </div>
       </div>
@@ -688,7 +688,7 @@ function DiagnosticsJoin({
             <tr>
               <th>Fonte</th>
               <th>Chave</th>
-              <th>Impressıes</th>
+              <th>Impress√µes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>eCPM cliente</th>
@@ -727,8 +727,8 @@ function DiagnosticsJoin({
         </table>
       </div>
       <p className="muted small">
-        Se super-filter estiver vazio, a API n„o retornou dados para utm_content/utm_campaign.
-        Confirme UTMs nos an˙ncios e intervalo (&lt;=15 dias).
+        Se super-filter estiver vazio, a API n√£o retornou dados para utm_content/utm_campaign.
+        Confirme UTMs nos an√∫ncios e intervalo (&lt;=15 dias).
       </p>
     </section>
   `;
@@ -759,7 +759,7 @@ function MetaSourceTable({ rows }) {
           <thead>
             <tr>
               <th>Fonte</th>
-              <th>Impress‰es</th>
+              <th>Impress√µes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>eCPM cliente</th>
@@ -860,7 +860,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               <th>ROAS</th>
               <th>Receita JoinAds (cliente)</th>
               <th>eCPM JoinAds (cliente)</th>
-              <th>Impressoes JoinAds</th>
+              <th>Impress√µes JoinAds</th>
             </tr>
           </thead>
           <tbody>
@@ -981,12 +981,12 @@ function App() {
 
   const handleLoad = async () => {
     if (domainsLoading && !filters.domain.trim()) {
-      setError("Aguarde carregar os DomÌnios ou selecione manualmente.");
+      setError("Aguarde carregar os Dom√≠nios ou selecione manualmente.");
       return;
     }
 
     if (!filters.domain.trim()) {
-      setError("Selecione um DomÌnio para consultar.");
+      setError("Selecione um Dom√≠nio para consultar.");
       return;
     }
 
@@ -1025,7 +1025,7 @@ function App() {
           domain: filters.domain.trim(),
         }).toString()}`
       );
-      // key-value mantido em utm_campaign para evitar 422 em tokens que n„o aceitam utm_content
+      // key-value mantido em utm_campaign para evitar 422 em tokens que n√£o aceitam utm_content
       const keyValueContentPromise = fetchJson(
         `${API_BASE}/key-value?${new URLSearchParams({
           start_date: filters.startDate,
@@ -1223,7 +1223,7 @@ function App() {
         setFilters((prev) => ({ ...prev, domain: list[0] }));
       }
     } catch (err) {
-      const msg = formatError(err) || "Erro ao listar DomÌnios.";
+      const msg = formatError(err) || "Erro ao listar Dom√≠nios.";
       setError(msg);
       pushLog("domains", err);
       setDomains([]);
@@ -1508,7 +1508,7 @@ function App() {
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
-          URLs com Par‚metros
+          URLs com Par√¢metros
         </button>
         <button
           className=${`tab ${activeTab === "meta" ? "active" : ""}`}
@@ -1520,7 +1520,7 @@ function App() {
           className=${`tab ${activeTab === "diag" ? "active" : ""}`}
           onClick=${() => setActiveTab("diag")}
         >
-          DiagnÛstico JoinAds
+          Diagn√≥stico JoinAds
         </button>
       </div>
 
