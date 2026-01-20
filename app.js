@@ -638,6 +638,11 @@ const objectiveMap = {
   LINK_CLICKS: "Cliques no link",
 };
 const formatObjective = (value) => objectiveMap[value] || value || "-";
+const normalizeKey = (value) =>
+  (value ?? "")
+    .toString()
+    .trim()
+    .toLowerCase();
 
 function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
   const asText = (value) => {
@@ -991,15 +996,21 @@ function App() {
 
     const superByCustom = {};
     superRows.forEach((row) => {
-      if (row.custom_value) {
-        superByCustom[row.custom_value] = row;
+      const keyNorm = normalizeKey(row.custom_value);
+      if (keyNorm) {
+        superByCustom[keyNorm] = row;
       }
     });
 
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
       const join = earningsByDate[date] || {};
-      const fromCustom = superByCustom[row.ad_name || ""] || {};
+      const nameKey = normalizeKey(row.ad_name);
+      const adIdKey = normalizeKey(row.ad_id || "");
+      const fromCustom =
+        superByCustom[nameKey] ||
+        superByCustom[adIdKey] ||
+        {};
       const ecpmClient =
         fromCustom.ecpm_client ??
         fromCustom.ecpm ??
