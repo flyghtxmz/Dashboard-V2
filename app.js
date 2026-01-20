@@ -1499,28 +1499,28 @@ function App() {
 
       <div className="tabs">
         <button
-          className=${``tab ${activeTab === "dashboard" ? "active" : ""}``}
+          className=${`tab ${activeTab === "dashboard" ? "active" : ""}`}
           onClick=${() => setActiveTab("dashboard")}
         >
           Dashboard
         </button>
         <button
-          className=${``tab ${activeTab === "urls" ? "active" : ""}``}
+          className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
-          URLs com Parƒmetros
+          URLs com Parâmetros
         </button>
         <button
-          className=${``tab ${activeTab === "meta" ? "active" : ""}``}
+          className=${`tab ${activeTab === "meta" ? "active" : ""}`}
           onClick=${() => setActiveTab("meta")}
         >
           Meta
         </button>
         <button
-          className=${``tab ${activeTab === "diag" ? "active" : ""}``}
+          className=${`tab ${activeTab === "diag" ? "active" : ""}`}
           onClick=${() => setActiveTab("diag")}
         >
-          Diagn¢stico JoinAds
+          Diagnóstico JoinAds
         </button>
       </div>
 
