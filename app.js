@@ -837,22 +837,25 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
           </tbody>
         </table>
         ${rows.length
-          ? html`<div className="totals-row">
-              <div><strong>Totais</strong></div>
-              <div>Impressoes: ${number.format(
-                rows.reduce((acc, r) => acc + (r.impressions_joinads ? Number(r.impressions_joinads) : 0), 0
-                ) || 0}</div>
-              <div>Valor gasto: ${currencyBRL.format(
-                rows.reduce((acc, r) => acc + toNumber(r.spend), 0
-                ))}</div>
-              <div>Receita JoinAds: ${currencyUSD.format(
-                rows.reduce(
-                  (acc, r) =>
-                    acc + (r.revenue_client_joinads ? toNumber(r.revenue_client_joinads) : 0),
-                  0
-                )
-              )}</div>
-            </div>`
+          ? (() => {
+              const totalImps = rows.reduce(
+                (acc, r) =>
+                  acc + (r.impressions_joinads ? Number(r.impressions_joinads) : 0),
+                0
+              );
+              const totalSpend = rows.reduce((acc, r) => acc + toNumber(r.spend), 0);
+              const totalRev = rows.reduce(
+                (acc, r) =>
+                  acc + (r.revenue_client_joinads ? toNumber(r.revenue_client_joinads) : 0),
+                0
+              );
+              return html`<div className="totals-row">
+                <div><strong>Totais</strong></div>
+                <div>Impressoes: ${number.format(totalImps)}</div>
+                <div>Valor gasto: ${currencyBRL.format(totalSpend)}</div>
+                <div>Receita JoinAds: ${currencyUSD.format(totalRev)}</div>
+              </div>`;
+            })()
           : null}
         ${rows.find((r) => r.data_level !== "utm_content")
           ? html`<div className="muted small" style=${{ marginTop: "8px" }}>
