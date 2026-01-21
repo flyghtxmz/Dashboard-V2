@@ -194,7 +194,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       helper: "Valor total",
     },
     {
-      label: "Impressões",
+      label: "Impressoes",
       value: number.format(totals.impressions || 0),
       helper: "Volume exibido",
     },
@@ -206,7 +206,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "CTR",
       value: `${(totals.ctr || 0).toFixed(2)}%`,
-      helper: "Cliques / Impressões",
+      helper: "Cliques / Impressoes",
     },
     {
       label: "eCPM cliente",
@@ -264,8 +264,8 @@ function EarningsTable({ rows }) {
           <thead>
             <tr>
               <th>Data</th>
-              <th>Domínio</th>
-              <th>Impressões</th>
+              <th>Dominio</th>
+              <th>Impressoes</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -376,7 +376,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>Domínio *</span>
+          <span>Dominio *</span>
           ${domains && domains.length > 0
             ? html`
                 <select
@@ -405,7 +405,7 @@ function Filters({
                 />
               `}
           ${domainsLoading
-            ? html`<span className="muted small">Carregando Domínios...</span>`
+            ? html`<span className="muted small">Carregando Dominios...</span>`
             : null}
         </label>
         <label className="field">
@@ -472,7 +472,7 @@ function Status({ error, lastRefreshed }) {
 
   return html`
     <div className="status neutral">
-      Informe o Domínio e clique em "Carregar dados".
+      Informe o Dominio e clique em "Carregar dados".
     </div>
   `;
 }
@@ -532,7 +532,7 @@ function TopUrlTable({ rows, totals }) {
             <tr>
               <th>#</th>
               <th>URL</th>
-              <th>Impressões</th>
+              <th>Impressoes</th>
               <th>Cliques</th>
               <th>CTR</th>
               <th>eCPM</th>
@@ -599,7 +599,7 @@ function ParamTable({ rows }) {
             <tr>
               <th>Chave</th>
               <th>Valor</th>
-              <th>Impressões</th>
+              <th>Impressoes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>Ocorrências</th>
@@ -654,7 +654,7 @@ function DiagnosticsJoin({
           <h2 className="section-title">Diagnóstico do token</h2>
         </div>
         <div className="chip-group">
-          <span className="chip neutral">Domínio: ${domain || "-"}</span>
+          <span className="chip neutral">Dominio: ${domain || "-"}</span>
           <span className="chip neutral">super-filter key: ${superKey}</span>
         </div>
       </div>
@@ -668,7 +668,7 @@ function DiagnosticsJoin({
         <div className="metric-card">
           <div className="metric-label">key-value (linhas)</div>
           <div className="metric-value">${kvCount}</div>
-          <div className="metric-helper">utm_content</div>
+          <div className="metric-helper">utm_campaign</div>
         </div>
         <div className="metric-card">
           <div className="metric-label">earnings (linhas)</div>
@@ -685,10 +685,10 @@ function DiagnosticsJoin({
       <div className="table-wrapper" style=${{ marginTop: "12px" }}>
         <table>
           <thead>
-            <tr>
-              <th>Fonte</th>
-              <th>Chave</th>
-              <th>Impressões</th>
+                        <tr>
+              <th>Dominio</th>
+              <th>Fonte (utm_source)</th>
+              <th>Impressoes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>eCPM cliente</th>
@@ -702,9 +702,7 @@ function DiagnosticsJoin({
                     (row, idx) => html`
                       <tr key=${`s-${idx}`}>
                         <td>super-filter</td>
-                        <td>${row.custom_value || "-"}</td>
-                        <td>${number.format(row.impressions || 0)}</td>
-                        <td>${number.format(row.clicks || 0)}</td>
+                        <td>${row.domain || "-"}</td><td>${row.custom_value || "-"}</td><td>${number.format(row.impressions || 0)}</td><td>${number.format(row.clicks || 0)}</td>
                         <td>${currencyUSD.format(row.revenue_client || row.revenue || 0)}</td>
                         <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
                       </tr>
@@ -749,8 +747,8 @@ function MetaSourceTable({ rows }) {
     <section className="card wide">
       <div className="card-head">
         <div>
-          <span className="eyebrow">Meta</span>
-          <h2 className="section-title">utm_source=fb</h2>
+          <span className="eyebrow">Fontes</span>
+          <h2 className="section-title">Fontes (utm_source)</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -758,8 +756,9 @@ function MetaSourceTable({ rows }) {
         <table>
           <thead>
             <tr>
-              <th>Fonte</th>
-              <th>Impressões</th>
+              <th>Dominio</th>
+              <th>Fonte (utm_source)</th>
+              <th>Impressoes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>eCPM cliente</th>
@@ -767,10 +766,11 @@ function MetaSourceTable({ rows }) {
           </thead>
           <tbody>
             ${rows.length === 0
-              ? html`<tr><td colSpan="5" className="muted">Sem dados para utm_source=fb.</td></tr>`
+              ? html`<tr><td colSpan="6" className="muted">Sem dados para utm_source (fb/organic/tiktok).</td></tr>`
               : rows.map(
                   (row, idx) => html`
                     <tr key=${idx}>
+                      <td>${row.domain || "-"}</td>
                       <td>${row.custom_value || "-"}</td>
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
@@ -782,6 +782,7 @@ function MetaSourceTable({ rows }) {
             ${rows.length
               ? html`<tr className="summary-row">
                   <td><strong>Total</strong></td>
+                  <td></td>
                   <td><strong>${number.format(totals.impressions)}</strong></td>
                   <td><strong>${number.format(totals.clicks)}</strong></td>
                   <td><strong>${currencyUSD.format(totals.revenue)}</strong></td>
@@ -794,7 +795,6 @@ function MetaSourceTable({ rows }) {
     </section>
   `;
 }
-
 const objectiveMap = {
   OUTCOME_SALES: "Vendas",
   LINK_CLICKS: "Cliques no link",
@@ -860,7 +860,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               <th>ROAS</th>
               <th>Receita JoinAds (cliente)</th>
               <th>eCPM JoinAds (cliente)</th>
-              <th>Impressões JoinAds</th>
+              <th>Impressoes JoinAds</th>
             </tr>
           </thead>
           <tbody>
@@ -981,12 +981,12 @@ function App() {
 
   const handleLoad = async () => {
     if (domainsLoading && !filters.domain.trim()) {
-      setError("Aguarde carregar os Domínios ou selecione manualmente.");
+      setError("Aguarde carregar os Dominios ou selecione manualmente.");
       return;
     }
 
     if (!filters.domain.trim()) {
-      setError("Selecione um Domínio para consultar.");
+      setError("Selecione um Dominio para consultar.");
       return;
     }
 
@@ -1114,7 +1114,7 @@ function App() {
 
       // key-value para coletar UTMs usadas
       // Somente keys aceitas pelo endpoint (evita erro de validação)
-      const customKeys = ["utm_content"];
+      const customKeys = ["utm_campaign"];
       const keyValueResults = await Promise.all(
         customKeys.map((ck) =>
           fetchJson(
@@ -1176,9 +1176,10 @@ function App() {
       setEarnings(earningsRes.data || []);
       setKeyValueContent(keyValueContentRes.data || []);
       const filteredSource =
-        (metaSourceRes.data || []).filter(
-          (row) => normalizeKey(row.custom_value) === "fb"
-        ) || [];
+        (metaSourceRes.data || []).filter((row) => {
+          const src = normalizeKey(row.custom_value);
+          return src === "fb" || src === "organic" || src === "tiktok";
+        }) || [];
       setMetaSourceRows(filteredSource);
       setLastRefreshed(new Date());
     } catch (err) {
@@ -1210,7 +1211,7 @@ function App() {
         setFilters((prev) => ({ ...prev, domain: list[0] }));
       }
     } catch (err) {
-      const msg = formatError(err) || "Erro ao listar Domínios.";
+      const msg = formatError(err) || "Erro ao listar Dominios.";
       setError(msg);
       pushLog("domains", err);
       setDomains([]);
@@ -1581,6 +1582,11 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
+
+
+
+
 
 
 
