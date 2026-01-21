@@ -1083,25 +1083,12 @@ function App() {
             end_date: filters.endDate,
             domain: filters.domain.trim(),
             report_type: filters.reportType || "Analytical",
-            custom_key: "utm_content",
+            custom_key: "utm_campaign",
           }).toString()}`
         );
       } catch (err) {
         pushLog("key-value-content", err);
-        try {
-          keyValueContentRes = await fetchJson(
-            `${API_BASE}/key-value?${new URLSearchParams({
-              start_date: filters.startDate,
-              end_date: filters.endDate,
-              domain: filters.domain.trim(),
-              report_type: filters.reportType || "Analytical",
-              custom_key: "utm_campaign",
-            }).toString()}`
-          );
-        } catch (err2) {
-          pushLog("key-value-content-fallback", err2);
-          keyValueContentRes = { data: [] };
-        }
+        keyValueContentRes = { data: [] };
       }
 
       let metaSourceRes = { data: [] };
@@ -1514,7 +1501,7 @@ function App() {
           className=${`tab ${activeTab === "meta" ? "active" : ""}`}
           onClick=${() => setActiveTab("meta")}
         >
-          Meta
+          Fontes
         </button>
         <button
           className=${`tab ${activeTab === "diag" ? "active" : ""}`}
