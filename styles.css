@@ -431,11 +431,17 @@ tbody tr:last-child td {
   tbody td {
     padding: 10px 10px;
     font-size: 0.9rem;
+  }
+  .table-wrapper table th {
+    white-space: nowrap;
+    word-break: normal;
+  }
+  .table-wrapper table td {
     white-space: normal;
     word-break: break-word;
   }
   .table-wrapper table {
-    table-layout: fixed;
+    table-layout: auto;
   }
 }
 
@@ -459,7 +465,7 @@ tbody tr:last-child td {
   }
 }
 .table-wrapper table {
-  min-width: 720px;
+  min-width: 900px;
 }
 @media (max-width: 720px) {
   .table-wrapper {
@@ -468,7 +474,7 @@ tbody tr:last-child td {
     max-width: none;
   }
   .table-wrapper table {
-    min-width: 560px;
+    min-width: 1000px;
   }
 }
 
