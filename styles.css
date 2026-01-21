@@ -422,11 +422,18 @@ tbody tr:last-child td {
   }
   .table-wrapper {
     margin: 0 -6px;
+    width: calc(100% + 12px);
+    max-width: none;
   }
   .table-wrapper table th,
   tbody td {
     padding: 10px 10px;
     font-size: 0.9rem;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .table-wrapper table {
+    table-layout: fixed;
   }
 }
 
