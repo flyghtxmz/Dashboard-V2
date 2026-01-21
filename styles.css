@@ -247,6 +247,8 @@ button.ghost {
 
 .table-wrapper {
   overflow-x: auto;
+  position: relative;
+  border-radius: 12px;
 }
 table {
   border-collapse: collapse;
@@ -434,6 +436,39 @@ tbody tr:last-child td {
   }
   .table-wrapper table {
     table-layout: fixed;
+  }
+}
+
+/* Inline scroll cue for mobile tables */
+.table-wrapper::after {
+  content: "↔ deslize";
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.8);
+  padding: 2px 6px;
+  border-radius: 999px;
+  box-shadow: 0 8px 16px rgba(26, 22, 56, 0.06);
+  pointer-events: none;
+}
+@media (min-width: 721px) {
+  .table-wrapper::after {
+    display: none;
+  }
+}
+.table-wrapper table {
+  min-width: 720px;
+}
+@media (max-width: 720px) {
+  .table-wrapper {
+    margin: 0 -6px;
+    width: calc(100% + 12px);
+    max-width: none;
+  }
+  .table-wrapper table {
+    min-width: 560px;
   }
 }
 
