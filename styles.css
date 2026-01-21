@@ -465,7 +465,7 @@ tbody tr:last-child td {
   }
 }
 .table-wrapper table {
-  min-width: 900px;
+  min-width: unset;
 }
 @media (max-width: 720px) {
   .table-wrapper {
@@ -474,7 +474,16 @@ tbody tr:last-child td {
     max-width: none;
   }
   .table-wrapper table {
-    min-width: 1000px;
+    min-width: 640px;
+    table-layout: auto;
+  }
+  .table-wrapper table th {
+    white-space: normal;
+    word-break: normal;
+  }
+  .table-wrapper table td {
+    white-space: normal;
+    word-break: break-word;
   }
 }
 
