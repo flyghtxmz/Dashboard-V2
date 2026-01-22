@@ -58,28 +58,54 @@ module.exports = async function handler(req, res) {
     const insights = data.data || [];
 
     // Enriquecer com permalink do criativo (best-effort)
-    const withPermalinks = await Promise.all(
+    const withAssets = await Promise.all(
       insights.map(async (row) => {
         const enriched = { ...row };
         if (!row.ad_id) return enriched;
         try {
+          // Puxa object_story_spec para descobrir imagem ou vídeo
           const creativeRes = await fetch(
-            `${API_BASE}/${encodeURIComponent(row.ad_id)}?fields=creative{effective_object_story_id,object_story_id}&access_token=${token}`
+            `${API_BASE}/${encodeURIComponent(row.ad_id)}?fields=creative{object_story_spec{photo_data{image_hash},video_data{video_id},link_data{picture}}}&access_token=${token}`
           );
           const creativeJson = await creativeRes.json().catch(() => ({}));
-          const storyId =
-            creativeJson?.creative?.effective_object_story_id ||
-            creativeJson?.creative?.object_story_id;
-          if (storyId) {
-            // default constructed permalink (even se abaixo falhar)
-            enriched.permalink_url = `https://facebook.com/${storyId}`;
-            const storyRes = await fetch(
-              `${API_BASE}/${encodeURIComponent(storyId)}?fields=permalink_url&access_token=${token}`
+          const spec = creativeJson?.creative?.object_story_spec || {};
+
+          // 1) Vídeo direto
+          const videoId = spec.video_data?.video_id;
+          if (videoId) {
+            const videoRes = await fetch(
+              `${API_BASE}/${encodeURIComponent(videoId)}?fields=source&access_token=${token}`
             );
-            const storyJson = await storyRes.json().catch(() => ({}));
-            if (storyJson?.permalink_url) {
-              enriched.permalink_url = storyJson.permalink_url;
+            const videoJson = await videoRes.json().catch(() => ({}));
+            if (videoJson?.source) {
+              enriched.asset_url = videoJson.source;
+              enriched.asset_type = "video";
+              return enriched;
             }
+          }
+
+          // 2) Imagem via hash -> permalink_url do CDN
+          const imageHash = spec.photo_data?.image_hash;
+          if (imageHash) {
+            const imgRes = await fetch(
+              `${API_BASE}/act_${encodeURIComponent(
+                account_id
+              )}/adimages?fields=permalink_url&hashes=["${imageHash}"]&access_token=${token}`
+            );
+            const imgJson = await imgRes.json().catch(() => ({}));
+            const match = imgJson?.data?.find((d) => d.hash === imageHash);
+            if (match?.permalink_url) {
+              enriched.asset_url = match.permalink_url;
+              enriched.asset_type = "image";
+              return enriched;
+            }
+          }
+
+          // 3) Link_data picture (fallback)
+          const linkPic = spec.link_data?.picture;
+          if (linkPic) {
+            enriched.asset_url = linkPic;
+            enriched.asset_type = "image";
           }
         } catch (e) {
           // silencioso; segue sem permalink
@@ -88,7 +114,7 @@ module.exports = async function handler(req, res) {
       })
     );
 
-    res.status(200).json({ code: "success", data: withPermalinks });
+    res.status(200).json({ code: "success", data: withAssets });
   } catch (error) {
     res.status(500).json({ error: "Erro ao consultar Meta", details: error.message });
   }

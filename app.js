@@ -879,11 +879,13 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       <td>${formatObjective(row.objective)}</td>
                       <td>${asText(row.adset_name)}</td>
                       <td>
-                        ${adLink
-                          ? html`<a href=${adLink} target="_blank" rel="noopener noreferrer">${asText(
-                              row.ad_name
-                            )}</a>`
-                          : asText(row.ad_name)}
+                        ${
+                          row.asset_url
+                            ? html`<a href=${row.asset_url} target="_blank" rel="noopener noreferrer">${asText(
+                                row.ad_name
+                              )}</a>`
+                            : asText(row.ad_name)
+                        }
                       </td>
                       <td>${asText(row.cost_per_result)}</td>
                       <td>
