@@ -858,6 +858,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               <th>Resultados (Meta)</th>
               <th>Valor gasto</th>
               <th>ROAS</th>
+              <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
               <th>eCPM JoinAds (cliente)</th>
               <th>Impressoes JoinAds</th>
@@ -867,7 +868,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
             ${rows.length === 0
               ? html`
                   <tr>
-                    <td colSpan="11" className="muted">Sem dados para o periodo.</td>
+                    <td colSpan="12" className="muted">Sem dados para o periodo.</td>
                   </tr>
                 `
               : rows.map(
@@ -895,6 +896,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       </td>
                       <td>${asText(row.spend_brl)}</td>
                       <td>${row.roas_joinads || "-"}</td>
+                      <td>${row.lucro_op_brl || "-"}</td>
                       <td>
                         ${row.revenue_client_joinads != null
                           ? asText(row.revenue_client_joinads)
@@ -1329,6 +1331,10 @@ function App() {
         revenueClientBrl != null && spend > 0
           ? revenueClientBrl / spend
           : null;
+      const lucroOpBrl =
+        revenueClientBrl != null && spend !== null && spend !== undefined
+          ? revenueClientBrl - spend
+          : null;
 
       return {
         ...row,
@@ -1336,6 +1342,8 @@ function App() {
         cost_per_result: currencyBRL.format(cost),
         spend_brl: currencyBRL.format(spend),
         spend_value: spend,
+        revenue_client_brl_value: revenueClientBrl ?? null,
+        lucro_op_brl: lucroOpBrl != null ? currencyBRL.format(lucroOpBrl) : "-",
         ecpm_client:
           ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : "-",
         revenue_client_joinads:
