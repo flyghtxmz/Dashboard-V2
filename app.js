@@ -685,9 +685,10 @@ function DiagnosticsJoin({
       <div className="table-wrapper" style=${{ marginTop: "12px" }}>
         <table>
           <thead>
-                        <tr>
+            <tr>
+              <th>Fonte</th>
               <th>Dominio</th>
-              <th>Fonte (utm_source)</th>
+              <th>Chave</th>
               <th>Impressoes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
@@ -696,13 +697,16 @@ function DiagnosticsJoin({
           </thead>
           <tbody>
             ${kvCount === 0 && superCount === 0
-              ? html`<tr><td colSpan="6" className="muted">Sem dados retornados.</td></tr>`
+              ? html`<tr><td colSpan="7" className="muted">Sem dados retornados.</td></tr>`
               : html`
                   ${superRows?.slice(0, 20).map(
                     (row, idx) => html`
                       <tr key=${`s-${idx}`}>
                         <td>super-filter</td>
-                        <td>${row.domain || "-"}</td><td>${row.custom_value || "-"}</td><td>${number.format(row.impressions || 0)}</td><td>${number.format(row.clicks || 0)}</td>
+                        <td>${row.domain || "-"}</td>
+                        <td>${row.custom_value || "-"}</td>
+                        <td>${number.format(row.impressions || 0)}</td>
+                        <td>${number.format(row.clicks || 0)}</td>
                         <td>${currencyUSD.format(row.revenue_client || row.revenue || 0)}</td>
                         <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
                       </tr>
@@ -712,6 +716,7 @@ function DiagnosticsJoin({
                     (row, idx) => html`
                       <tr key=${`k-${idx}`}>
                         <td>key-value</td>
+                        <td>${row.name || row.domain || "-"}</td>
                         <td>${row.custon_value || row.custom_value || "-"}</td>
                         <td>${number.format(row.impressions || 0)}</td>
                         <td>${number.format(row.clicks || 0)}</td>
