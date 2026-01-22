@@ -31,6 +31,7 @@ module.exports = async function handler(req, res) {
     "campaign_name",
     "adset_name",
     "ad_name",
+    "ad_id",
     "objective",
     "spend",
     "results",
@@ -54,7 +55,38 @@ module.exports = async function handler(req, res) {
       res.status(response.status).json({ error: "Erro Meta", details: data });
       return;
     }
-    res.status(200).json({ code: "success", data: data.data || [] });
+    const insights = data.data || [];
+
+    // Enriquecer com permalink do criativo (best-effort)
+    const withPermalinks = await Promise.all(
+      insights.map(async (row) => {
+        const enriched = { ...row };
+        if (!row.ad_id) return enriched;
+        try {
+          const creativeRes = await fetch(
+            `${API_BASE}/${encodeURIComponent(row.ad_id)}?fields=creative{effective_object_story_id,object_story_id}&access_token=${token}`
+          );
+          const creativeJson = await creativeRes.json().catch(() => ({}));
+          const storyId =
+            creativeJson?.creative?.effective_object_story_id ||
+            creativeJson?.creative?.object_story_id;
+          if (storyId) {
+            const storyRes = await fetch(
+              `${API_BASE}/${encodeURIComponent(storyId)}?fields=permalink_url&access_token=${token}`
+            );
+            const storyJson = await storyRes.json().catch(() => ({}));
+            if (storyJson?.permalink_url) {
+              enriched.permalink_url = storyJson.permalink_url;
+            }
+          }
+        } catch (e) {
+          // silencioso; segue sem permalink
+        }
+        return enriched;
+      })
+    );
+
+    res.status(200).json({ code: "success", data: withPermalinks });
   } catch (error) {
     res.status(500).json({ error: "Erro ao consultar Meta", details: error.message });
   }

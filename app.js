@@ -867,16 +867,28 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
             ${rows.length === 0
               ? html`
                   <tr>
-                    <td colSpan="7" className="muted">Sem dados para o periodo.</td>
+                    <td colSpan="11" className="muted">Sem dados para o periodo.</td>
                   </tr>
                 `
               : rows.map(
-                  (row, idx) => html`
+                  (row, idx) => {
+                    const adLink =
+                      row.permalink_url ||
+                      (row.ad_id
+                        ? `https://www.facebook.com/ads/library/?id=${row.ad_id}`
+                        : null);
+                    return html`
                     <tr key=${idx}>
                       <td>${asText(row.date)}</td>
                       <td>${formatObjective(row.objective)}</td>
                       <td>${asText(row.adset_name)}</td>
-                      <td>${asText(row.ad_name)}</td>
+                      <td>
+                        ${adLink
+                          ? html`<a href=${adLink} target="_blank" rel="noopener noreferrer">${asText(
+                              row.ad_name
+                            )}</a>`
+                          : asText(row.ad_name)}
+                      </td>
                       <td>${asText(row.cost_per_result)}</td>
                       <td>
                         ${row.results_meta != null
@@ -899,7 +911,8 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                           : "-"}
                       </td>
                     </tr>
-                  `
+                  `;
+                  }
                 )}
           </tbody>
         </table>
