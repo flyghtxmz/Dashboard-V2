@@ -22,7 +22,7 @@ body {
   color: var(--ink);
   padding: 32px 24px 56px;
   position: relative;
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .layout {
