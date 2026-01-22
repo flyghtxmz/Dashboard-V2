@@ -872,11 +872,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                 `
               : rows.map(
                   (row, idx) => {
-                    const adLink =
-                      row.permalink_url ||
-                      (row.ad_id
-                        ? `https://www.facebook.com/ads/library/?id=${row.ad_id}`
-                        : null);
+                    const adLink = row.permalink_url || null;
                     return html`
                     <tr key=${idx}>
                       <td>${asText(row.date)}</td>
