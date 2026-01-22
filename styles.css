@@ -447,13 +447,13 @@ tbody tr:last-child td {
 }
 
 .table-wrapper table {
-  min-width: unset;
+  min-width: 720px;
 }
 @media (max-width: 720px) {
   .table-wrapper {
-    margin: 0 -6px;
-    width: calc(100% + 12px);
-    max-width: none;
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
   }
   .table-wrapper table {
     min-width: 640px;
