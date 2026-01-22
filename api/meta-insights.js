@@ -71,6 +71,8 @@ module.exports = async function handler(req, res) {
             creativeJson?.creative?.effective_object_story_id ||
             creativeJson?.creative?.object_story_id;
           if (storyId) {
+            // default constructed permalink (even se abaixo falhar)
+            enriched.permalink_url = `https://facebook.com/${storyId}`;
             const storyRes = await fetch(
               `${API_BASE}/${encodeURIComponent(storyId)}?fields=permalink_url&access_token=${token}`
             );
