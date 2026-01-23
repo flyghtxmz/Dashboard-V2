@@ -1173,6 +1173,126 @@ function MetaJoinGroupedTable({ rows }) {
     </section>
   `;
 }
+
+function MetaJoinAdsetTable({ rows }) {
+  const asText = (value) => {
+    if (value === null || value === undefined) return "-";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+
+  const groupedRows = rows.reduce((map, row) => {
+    const key = `${row.adset_name || ""}|||${row.objective || ""}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        adset_name: row.adset_name,
+        objective: row.objective,
+        spend: 0,
+        results: 0,
+        impressions: 0,
+        revenue_usd: 0,
+        revenue_brl: 0,
+        hasAdLevel: false,
+        joinadsAdded: false,
+        fallbackImps: 0,
+        fallbackRevenueUsd: 0,
+        fallbackRevenueBrl: 0,
+      });
+    }
+    const item = map.get(key);
+    item.spend += toNumber(row.spend_value || row.spend);
+    item.results += toNumber(row.results_meta);
+    const isAdLevel = row.data_level === "utm_content";
+    const joinImps = toNumber(row.impressions_joinads);
+    const joinUsd = toNumber(row.revenue_client_value);
+    const joinBrl = toNumber(row.revenue_client_brl_value);
+    if (isAdLevel) {
+      item.hasAdLevel = true;
+      if (!item.joinadsAdded && (joinImps || joinUsd || joinBrl)) {
+        item.impressions += joinImps;
+        item.revenue_usd += joinUsd;
+        item.revenue_brl += joinBrl;
+        item.joinadsAdded = true;
+      }
+    } else if (!item.hasAdLevel) {
+      item.fallbackImps = Math.max(item.fallbackImps, joinImps);
+      item.fallbackRevenueUsd = Math.max(item.fallbackRevenueUsd, joinUsd);
+      item.fallbackRevenueBrl = Math.max(item.fallbackRevenueBrl, joinBrl);
+    }
+    return map;
+  }, new Map());
+
+  const grouped = Array.from(groupedRows.values())
+    .map((item) => {
+      if (!item.hasAdLevel && !item.joinadsAdded) {
+        item.impressions += item.fallbackImps;
+        item.revenue_usd += item.fallbackRevenueUsd;
+        item.revenue_brl += item.fallbackRevenueBrl;
+      }
+      return item;
+    })
+    .sort((a, b) => (b.revenue_usd || 0) - (a.revenue_usd || 0));
+
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Meta x JoinAds</span>
+          <h2 className="section-title">Resumo agrupado (por conjunto)</h2>
+        </div>
+        <span className="chip neutral">${grouped.length} linhas</span>
+      </div>
+      <div className="table-wrapper scroll-x">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Conjunto</th>
+              <th>Resultados (Meta)</th>
+              <th>Valor gasto</th>
+              <th>ROAS</th>
+              <th>Lucro Op (BRL)</th>
+              <th>Receita JoinAds (cliente)</th>
+              <th>eCPM JoinAds (cliente)</th>
+              <th>Impressoes JoinAds</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${grouped.length === 0
+              ? html`<tr><td colSpan="9" className="muted">Sem dados para o periodo.</td></tr>`
+              : grouped.map((row, idx) => {
+                  const ecpm =
+                    row.impressions > 0
+                      ? (row.revenue_usd / row.impressions) * 1000
+                      : null;
+                  const roas =
+                    row.revenue_brl > 0 && row.spend > 0
+                      ? row.revenue_brl / row.spend
+                      : null;
+                  const lucro =
+                    row.revenue_brl !== 0 || row.spend !== 0
+                      ? row.revenue_brl - row.spend
+                      : null;
+                  return html`
+                    <tr key=${idx}>
+                      <td>${formatObjective(row.objective)}</td>
+                      <td>${asText(row.adset_name)}</td>
+                      <td>${number.format(row.results || 0)}</td>
+                      <td>${currencyBRL.format(row.spend || 0)}</td>
+                      <td>${roas != null ? `${roas.toFixed(2)}x` : "-"}</td>
+                      <td>${lucro != null ? currencyBRL.format(lucro) : "-"}</td>
+                      <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
+                      <td>${ecpm != null ? currencyUSD.format(ecpm) : "-"}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                    </tr>
+                  `;
+                })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
 function App() {
   const [filters, setFilters] = useState({
     ...defaultDates(),
@@ -1938,6 +2058,7 @@ function App() {
                     setFilters((prev) => ({ ...prev, adsetFilter: value }))}
                 />
               `}
+              ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} />`}
               ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
               ${html`<${EarningsTable} rows=${earnings} />`}
             </main>
