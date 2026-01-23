@@ -1212,10 +1212,16 @@ function App() {
         ...(metaSourceRes.data || []),
         ...(metaMediumRes.data || []),
       ];
+      const targetDomain = normalizeKey(filters.domain || "");
       const filteredSource =
         combinedSource.filter((row) => {
           const src = normalizeKey(row.custom_value);
-          return src === "fb" || src === "organic" || src === "tiktok";
+          const domainName = normalizeKey(row.domain || row.name || "");
+          const domainOk = targetDomain ? domainName === targetDomain : true;
+          return (
+            domainOk &&
+            (src === "fb" || src === "organic" || src === "tiktok")
+          );
         }) || [];
       setMetaSourceRows(filteredSource);
       setLastRefreshed(new Date());
