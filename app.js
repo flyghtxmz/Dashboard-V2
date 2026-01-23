@@ -1108,12 +1108,19 @@ function MetaJoinGroupedTable({ rows }) {
   `;
 }
 
-function MetaJoinAdsetTable({ rows }) {
+function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
   };
+
+  const joinadsByTerm = new Map();
+  (joinadsRows || []).forEach((row) => {
+    const key = normalizeKey(row.custom_value);
+    if (!key) return;
+    joinadsByTerm.set(key, row);
+  });
 
   const groupedRows = rows.reduce((map, row) => {
     const key = `${row.adset_name || ""}|||${row.objective || ""}`;
@@ -1123,45 +1130,26 @@ function MetaJoinAdsetTable({ rows }) {
         objective: row.objective,
         spend: 0,
         results: 0,
-        impressions: 0,
-        revenue_usd: 0,
-        revenue_brl: 0,
-        hasAdLevel: false,
-        joinadsAdded: false,
-        fallbackImps: 0,
-        fallbackRevenueUsd: 0,
-        fallbackRevenueBrl: 0,
+        impressions: null,
+        revenue_usd: null,
+        revenue_brl: null,
       });
     }
     const item = map.get(key);
     item.spend += toNumber(row.spend_value || row.spend);
     item.results += toNumber(row.results_meta);
-    const isAdLevel = row.data_level === "utm_content";
-    const joinImps = toNumber(row.impressions_joinads);
-    const joinUsd = toNumber(row.revenue_client_value);
-    const joinBrl = toNumber(row.revenue_client_brl_value);
-    if (isAdLevel) {
-      item.hasAdLevel = true;
-      if (!item.joinadsAdded && (joinImps || joinUsd || joinBrl)) {
-        item.impressions += joinImps;
-        item.revenue_usd += joinUsd;
-        item.revenue_brl += joinBrl;
-        item.joinadsAdded = true;
-      }
-    } else if (!item.hasAdLevel) {
-      item.fallbackImps = Math.max(item.fallbackImps, joinImps);
-      item.fallbackRevenueUsd = Math.max(item.fallbackRevenueUsd, joinUsd);
-      item.fallbackRevenueBrl = Math.max(item.fallbackRevenueBrl, joinBrl);
-    }
     return map;
   }, new Map());
 
   const grouped = Array.from(groupedRows.values())
     .map((item) => {
-      if (!item.hasAdLevel && !item.joinadsAdded) {
-        item.impressions += item.fallbackImps;
-        item.revenue_usd += item.fallbackRevenueUsd;
-        item.revenue_brl += item.fallbackRevenueBrl;
+      const termKey = normalizeKey(item.adset_name);
+      const join = joinadsByTerm.get(termKey);
+      if (join) {
+        const usd = toNumber(join.revenue_client || join.revenue);
+        item.impressions = toNumber(join.impressions);
+        item.revenue_usd = usd;
+        item.revenue_brl = brlRate ? usd * brlRate : null;
       }
       return item;
     })
@@ -1196,15 +1184,15 @@ function MetaJoinAdsetTable({ rows }) {
               ? html`<tr><td colSpan="9" className="muted">Sem dados para o periodo.</td></tr>`
               : grouped.map((row, idx) => {
                   const ecpm =
-                    row.impressions > 0
+                    row.impressions > 0 && row.revenue_usd != null
                       ? (row.revenue_usd / row.impressions) * 1000
                       : null;
                   const roas =
-                    row.revenue_brl > 0 && row.spend > 0
+                    row.revenue_brl != null && row.revenue_brl > 0 && row.spend > 0
                       ? row.revenue_brl / row.spend
                       : null;
                   const lucro =
-                    row.revenue_brl !== 0 || row.spend !== 0
+                    row.revenue_brl != null
                       ? row.revenue_brl - row.spend
                       : null;
                   return html`
@@ -1215,9 +1203,9 @@ function MetaJoinAdsetTable({ rows }) {
                       <td>${currencyBRL.format(row.spend || 0)}</td>
                       <td>${roas != null ? `${roas.toFixed(2)}x` : "-"}</td>
                       <td>${lucro != null ? currencyBRL.format(lucro) : "-"}</td>
-                      <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
+                      <td>${row.revenue_usd != null ? currencyUSD.format(row.revenue_usd) : "-"}</td>
                       <td>${ecpm != null ? currencyUSD.format(ecpm) : "-"}</td>
-                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${row.impressions != null ? number.format(row.impressions) : "-"}</td>
                     </tr>
                   `;
                 })}
@@ -1251,6 +1239,7 @@ function App() {
   const [paramPairs, setParamPairs] = useState([]);
   const [superKey, setSuperKey] = useState("utm_content");
   const [metaSourceRows, setMetaSourceRows] = useState([]);
+  const [superTermRows, setSuperTermRows] = useState([]);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -1369,6 +1358,22 @@ function App() {
         }
       }
 
+      let superTermRes = { data: [] };
+      try {
+        superTermRes = await fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_term",
+            group: ["domain", "custom_value"],
+          }),
+        });
+      } catch (err) {
+        pushLog("super-filter-term", err);
+      }
+
 
       let keyValueContentRes;
       try {
@@ -1482,6 +1487,7 @@ function App() {
 
       setSuperFilter(superRes?.data || []);
       setSuperKey(superKeyUsed || "utm_content");
+      setSuperTermRows(superTermRes?.data || []);
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setKeyValueContent(keyValueContentRes.data || []);
@@ -1566,6 +1572,7 @@ function App() {
       setParamPairs([]);
       setKeyValueContent([]);
       setMetaSourceRows([]);
+      setSuperTermRows([]);
     } finally {
       setLoading(false);
     }
@@ -1981,7 +1988,7 @@ function App() {
                     setFilters((prev) => ({ ...prev, adsetFilter: value }))}
                 />
               `}
-              ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} />`}
+              ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
               ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
               ${html`<${EarningsTable} rows=${earnings} />`}
             </main>
