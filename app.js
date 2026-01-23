@@ -738,10 +738,6 @@ function DiagnosticsJoin({
 }
 
 function DiagnosticsSuperAll({ rows, domain }) {
-  const totalImps = rows.reduce(
-    (acc, row) => acc + Number(row.impressions || 0),
-    0
-  );
   const deduped = rows.reduce((acc, row) => {
     const imps = Number(row.impressions || 0);
     const ecpmVal = Number(row.ecpm_client || row.ecpm || 0).toFixed(4);
@@ -763,6 +759,18 @@ function DiagnosticsSuperAll({ rows, domain }) {
     return acc;
   }, new Map());
   const dedupedRows = Array.from(deduped.values());
+  const totalImps = dedupedRows.reduce(
+    (acc, row) => acc + Number(row.impressions || 0),
+    0
+  );
+  const totalClicks = dedupedRows.reduce(
+    (acc, row) => acc + Number(row.clicks || 0),
+    0
+  );
+  const totalRevenue = dedupedRows.reduce(
+    (acc, row) => acc + Number(row.revenue_client || row.revenue || 0),
+    0
+  );
 
   return html`
     <section className="card wide">
@@ -810,6 +818,16 @@ function DiagnosticsSuperAll({ rows, domain }) {
                     </tr>
                   `
                 )}
+            ${dedupedRows.length
+              ? html`<tr className="summary-row">
+                  <td><strong>Total</strong></td>
+                  <td></td>
+                  <td><strong>${number.format(totalImps)}</strong></td>
+                  <td><strong>${number.format(totalClicks)}</strong></td>
+                  <td><strong>${currencyUSD.format(totalRevenue)}</strong></td>
+                  <td></td>
+                </tr>`
+              : null}
           </tbody>
         </table>
       </div>
