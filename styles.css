@@ -113,6 +113,25 @@ button.primary {
 button.ghost {
   background: transparent;
 }
+.toggle {
+  border: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: #fff;
+}
+.toggle.on {
+  background: #2c6e63;
+}
+.toggle.off {
+  background: #c44a3d;
+}
+.toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .status {
   margin: 16px 0;

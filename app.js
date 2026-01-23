@@ -954,7 +954,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange, onToggleAd, statusLo
                       <td>
                         ${row.ad_id
                           ? html`<button
-                              className="ghost"
+                              className=${`toggle ${isActive ? "on" : "off"}`}
                               disabled=${busy}
                               onClick=${() =>
                                 onToggleAd(
@@ -962,11 +962,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange, onToggleAd, statusLo
                                   isActive ? "PAUSED" : "ACTIVE"
                                 )}
                             >
-                              ${busy
-                                ? "Aguarde..."
-                                : isActive
-                                ? "Desativar"
-                                : "Ativar"}
+                              ${busy ? "..." : isActive ? "Ligado" : "Desligado"}
                             </button>`
                           : "-"}
                       </td>
