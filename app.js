@@ -762,6 +762,36 @@ function DiagnosticsSuperAll({ rows, domain }) {
           <div className="metric-helper">super-filter com custom_key vazio</div>
         </div>
       </div>
+      <div className="table-wrapper" style=${{ marginTop: "12px" }}>
+        <table>
+          <thead>
+            <tr>
+              <th>Dominio</th>
+              <th>Valor</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>Receita cliente</th>
+              <th>eCPM cliente</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0
+              ? html`<tr><td colSpan="6" className="muted">Sem linhas retornadas.</td></tr>`
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${idx}>
+                      <td>${row.domain || "-"}</td>
+                      <td>${row.custom_value || "-"}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue_client || row.revenue || 0)}</td>
+                      <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
+                    </tr>
+                  `
+                )}
+          </tbody>
+        </table>
+      </div>
     </section>
   `;
 }
