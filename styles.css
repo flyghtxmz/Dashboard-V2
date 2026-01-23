@@ -464,7 +464,7 @@ tbody tr:last-child td {
 .scroll-x {
   overflow-x: auto;
   overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
+  -webkit-overflow-scrolling: auto;
   overscroll-behavior-x: contain;
   touch-action: pan-y;
 }
