@@ -835,6 +835,62 @@ function DiagnosticsSuperAll({ rows, domain }) {
   `;
 }
 
+function DiagnosticsNoUtm({ rows, totals }) {
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">JoinAds</span>
+          <h2 className="section-title">Entradas sem UTM (por URL)</h2>
+        </div>
+        <span className="chip neutral">${rows.length} URLs</span>
+      </div>
+      <div className="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>URL</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>CTR</th>
+              <th>Receita cliente</th>
+              <th>eCPM cliente</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0
+              ? html`<tr><td colSpan="6" className="muted">Nenhuma URL sem UTM no período.</td></tr>`
+              : rows.map(
+                  (row, idx) => html`
+                    <tr key=${idx}>
+                      <td className="url-cell">
+                        <div className="url">${row.url || "-"}</div>
+                      </td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
+                      <td>${currencyUSD.format(row.revenue || 0)}</td>
+                      <td>${currencyUSD.format(row.ecpm || 0)}</td>
+                    </tr>
+                  `
+                )}
+            ${rows.length
+              ? html`<tr className="summary-row">
+                  <td><strong>Total</strong></td>
+                  <td><strong>${number.format(totals.impressions)}</strong></td>
+                  <td><strong>${number.format(totals.clicks)}</strong></td>
+                  <td><strong>${`${Number(totals.ctr || 0).toFixed(2)}%`}</strong></td>
+                  <td><strong>${currencyUSD.format(totals.revenue)}</strong></td>
+                  <td><strong>${currencyUSD.format(totals.ecpm)}</strong></td>
+                </tr>`
+              : null}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function MetaSourceTable({ rows }) {
   const totals = rows.reduce(
     (acc, row) => {
@@ -1883,6 +1939,60 @@ function App() {
     return sum;
   }, [topUrls]);
 
+  const noUtmStats = useMemo(() => {
+    if (!topUrls?.length) {
+      return { rows: [], totals: { impressions: 0, clicks: 0, ctr: 0, ecpm: 0, revenue: 0 } };
+    }
+    const map = new Map();
+    topUrls.forEach((row) => {
+      const raw = row.url || "";
+      const hasProto = raw.startsWith("http");
+      const base = hasProto ? undefined : "https://dummy.com";
+      let hasUtm = false;
+      try {
+        const parsed = new URL(raw, base);
+        parsed.searchParams.forEach((value, key) => {
+          if (key.toLowerCase().startsWith("utm_") && value) {
+            hasUtm = true;
+          }
+        });
+      } catch (e) {}
+      if (hasUtm) return;
+      const key = raw || row.domain || `${row.domain || "url"}-${row.id_post || ""}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          url: raw || "-",
+          impressions: 0,
+          clicks: 0,
+          revenue: 0,
+        });
+      }
+      const item = map.get(key);
+      item.impressions += Number(row.impressions || 0);
+      item.clicks += Number(row.clicks || 0);
+      item.revenue += Number(row.revenue_client || row.revenue || 0);
+    });
+    const rows = Array.from(map.values()).sort(
+      (a, b) => (b.impressions || 0) - (a.impressions || 0)
+    );
+    const totals = rows.reduce(
+      (acc, r) => {
+        acc.impressions += r.impressions;
+        acc.clicks += r.clicks;
+        acc.revenue += r.revenue;
+        return acc;
+      },
+      { impressions: 0, clicks: 0, revenue: 0 }
+    );
+    totals.ctr = totals.impressions ? (totals.clicks / totals.impressions) * 100 : 0;
+    totals.ecpm = totals.impressions ? (totals.revenue / totals.impressions) * 1000 : 0;
+    rows.forEach((r) => {
+      r.ctr = r.impressions ? (r.clicks / r.impressions) * 100 : 0;
+      r.ecpm = r.impressions ? (r.revenue / r.impressions) * 1000 : 0;
+    });
+    return { rows, totals };
+  }, [topUrls]);
+
   const paramStats = useMemo(() => {
     const map = new Map();
 
@@ -2092,6 +2202,12 @@ function App() {
                 <${DiagnosticsSuperAll}
                   rows=${Array.isArray(superAllRows) ? superAllRows : []}
                   domain=${filters.domain}
+                />
+              `}
+              ${html`
+                <${DiagnosticsNoUtm}
+                  rows=${noUtmStats.rows}
+                  totals=${noUtmStats.totals}
                 />
               `}
             </main>
