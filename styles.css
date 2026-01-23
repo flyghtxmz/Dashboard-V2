@@ -429,14 +429,14 @@ tbody tr:last-child td {
     width: 100%;
     max-width: 100%;
   }
-  .table-wrapper table th,
+ .table-wrapper table th,
   tbody td {
     padding: 8px 8px;
     font-size: 0.85rem;
   }
   .table-wrapper table th {
-    white-space: normal;
-    word-break: break-word;
+    white-space: nowrap;
+    word-break: normal;
   }
   .table-wrapper table td {
     white-space: normal;
@@ -460,7 +460,7 @@ tbody tr:last-child td {
   -webkit-overflow-scrolling: touch;
 }
 .scroll-x table {
-  min-width: 720px;
+  min-width: 900px;
 }
 @media (max-width: 720px) {
   .table-wrapper {
@@ -473,16 +473,16 @@ tbody tr:last-child td {
     table-layout: auto;
   }
   .table-wrapper table th {
-    white-space: normal;
-    word-break: break-word;
+    white-space: nowrap;
+    word-break: normal;
   }
   .table-wrapper table td {
     white-space: normal;
     word-break: break-word;
   }
   .scroll-x table {
-    min-width: 100%;
-    table-layout: fixed;
+    min-width: 720px;
+    table-layout: auto;
   }
 }
 
