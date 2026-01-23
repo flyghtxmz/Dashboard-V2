@@ -458,9 +458,12 @@ tbody tr:last-child td {
 .scroll-x {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
 }
 .scroll-x table {
-  min-width: 900px;
+  width: max-content;
+  min-width: 100%;
 }
 @media (max-width: 720px) {
   .table-wrapper {
@@ -481,7 +484,7 @@ tbody tr:last-child td {
     word-break: break-word;
   }
   .scroll-x table {
-    min-width: 720px;
+    min-width: 820px;
     table-layout: auto;
   }
 }
