@@ -737,155 +737,33 @@ function DiagnosticsJoin({
   `;
 }
 
-function DiagnosticsSuperAll({ rows, domain }) {
-  const deduped = rows.reduce((acc, row) => {
-    const imps = Number(row.impressions || 0);
-    const ecpmVal = Number(row.ecpm_client || row.ecpm || 0).toFixed(4);
-    const key = `${imps}-${ecpmVal}`;
-    if (!acc.has(key)) {
-      acc.set(key, {
-        domain: row.domain || "-",
-        custom_value: row.custom_value || "-",
-        impressions: imps,
-        clicks: Number(row.clicks || 0),
-        revenue_client: Number(row.revenue_client || row.revenue || 0),
-        ecpm_client: Number(row.ecpm_client || row.ecpm || 0),
-      });
-    } else {
-      const item = acc.get(key);
-      item.clicks += Number(row.clicks || 0);
-      item.revenue_client += Number(row.revenue_client || row.revenue || 0);
-    }
-    return acc;
-  }, new Map());
-  const dedupedRows = Array.from(deduped.values());
-  const totalImps = dedupedRows.reduce(
-    (acc, row) => acc + Number(row.impressions || 0),
-    0
-  );
-  const totalClicks = dedupedRows.reduce(
-    (acc, row) => acc + Number(row.clicks || 0),
-    0
-  );
-  const totalRevenue = dedupedRows.reduce(
-    (acc, row) => acc + Number(row.revenue_client || row.revenue || 0),
-    0
-  );
-
+function DiagnosticsNoUtmSummary({ row }) {
   return html`
     <section className="card wide">
       <div className="card-head">
         <div>
           <span className="eyebrow">JoinAds</span>
-          <h2 className="section-title">Impressões (super-filter sem custom_key)</h2>
+          <h2 className="section-title">Sem UTM (estimado)</h2>
         </div>
-        <div className="chip-group">
-          <span className="chip neutral">Dominio: ${domain || "-"}</span>
-          <span className="chip neutral">${dedupedRows.length} linhas</span>
-        </div>
+        <span className="chip neutral">Estimativa via utm_source/utm_medium</span>
       </div>
       <div className="metrics-grid">
         <div className="metric-card">
-          <div className="metric-label">Impressões totais</div>
-          <div className="metric-value">${number.format(totalImps)}</div>
-          <div className="metric-helper">super-filter com custom_key vazio</div>
+          <div className="metric-label">Impressões</div>
+          <div className="metric-value">${number.format(row?.impressions || 0)}</div>
         </div>
-      </div>
-      <div className="table-wrapper" style=${{ marginTop: "12px" }}>
-        <table>
-          <thead>
-            <tr>
-              <th>Dominio</th>
-              <th>Valor</th>
-              <th>Impressões</th>
-              <th>Cliques</th>
-              <th>Receita cliente</th>
-              <th>eCPM cliente</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${dedupedRows.length === 0
-              ? html`<tr><td colSpan="6" className="muted">Sem linhas retornadas.</td></tr>`
-              : dedupedRows.map(
-                  (row, idx) => html`
-                    <tr key=${idx}>
-                      <td>${row.domain || "-"}</td>
-                      <td>${row.custom_value || "-"}</td>
-                      <td>${number.format(row.impressions || 0)}</td>
-                      <td>${number.format(row.clicks || 0)}</td>
-                      <td>${currencyUSD.format(row.revenue_client || row.revenue || 0)}</td>
-                      <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
-                    </tr>
-                  `
-                )}
-            ${dedupedRows.length
-              ? html`<tr className="summary-row">
-                  <td><strong>Total</strong></td>
-                  <td></td>
-                  <td><strong>${number.format(totalImps)}</strong></td>
-                  <td><strong>${number.format(totalClicks)}</strong></td>
-                  <td><strong>${currencyUSD.format(totalRevenue)}</strong></td>
-                  <td></td>
-                </tr>`
-              : null}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
-}
-
-function DiagnosticsNoUtm({ rows, totals }) {
-  return html`
-    <section className="card wide">
-      <div className="card-head">
-        <div>
-          <span className="eyebrow">JoinAds</span>
-          <h2 className="section-title">Entradas sem UTM (por URL)</h2>
+        <div className="metric-card">
+          <div className="metric-label">Cliques</div>
+          <div className="metric-value">${number.format(row?.clicks || 0)}</div>
         </div>
-        <span className="chip neutral">${rows.length} URLs</span>
-      </div>
-      <div className="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>URL</th>
-              <th>Impressões</th>
-              <th>Cliques</th>
-              <th>CTR</th>
-              <th>Receita cliente</th>
-              <th>eCPM cliente</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.length === 0
-              ? html`<tr><td colSpan="6" className="muted">Nenhuma URL sem UTM no período.</td></tr>`
-              : rows.map(
-                  (row, idx) => html`
-                    <tr key=${idx}>
-                      <td className="url-cell">
-                        <div className="url">${row.url || "-"}</div>
-                      </td>
-                      <td>${number.format(row.impressions || 0)}</td>
-                      <td>${number.format(row.clicks || 0)}</td>
-                      <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
-                      <td>${currencyUSD.format(row.revenue || 0)}</td>
-                      <td>${currencyUSD.format(row.ecpm || 0)}</td>
-                    </tr>
-                  `
-                )}
-            ${rows.length
-              ? html`<tr className="summary-row">
-                  <td><strong>Total</strong></td>
-                  <td><strong>${number.format(totals.impressions)}</strong></td>
-                  <td><strong>${number.format(totals.clicks)}</strong></td>
-                  <td><strong>${`${Number(totals.ctr || 0).toFixed(2)}%`}</strong></td>
-                  <td><strong>${currencyUSD.format(totals.revenue)}</strong></td>
-                  <td><strong>${currencyUSD.format(totals.ecpm)}</strong></td>
-                </tr>`
-              : null}
-          </tbody>
-        </table>
+        <div className="metric-card">
+          <div className="metric-label">Receita cliente</div>
+          <div className="metric-value">${currencyUSD.format(row?.revenue_client || 0)}</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">eCPM cliente</div>
+          <div className="metric-value">${currencyUSD.format(row?.ecpm_client || 0)}</div>
+        </div>
       </div>
     </section>
   `;
@@ -1373,7 +1251,6 @@ function App() {
   const [paramPairs, setParamPairs] = useState([]);
   const [superKey, setSuperKey] = useState("utm_content");
   const [metaSourceRows, setMetaSourceRows] = useState([]);
-  const [superAllRows, setSuperAllRows] = useState([]);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -1492,21 +1369,6 @@ function App() {
         }
       }
 
-      let superAllRes = { data: [] };
-      try {
-        superAllRes = await fetchJson(`${API_BASE}/super-filter`, {
-          method: "POST",
-          body: JSON.stringify({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": [filters.domain.trim()],
-            custom_key: "",
-            group: ["domain", "custom_value"],
-          }),
-        });
-      } catch (err) {
-        pushLog("super-filter-all", err);
-      }
 
       let keyValueContentRes;
       try {
@@ -1620,7 +1482,6 @@ function App() {
 
       setSuperFilter(superRes?.data || []);
       setSuperKey(superKeyUsed || "utm_content");
-      setSuperAllRows(superAllRes?.data || []);
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setKeyValueContent(keyValueContentRes.data || []);
@@ -1705,7 +1566,6 @@ function App() {
       setParamPairs([]);
       setKeyValueContent([]);
       setMetaSourceRows([]);
-      setSuperAllRows([]);
     } finally {
       setLoading(false);
     }
@@ -1939,59 +1799,12 @@ function App() {
     return sum;
   }, [topUrls]);
 
-  const noUtmStats = useMemo(() => {
-    if (!topUrls?.length) {
-      return { rows: [], totals: { impressions: 0, clicks: 0, ctr: 0, ecpm: 0, revenue: 0 } };
-    }
-    const map = new Map();
-    topUrls.forEach((row) => {
-      const raw = row.url || "";
-      const hasProto = raw.startsWith("http");
-      const base = hasProto ? undefined : "https://dummy.com";
-      let hasUtm = false;
-      try {
-        const parsed = new URL(raw, base);
-        parsed.searchParams.forEach((value, key) => {
-          if (key.toLowerCase().startsWith("utm_") && value) {
-            hasUtm = true;
-          }
-        });
-      } catch (e) {}
-      if (hasUtm) return;
-      const key = raw || row.domain || `${row.domain || "url"}-${row.id_post || ""}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          url: raw || "-",
-          impressions: 0,
-          clicks: 0,
-          revenue: 0,
-        });
-      }
-      const item = map.get(key);
-      item.impressions += Number(row.impressions || 0);
-      item.clicks += Number(row.clicks || 0);
-      item.revenue += Number(row.revenue_client || row.revenue || 0);
-    });
-    const rows = Array.from(map.values()).sort(
-      (a, b) => (b.impressions || 0) - (a.impressions || 0)
+  const semUtmRow = useMemo(() => {
+    const list = Array.isArray(metaSourceRows) ? metaSourceRows : [];
+    return list.find(
+      (row) => normalizeKey(row.custom_value) === "sem utm"
     );
-    const totals = rows.reduce(
-      (acc, r) => {
-        acc.impressions += r.impressions;
-        acc.clicks += r.clicks;
-        acc.revenue += r.revenue;
-        return acc;
-      },
-      { impressions: 0, clicks: 0, revenue: 0 }
-    );
-    totals.ctr = totals.impressions ? (totals.clicks / totals.impressions) * 100 : 0;
-    totals.ecpm = totals.impressions ? (totals.revenue / totals.impressions) * 1000 : 0;
-    rows.forEach((r) => {
-      r.ctr = r.impressions ? (r.clicks / r.impressions) * 100 : 0;
-      r.ecpm = r.impressions ? (r.revenue / r.impressions) * 1000 : 0;
-    });
-    return { rows, totals };
-  }, [topUrls]);
+  }, [metaSourceRows]);
 
   const paramStats = useMemo(() => {
     const map = new Map();
@@ -2198,18 +2011,7 @@ function App() {
                   superKey=${superKey}
                 />
               `}
-              ${html`
-                <${DiagnosticsSuperAll}
-                  rows=${Array.isArray(superAllRows) ? superAllRows : []}
-                  domain=${filters.domain}
-                />
-              `}
-              ${html`
-                <${DiagnosticsNoUtm}
-                  rows=${noUtmStats.rows}
-                  totals=${noUtmStats.totals}
-                />
-              `}
+              ${html`<${DiagnosticsNoUtmSummary} row=${semUtmRow} />`}
             </main>
           `}
 
