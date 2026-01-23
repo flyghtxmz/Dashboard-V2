@@ -737,6 +737,35 @@ function DiagnosticsJoin({
   `;
 }
 
+function DiagnosticsSuperAll({ rows, domain }) {
+  const totalImps = rows.reduce(
+    (acc, row) => acc + Number(row.impressions || 0),
+    0
+  );
+
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">JoinAds</span>
+          <h2 className="section-title">Impressões (super-filter sem custom_key)</h2>
+        </div>
+        <div className="chip-group">
+          <span className="chip neutral">Dominio: ${domain || "-"}</span>
+          <span className="chip neutral">${rows.length} linhas</span>
+        </div>
+      </div>
+      <div className="metrics-grid">
+        <div className="metric-card">
+          <div className="metric-label">Impressões totais</div>
+          <div className="metric-value">${number.format(totalImps)}</div>
+          <div className="metric-helper">super-filter com custom_key vazio</div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function MetaSourceTable({ rows }) {
   const totals = rows.reduce(
     (acc, row) => {
@@ -975,6 +1004,7 @@ function App() {
   const [paramPairs, setParamPairs] = useState([]);
   const [superKey, setSuperKey] = useState("utm_content");
   const [metaSourceRows, setMetaSourceRows] = useState([]);
+  const [superAllRows, setSuperAllRows] = useState([]);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -1093,6 +1123,22 @@ function App() {
         }
       }
 
+      let superAllRes = { data: [] };
+      try {
+        superAllRes = await fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "",
+            group: ["domain", "custom_value"],
+          }),
+        });
+      } catch (err) {
+        pushLog("super-filter-all", err);
+      }
+
       let keyValueContentRes;
       try {
         keyValueContentRes = await fetchJson(
@@ -1205,6 +1251,7 @@ function App() {
 
       setSuperFilter(superRes?.data || []);
       setSuperKey(superKeyUsed || "utm_content");
+      setSuperAllRows(superAllRes?.data || []);
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setKeyValueContent(keyValueContentRes.data || []);
@@ -1289,6 +1336,7 @@ function App() {
       setParamPairs([]);
       setKeyValueContent([]);
       setMetaSourceRows([]);
+      setSuperAllRows([]);
     } finally {
       setLoading(false);
     }
@@ -1723,6 +1771,12 @@ function App() {
                   topUrls=${topUrls}
                   domain=${filters.domain}
                   superKey=${superKey}
+                />
+              `}
+              ${html`
+                <${DiagnosticsSuperAll}
+                  rows=${Array.isArray(superAllRows) ? superAllRows : []}
+                  domain=${filters.domain}
                 />
               `}
             </main>
