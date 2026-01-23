@@ -388,6 +388,22 @@ tbody tr:last-child td {
 }
 
 .totals-row { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 12px; background: #f8f9ff; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 0.95rem; }
+.subsection {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.subsection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.subsection-title {
+  margin: 0;
+  font-size: 1rem;
+}
 
 /* Mobile refinements */
 @media (max-width: 720px) {
