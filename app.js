@@ -1071,18 +1071,43 @@ function MetaJoinGroupedTable({ rows }) {
         impressions: 0,
         revenue_usd: 0,
         revenue_brl: 0,
+        hasAdLevel: false,
+        joinadsAdded: false,
+        fallbackImps: 0,
+        fallbackRevenueUsd: 0,
+        fallbackRevenueBrl: 0,
       });
     }
     const item = map.get(key);
     item.spend += toNumber(row.spend_value || row.spend);
     item.results += toNumber(row.results_meta);
     const isAdLevel = row.data_level === "utm_content";
-    item.impressions += isAdLevel ? toNumber(row.impressions_joinads) : 0;
-    item.revenue_usd += isAdLevel ? toNumber(row.revenue_client_value) : 0;
-    item.revenue_brl += isAdLevel ? toNumber(row.revenue_client_brl_value) : 0;
+    const joinImps = toNumber(row.impressions_joinads);
+    const joinUsd = toNumber(row.revenue_client_value);
+    const joinBrl = toNumber(row.revenue_client_brl_value);
+    if (isAdLevel) {
+      item.hasAdLevel = true;
+      if (!item.joinadsAdded && (joinImps || joinUsd || joinBrl)) {
+        item.impressions += joinImps;
+        item.revenue_usd += joinUsd;
+        item.revenue_brl += joinBrl;
+        item.joinadsAdded = true;
+      }
+    } else if (!item.hasAdLevel) {
+      item.fallbackImps = Math.max(item.fallbackImps, joinImps);
+      item.fallbackRevenueUsd = Math.max(item.fallbackRevenueUsd, joinUsd);
+      item.fallbackRevenueBrl = Math.max(item.fallbackRevenueBrl, joinBrl);
+    }
     return map;
   }, new Map());
-  const grouped = Array.from(groupedRows.values()).sort(
+  const grouped = Array.from(groupedRows.values()).map((item) => {
+    if (!item.hasAdLevel && !item.joinadsAdded) {
+      item.impressions += item.fallbackImps;
+      item.revenue_usd += item.fallbackRevenueUsd;
+      item.revenue_brl += item.fallbackRevenueBrl;
+    }
+    return item;
+  }).sort(
     (a, b) => (b.revenue_usd || 0) - (a.revenue_usd || 0)
   );
 
