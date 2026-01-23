@@ -14,15 +14,18 @@
   box-sizing: border-box;
 }
 
-body {
+html, body {
   margin: 0;
+  overflow-x: hidden;
+}
+
+body {
   min-height: 100vh;
   font-family: "Segoe UI", Tahoma, sans-serif;
   background: radial-gradient(circle at 20% 20%, #f9f7ff 0%, var(--bg) 45%, #eef1fb 100%);
   color: var(--ink);
   padding: 32px 24px 56px;
   position: relative;
-  overflow-x: hidden;
 }
 
 .layout {
@@ -131,6 +134,7 @@ button.ghost {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   position: relative;
   z-index: 1;
+  min-width: 0;
 }
 
 .card {
@@ -142,6 +146,7 @@ button.ghost {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 .card.wide {
   grid-column: span 2;
@@ -452,7 +457,7 @@ tbody tr:last-child td {
   max-width: 100%;
 }
 .table-wrapper table {
-  min-width: 100%;
+  width: 100%;
   table-layout: auto;
 }
 .scroll-x {
@@ -463,7 +468,7 @@ tbody tr:last-child td {
 }
 .scroll-x table {
   width: max-content;
-  min-width: 100%;
+  min-width: 980px;
 }
 @media (max-width: 720px) {
   .table-wrapper {
@@ -472,7 +477,7 @@ tbody tr:last-child td {
     max-width: 100%;
   }
   .table-wrapper table {
-    min-width: 640px;
+    width: 100%;
     table-layout: auto;
   }
   .table-wrapper table th {
@@ -484,7 +489,7 @@ tbody tr:last-child td {
     word-break: break-word;
   }
   .scroll-x table {
-    min-width: 820px;
+    min-width: 980px;
     table-layout: auto;
   }
 }
