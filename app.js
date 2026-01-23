@@ -753,7 +753,7 @@ function MetaSourceTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Fontes</span>
-          <h2 className="section-title">Fontes (utm_source)</h2>
+          <h2 className="section-title">Fontes (utm_source/utm_medium)</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -762,7 +762,7 @@ function MetaSourceTable({ rows }) {
           <thead>
             <tr>
               <th>Dominio</th>
-              <th>Fonte (utm_source)</th>
+              <th>Fonte (utm_source/utm_medium)</th>
               <th>Impressoes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
@@ -1110,6 +1110,7 @@ function App() {
       }
 
       let metaSourceRes = { data: [] };
+      let metaMediumRes = { data: [] };
       try {
         metaSourceRes = await fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
@@ -1123,6 +1124,20 @@ function App() {
         });
       } catch (err) {
         pushLog("meta-utmsource", err);
+      }
+      try {
+        metaMediumRes = await fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_medium",
+            group: ["domain", "custom_value"],
+          }),
+        });
+      } catch (err) {
+        pushLog("meta-utmmedium", err);
       }
 
       const [topRes, earningsRes] = await Promise.all([
@@ -1193,8 +1208,12 @@ function App() {
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setKeyValueContent(keyValueContentRes.data || []);
+      const combinedSource = [
+        ...(metaSourceRes.data || []),
+        ...(metaMediumRes.data || []),
+      ];
       const filteredSource =
-        (metaSourceRes.data || []).filter((row) => {
+        combinedSource.filter((row) => {
           const src = normalizeKey(row.custom_value);
           return src === "fb" || src === "organic" || src === "tiktok";
         }) || [];
