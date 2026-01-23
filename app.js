@@ -742,6 +742,27 @@ function DiagnosticsSuperAll({ rows, domain }) {
     (acc, row) => acc + Number(row.impressions || 0),
     0
   );
+  const deduped = rows.reduce((acc, row) => {
+    const imps = Number(row.impressions || 0);
+    const ecpmVal = Number(row.ecpm_client || row.ecpm || 0).toFixed(4);
+    const key = `${imps}-${ecpmVal}`;
+    if (!acc.has(key)) {
+      acc.set(key, {
+        domain: row.domain || "-",
+        custom_value: row.custom_value || "-",
+        impressions: imps,
+        clicks: Number(row.clicks || 0),
+        revenue_client: Number(row.revenue_client || row.revenue || 0),
+        ecpm_client: Number(row.ecpm_client || row.ecpm || 0),
+      });
+    } else {
+      const item = acc.get(key);
+      item.clicks += Number(row.clicks || 0);
+      item.revenue_client += Number(row.revenue_client || row.revenue || 0);
+    }
+    return acc;
+  }, new Map());
+  const dedupedRows = Array.from(deduped.values());
 
   return html`
     <section className="card wide">
@@ -752,7 +773,7 @@ function DiagnosticsSuperAll({ rows, domain }) {
         </div>
         <div className="chip-group">
           <span className="chip neutral">Dominio: ${domain || "-"}</span>
-          <span className="chip neutral">${rows.length} linhas</span>
+          <span className="chip neutral">${dedupedRows.length} linhas</span>
         </div>
       </div>
       <div className="metrics-grid">
@@ -775,9 +796,9 @@ function DiagnosticsSuperAll({ rows, domain }) {
             </tr>
           </thead>
           <tbody>
-            ${rows.length === 0
+            ${dedupedRows.length === 0
               ? html`<tr><td colSpan="6" className="muted">Sem linhas retornadas.</td></tr>`
-              : rows.map(
+              : dedupedRows.map(
                   (row, idx) => html`
                     <tr key=${idx}>
                       <td>${row.domain || "-"}</td>
