@@ -1208,16 +1208,38 @@ function App() {
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
       setKeyValueContent(keyValueContentRes.data || []);
-      const combinedSource = [
-        ...(metaSourceRes.data || []),
-        ...(metaMediumRes.data || []),
-      ];
       const targetDomain = normalizeKey(filters.domain || "");
-      const filteredSource =
-        combinedSource.filter((row) => {
+      const sourceRows =
+        (metaSourceRes.data || []).filter((row) => {
           const domainName = normalizeKey(row.domain || row.name || "");
           return targetDomain ? domainName === targetDomain : true;
         }) || [];
+      const mediumRows =
+        (metaMediumRes.data || []).filter((row) => {
+          const domainName = normalizeKey(row.domain || row.name || "");
+          return targetDomain ? domainName === targetDomain : true;
+        }) || [];
+
+      // Evita duplicidade nos totais: usa utm_source como base,
+      // e adiciona utm_medium somente se a soma de utm_source estiver vazia.
+      const totalSourceImps = sourceRows.reduce(
+        (acc, r) => acc + Number(r.impressions || 0),
+        0
+      );
+      const totalSourceClicks = sourceRows.reduce(
+        (acc, r) => acc + Number(r.clicks || 0),
+        0
+      );
+      const totalSourceRevenue = sourceRows.reduce(
+        (acc, r) => acc + Number(r.revenue_client || r.revenue || 0),
+        0
+      );
+
+      const combinedSource =
+        totalSourceImps || totalSourceClicks || totalSourceRevenue
+          ? sourceRows
+          : mediumRows;
+      const filteredSource = combinedSource;
       setMetaSourceRows(filteredSource);
       setLastRefreshed(new Date());
     } catch (err) {
