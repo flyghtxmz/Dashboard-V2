@@ -916,34 +916,6 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
     return String(value);
   };
 
-  const groupedRows = rows.reduce((map, row) => {
-    const key = `${row.ad_name || ""}|||${row.adset_name || ""}|||${
-      row.objective || ""
-    }`;
-    if (!map.has(key)) {
-      map.set(key, {
-        ad_name: row.ad_name,
-        adset_name: row.adset_name,
-        objective: row.objective,
-        spend: 0,
-        results: 0,
-        impressions: 0,
-        revenue_usd: 0,
-        revenue_brl: 0,
-      });
-    }
-    const item = map.get(key);
-    item.spend += toNumber(row.spend_value || row.spend);
-    item.results += toNumber(row.results_meta);
-    item.impressions += toNumber(row.impressions_joinads);
-    item.revenue_usd += toNumber(row.revenue_client_value);
-    item.revenue_brl += toNumber(row.revenue_client_brl_value);
-    return map;
-  }, new Map());
-  const grouped = Array.from(groupedRows.values()).sort(
-    (a, b) => (b.revenue_usd || 0) - (a.revenue_usd || 0)
-  );
-
   return html`
     <section className="card wide">
       <div className="card-head">
@@ -1068,69 +1040,109 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               </div>`;
             })()
           : null}
-        ${grouped.length
-          ? html`
-              <div className="subsection">
-                <div className="subsection-head">
-                  <h3 className="subsection-title">Resumo agrupado (por anúncio)</h3>
-                  <span className="chip neutral">${grouped.length} linhas</span>
-                </div>
-                <div className="table-wrapper scroll-x">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Tipo</th>
-                        <th>Conjunto</th>
-                        <th>Anuncio</th>
-                        <th>Resultados (Meta)</th>
-                        <th>Valor gasto</th>
-                        <th>ROAS</th>
-                        <th>Lucro Op (BRL)</th>
-                        <th>Receita JoinAds (cliente)</th>
-                        <th>eCPM JoinAds (cliente)</th>
-                        <th>Impressoes JoinAds</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${grouped.map((row, idx) => {
-                        const ecpm =
-                          row.impressions > 0
-                            ? (row.revenue_usd / row.impressions) * 1000
-                            : null;
-                        const roas =
-                          row.revenue_brl > 0 && row.spend > 0
-                            ? row.revenue_brl / row.spend
-                            : null;
-                        const lucro =
-                          row.revenue_brl !== 0 || row.spend !== 0
-                            ? row.revenue_brl - row.spend
-                            : null;
-                        return html`
-                          <tr key=${idx}>
-                            <td>${formatObjective(row.objective)}</td>
-                            <td>${asText(row.adset_name)}</td>
-                            <td>${asText(row.ad_name)}</td>
-                            <td>${number.format(row.results || 0)}</td>
-                            <td>${currencyBRL.format(row.spend || 0)}</td>
-                            <td>${roas != null ? `${roas.toFixed(2)}x` : "-"}</td>
-                            <td>${lucro != null ? currencyBRL.format(lucro) : "-"}</td>
-                            <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
-                            <td>${ecpm != null ? currencyUSD.format(ecpm) : "-"}</td>
-                            <td>${number.format(row.impressions || 0)}</td>
-                          </tr>
-                        `;
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            `
-          : null}
         ${rows.find((r) => r.data_level !== "utm_content")
           ? html`<div className="muted small" style=${{ marginTop: "8px" }}>
               Alguns valores vieram agregados por conjunto (utm_campaign) por falta de UTM de anuncio.
             </div>`
           : null}
+      </div>
+    </section>
+  `;
+}
+
+function MetaJoinGroupedTable({ rows }) {
+  const asText = (value) => {
+    if (value === null || value === undefined) return "-";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+
+  const groupedRows = rows.reduce((map, row) => {
+    const key = `${row.ad_name || ""}|||${row.adset_name || ""}|||${
+      row.objective || ""
+    }`;
+    if (!map.has(key)) {
+      map.set(key, {
+        ad_name: row.ad_name,
+        adset_name: row.adset_name,
+        objective: row.objective,
+        spend: 0,
+        results: 0,
+        impressions: 0,
+        revenue_usd: 0,
+        revenue_brl: 0,
+      });
+    }
+    const item = map.get(key);
+    item.spend += toNumber(row.spend_value || row.spend);
+    item.results += toNumber(row.results_meta);
+    item.impressions += toNumber(row.impressions_joinads);
+    item.revenue_usd += toNumber(row.revenue_client_value);
+    item.revenue_brl += toNumber(row.revenue_client_brl_value);
+    return map;
+  }, new Map());
+  const grouped = Array.from(groupedRows.values()).sort(
+    (a, b) => (b.revenue_usd || 0) - (a.revenue_usd || 0)
+  );
+
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Meta x JoinAds</span>
+          <h2 className="section-title">Resumo agrupado (por anúncio)</h2>
+        </div>
+        <span className="chip neutral">${grouped.length} linhas</span>
+      </div>
+      <div className="table-wrapper scroll-x">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Conjunto</th>
+              <th>Anuncio</th>
+              <th>Resultados (Meta)</th>
+              <th>Valor gasto</th>
+              <th>ROAS</th>
+              <th>Lucro Op (BRL)</th>
+              <th>Receita JoinAds (cliente)</th>
+              <th>eCPM JoinAds (cliente)</th>
+              <th>Impressoes JoinAds</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${grouped.length === 0
+              ? html`<tr><td colSpan="10" className="muted">Sem dados para o periodo.</td></tr>`
+              : grouped.map((row, idx) => {
+                  const ecpm =
+                    row.impressions > 0
+                      ? (row.revenue_usd / row.impressions) * 1000
+                      : null;
+                  const roas =
+                    row.revenue_brl > 0 && row.spend > 0
+                      ? row.revenue_brl / row.spend
+                      : null;
+                  const lucro =
+                    row.revenue_brl !== 0 || row.spend !== 0
+                      ? row.revenue_brl - row.spend
+                      : null;
+                  return html`
+                    <tr key=${idx}>
+                      <td>${formatObjective(row.objective)}</td>
+                      <td>${asText(row.adset_name)}</td>
+                      <td>${asText(row.ad_name)}</td>
+                      <td>${number.format(row.results || 0)}</td>
+                      <td>${currencyBRL.format(row.spend || 0)}</td>
+                      <td>${roas != null ? `${roas.toFixed(2)}x` : "-"}</td>
+                      <td>${lucro != null ? currencyBRL.format(lucro) : "-"}</td>
+                      <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
+                      <td>${ecpm != null ? currencyUSD.format(ecpm) : "-"}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                    </tr>
+                  `;
+                })}
+          </tbody>
+        </table>
       </div>
     </section>
   `;
@@ -1900,6 +1912,7 @@ function App() {
                     setFilters((prev) => ({ ...prev, adsetFilter: value }))}
                 />
               `}
+              ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
               ${html`<${EarningsTable} rows=${earnings} />`}
             </main>
           `
