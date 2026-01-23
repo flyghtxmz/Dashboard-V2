@@ -460,7 +460,7 @@ tbody tr:last-child td {
   -webkit-overflow-scrolling: touch;
 }
 .scroll-x table {
-  min-width: 960px;
+  min-width: 720px;
 }
 @media (max-width: 720px) {
   .table-wrapper {
@@ -479,6 +479,9 @@ tbody tr:last-child td {
   .table-wrapper table td {
     white-space: normal;
     word-break: break-word;
+  }
+  .scroll-x table {
+    min-width: 540px;
   }
 }
 
