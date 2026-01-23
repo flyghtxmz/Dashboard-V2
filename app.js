@@ -259,7 +259,7 @@ function EarningsTable({ rows }) {
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
-      <div className="table-wrapper">
+      <div className="table-wrapper scroll-x">
         <table>
           <thead>
             <tr>

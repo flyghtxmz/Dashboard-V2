@@ -455,6 +455,13 @@ tbody tr:last-child td {
   min-width: 100%;
   table-layout: auto;
 }
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.scroll-x table {
+  min-width: 960px;
+}
 @media (max-width: 720px) {
   .table-wrapper {
     margin: 0;
