@@ -1076,9 +1076,10 @@ function MetaJoinGroupedTable({ rows }) {
     const item = map.get(key);
     item.spend += toNumber(row.spend_value || row.spend);
     item.results += toNumber(row.results_meta);
-    item.impressions += toNumber(row.impressions_joinads);
-    item.revenue_usd += toNumber(row.revenue_client_value);
-    item.revenue_brl += toNumber(row.revenue_client_brl_value);
+    const isAdLevel = row.data_level === "utm_content";
+    item.impressions += isAdLevel ? toNumber(row.impressions_joinads) : 0;
+    item.revenue_usd += isAdLevel ? toNumber(row.revenue_client_value) : 0;
+    item.revenue_brl += isAdLevel ? toNumber(row.revenue_client_brl_value) : 0;
     return map;
   }, new Map());
   const grouped = Array.from(groupedRows.values()).sort(
