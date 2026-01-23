@@ -1240,7 +1240,43 @@ function App() {
           ? sourceRows
           : mediumRows;
       const filteredSource = combinedSource;
-      setMetaSourceRows(filteredSource);
+
+      const totalsAll = (earningsRes.data || []).reduce(
+        (acc, row) => {
+          acc.impressions += Number(row.impressions || 0);
+          acc.clicks += Number(row.clicks || 0);
+          acc.revenue += Number(row.revenue_client || row.revenue || 0);
+          return acc;
+        },
+        { impressions: 0, clicks: 0, revenue: 0 }
+      );
+      const totalsUtm = filteredSource.reduce(
+        (acc, row) => {
+          acc.impressions += Number(row.impressions || 0);
+          acc.clicks += Number(row.clicks || 0);
+          acc.revenue += Number(row.revenue_client || row.revenue || 0);
+          return acc;
+        },
+        { impressions: 0, clicks: 0, revenue: 0 }
+      );
+      const semImps = Math.max(0, totalsAll.impressions - totalsUtm.impressions);
+      const semClicks = Math.max(0, totalsAll.clicks - totalsUtm.clicks);
+      const semRevenue = Math.max(0, totalsAll.revenue - totalsUtm.revenue);
+      const semEcpm =
+        semImps > 0 ? (semRevenue / semImps) * 1000 : 0;
+      const semUtmRow =
+        semImps || semClicks || semRevenue
+          ? {
+              domain: filters.domain.trim(),
+              custom_value: "Sem UTM",
+              impressions: semImps,
+              clicks: semClicks,
+              revenue_client: semRevenue,
+              ecpm_client: semEcpm,
+            }
+          : null;
+
+      setMetaSourceRows(semUtmRow ? [...filteredSource, semUtmRow] : filteredSource);
       setLastRefreshed(new Date());
     } catch (err) {
       const msg = formatError(err) || "Erro ao buscar dados.";
