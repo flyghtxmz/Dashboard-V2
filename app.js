@@ -843,7 +843,7 @@ const normalizeKey = (value) =>
     .trim()
     .toLowerCase();
 
-function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
+function MetaJoinTable({ rows, adsetFilter, onFilterChange, onToggleAd, statusLoading }) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
@@ -899,18 +899,22 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
               <th>Receita JoinAds (cliente)</th>
               <th>eCPM JoinAds (cliente)</th>
               <th>Impressoes JoinAds</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
             ${rows.length === 0
               ? html`
                   <tr>
-                    <td colSpan="12" className="muted">Sem dados para o periodo.</td>
+                    <td colSpan="13" className="muted">Sem dados para o periodo.</td>
                   </tr>
                 `
               : rows.map(
                   (row, idx) => {
                     const adLink = row.permalink_url || null;
+                    const status = row.ad_status || row.effective_status || "";
+                    const isActive = status === "ACTIVE";
+                    const busy = statusLoading && statusLoading[row.ad_id];
                     return html`
                     <tr key=${idx}>
                       <td>${asText(row.date)}</td>
@@ -945,6 +949,25 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange }) {
                       <td>
                         ${row.impressions_joinads != null
                           ? number.format(row.impressions_joinads)
+                          : "-"}
+                      </td>
+                      <td>
+                        ${row.ad_id
+                          ? html`<button
+                              className="ghost"
+                              disabled=${busy}
+                              onClick=${() =>
+                                onToggleAd(
+                                  row.ad_id,
+                                  isActive ? "PAUSED" : "ACTIVE"
+                                )}
+                            >
+                              ${busy
+                                ? "Aguarde..."
+                                : isActive
+                                ? "Desativar"
+                                : "Ativar"}
+                            </button>`
                           : "-"}
                       </td>
                     </tr>
@@ -1240,6 +1263,7 @@ function App() {
   const [superKey, setSuperKey] = useState("utm_content");
   const [metaSourceRows, setMetaSourceRows] = useState([]);
   const [superTermRows, setSuperTermRows] = useState([]);
+  const [adStatusLoading, setAdStatusLoading] = useState({});
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -1597,6 +1621,32 @@ function App() {
       setDomains([]);
     } finally {
       setDomainsLoading(false);
+    }
+  };
+
+  const handleToggleAd = async (adId, nextStatus) => {
+    if (!adId) return;
+    setAdStatusLoading((prev) => ({ ...prev, [adId]: true }));
+    try {
+      await fetchJson(`${API_BASE}/meta-ad-status`, {
+        method: "POST",
+        body: JSON.stringify({ ad_id: adId, status: nextStatus }),
+      });
+      setMetaRows((prev) =>
+        (prev || []).map((row) =>
+          row.ad_id === adId
+            ? { ...row, ad_status: nextStatus, effective_status: nextStatus }
+            : row
+        )
+      );
+    } catch (err) {
+      pushLog("meta-status", err);
+    } finally {
+      setAdStatusLoading((prev) => {
+        const next = { ...prev };
+        delete next[adId];
+        return next;
+      });
     }
   };
 
@@ -1986,6 +2036,8 @@ function App() {
                   adsetFilter=${filters.adsetFilter}
                   onFilterChange=${(value) =>
                     setFilters((prev) => ({ ...prev, adsetFilter: value }))}
+                  onToggleAd=${handleToggleAd}
+                  statusLoading=${adStatusLoading}
                 />
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}

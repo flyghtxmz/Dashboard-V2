@@ -1,9 +1,9 @@
-const API_BASE = "https://graph.facebook.com/v24.0";
+﻿const API_BASE = "https://graph.facebook.com/v24.0";
 
 module.exports = async function handler(req, res) {
   const token = process.env.META_ACCESS_TOKEN || process.env.META_TOKEN;
   if (!token) {
-    res.status(500).json({ error: "META_ACCESS_TOKEN não configurado" });
+    res.status(500).json({ error: "META_ACCESS_TOKEN nao configurado" });
     return;
   }
 
@@ -21,23 +21,26 @@ module.exports = async function handler(req, res) {
   if (missing.length) {
     res
       .status(400)
-      .json({ error: `Parâmetros obrigatórios: ${missing.join(", ")}` });
+      .json({ error: `Parametros obrigatorios: ${missing.join(", ")}` });
     return;
   }
 
   const params = new URLSearchParams();
-  params.set("fields", [
-    "date_start",
-    "campaign_name",
-    "adset_name",
-    "ad_name",
-    "ad_id",
-    "objective",
-    "spend",
-    "results",
-    "cpm",
-    "cost_per_result",
-  ].join(","));
+  params.set(
+    "fields",
+    [
+      "date_start",
+      "campaign_name",
+      "adset_name",
+      "ad_name",
+      "ad_id",
+      "objective",
+      "spend",
+      "results",
+      "cpm",
+      "cost_per_result",
+    ].join(",")
+  );
   params.set(
     "time_range",
     JSON.stringify({ since: start_date, until: end_date })
@@ -55,22 +58,55 @@ module.exports = async function handler(req, res) {
       res.status(response.status).json({ error: "Erro Meta", details: data });
       return;
     }
+
     const insights = data.data || [];
 
-    // Enriquecer com permalink do criativo (best-effort)
+    // Buscar status dos anuncios (batch por ids)
+    const adIds = Array.from(
+      new Set(insights.map((row) => row.ad_id).filter(Boolean))
+    );
+    const statusMap = new Map();
+    const chunkSize = 50;
+    for (let i = 0; i < adIds.length; i += chunkSize) {
+      const chunk = adIds.slice(i, i + chunkSize);
+      try {
+        const statusRes = await fetch(
+          `${API_BASE}/?ids=${chunk.join(",")}&fields=status,effective_status&access_token=${token}`
+        );
+        const statusJson = await statusRes.json().catch(() => ({}));
+        if (statusJson && typeof statusJson === "object") {
+          Object.entries(statusJson).forEach(([id, value]) => {
+            if (value && (value.status || value.effective_status)) {
+              statusMap.set(id, {
+                ad_status: value.status,
+                effective_status: value.effective_status,
+              });
+            }
+          });
+        }
+      } catch (e) {
+        // silencioso; segue sem status
+      }
+    }
+
     const withAssets = await Promise.all(
       insights.map(async (row) => {
         const enriched = { ...row };
+        const statusInfo = statusMap.get(row.ad_id);
+        if (statusInfo) {
+          enriched.ad_status = statusInfo.ad_status;
+          enriched.effective_status = statusInfo.effective_status;
+        }
         if (!row.ad_id) return enriched;
         try {
-          // Puxa object_story_spec para descobrir imagem ou vídeo
+          // Puxa object_story_spec para descobrir imagem ou video
           const creativeRes = await fetch(
             `${API_BASE}/${encodeURIComponent(row.ad_id)}?fields=creative{object_story_spec{photo_data{image_hash},video_data{video_id},link_data{picture}}}&access_token=${token}`
           );
           const creativeJson = await creativeRes.json().catch(() => ({}));
           const spec = creativeJson?.creative?.object_story_spec || {};
 
-          // 1) Vídeo direto
+          // 1) Video direto
           const videoId = spec.video_data?.video_id;
           if (videoId) {
             const videoRes = await fetch(
@@ -108,7 +144,7 @@ module.exports = async function handler(req, res) {
             enriched.asset_type = "image";
           }
         } catch (e) {
-          // silencioso; segue sem permalink
+          // silencioso; segue sem asset
         }
         return enriched;
       })
