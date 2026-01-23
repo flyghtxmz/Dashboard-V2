@@ -1215,13 +1215,8 @@ function App() {
       const targetDomain = normalizeKey(filters.domain || "");
       const filteredSource =
         combinedSource.filter((row) => {
-          const src = normalizeKey(row.custom_value);
           const domainName = normalizeKey(row.domain || row.name || "");
-          const domainOk = targetDomain ? domainName === targetDomain : true;
-          return (
-            domainOk &&
-            (src === "fb" || src === "organic" || src === "tiktok")
-          );
+          return targetDomain ? domainName === targetDomain : true;
         }) || [];
       setMetaSourceRows(filteredSource);
       setLastRefreshed(new Date());
