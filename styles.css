@@ -465,10 +465,14 @@ tbody tr:last-child td {
   overflow-x: auto;
   overflow-y: visible;
   -webkit-overflow-scrolling: auto;
+  overscroll-behavior-x: contain;
 }
 .scroll-x table {
   width: max-content;
   min-width: 980px;
+}
+.scroll-x table th {
+  white-space: nowrap;
 }
 @media (max-width: 720px) {
   .table-wrapper {

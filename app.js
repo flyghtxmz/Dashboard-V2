@@ -1243,6 +1243,59 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("ontouchstart" in window)) return;
+    const scrollEls = Array.from(document.querySelectorAll(".scroll-x"));
+    if (!scrollEls.length) return;
+    const state = new WeakMap();
+
+    const onStart = (e) => {
+      const t = e.touches && e.touches[0];
+      if (!t) return;
+      state.set(e.currentTarget, { x: t.clientX, y: t.clientY, mode: null });
+    };
+
+    const onMove = (e) => {
+      const t = e.touches && e.touches[0];
+      const s = state.get(e.currentTarget);
+      if (!t || !s) return;
+      const dx = t.clientX - s.x;
+      const dy = t.clientY - s.y;
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      if (!s.mode) {
+        s.mode = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      }
+      if (s.mode === "y") {
+        e.currentTarget.style.overflowX = "hidden";
+      } else {
+        e.currentTarget.style.overflowX = "auto";
+      }
+    };
+
+    const onEnd = (e) => {
+      e.currentTarget.style.overflowX = "auto";
+      state.delete(e.currentTarget);
+    };
+
+    scrollEls.forEach((el) => {
+      el.style.overflowX = "auto";
+      el.addEventListener("touchstart", onStart, { passive: true });
+      el.addEventListener("touchmove", onMove, { passive: true });
+      el.addEventListener("touchend", onEnd, { passive: true });
+      el.addEventListener("touchcancel", onEnd, { passive: true });
+    });
+
+    return () => {
+      scrollEls.forEach((el) => {
+        el.removeEventListener("touchstart", onStart);
+        el.removeEventListener("touchmove", onMove);
+        el.removeEventListener("touchend", onEnd);
+        el.removeEventListener("touchcancel", onEnd);
+      });
+    };
+  }, [activeTab, filteredMeta.length]);
+
   const mergedMeta = useMemo(() => {
     if (!metaRows?.length) return [];
     const superRows = Array.isArray(superFilter) ? superFilter : [];
