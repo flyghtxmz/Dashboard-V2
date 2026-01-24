@@ -1059,6 +1059,19 @@ function DuplicarView({
                           />
                         </label>
                         <label className="field">
+                          <span>Número de cópias</span>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value=${draft.copies || 1}
+                            onChange=${(e) =>
+                              onUpdateDraft(draft.id, {
+                                copies: Math.max(1, Number(e.target.value) || 1),
+                              })}
+                          />
+                        </label>
+                        <label className="field">
                           <span>Orçamento diário (R$)</span>
                           <input
                             type="number"
@@ -2233,23 +2246,23 @@ function App() {
 
   const addDraftFromAdset = (campaign, adset, countRaw) => {
     const count = Math.max(1, Number(countRaw) || 1);
-    const created = Array.from({ length: count }).map((_, idx) => ({
-      id: `${adset.id}-${Date.now()}-${idx}`,
+    const created = {
+      id: `${adset.id}-${Date.now()}`,
       campaign_id: campaign.id,
       campaign_name: campaign.name,
       source_adset_id: adset.id,
       source_adset_name: adset.name,
-      adset_new_name:
-        count > 1 ? `${adset.name} - Copia ${idx + 1}` : adset.name,
+      adset_new_name: adset.name,
       daily_budget_brl: "",
+      copies: count,
       ads: (adset.ads || []).map((ad) => ({
         id: ad.id,
         name: ad.name,
         new_name: ad.name,
         removed: false,
       })),
-    }));
-    setDrafts((prev) => [...created, ...prev]);
+    };
+    setDrafts((prev) => [created, ...prev]);
   };
 
   const removeDraft = (draftId) => {
@@ -2382,77 +2395,79 @@ function App() {
           body: JSON.stringify({
             adset_id: draft.source_adset_id,
             status_option: "PAUSED",
+            rename_strategy: "DEEP_RENAME",
+            rename_options: { prefix: "Copia - ", suffix: "" },
+            number_of_copies: draft.copies || 1,
+            include_creative: true,
           }),
         });
-        const newAdsetId =
-          copyRes.new_adset_id ||
-          copyRes.data?.copied_adset_id ||
-          copyRes.data?.id;
-        if (!newAdsetId) {
+        const adsetIds =
+          copyRes.data?.adset_ids ||
+          (copyRes.new_adset_id ? [copyRes.new_adset_id] : null) ||
+          (copyRes.data?.copied_adset_id ? [copyRes.data.copied_adset_id] : null) ||
+          (copyRes.data?.id ? [copyRes.data.id] : null) ||
+          [];
+        const adIdsMatrix = copyRes.data?.ad_ids || [];
+        if (!adsetIds.length) {
           throw new Error("Nao foi possivel obter o ID do novo conjunto.");
         }
 
-        if (draft.adset_new_name && draft.adset_new_name.trim()) {
-          await fetchJson(`${API_BASE}/meta-rename`, {
-            method: "POST",
-            body: JSON.stringify({
-              object_id: newAdsetId,
-              name: draft.adset_new_name.trim(),
-            }),
-          });
-        }
+        for (let i = 0; i < adsetIds.length; i += 1) {
+          const newAdsetId = adsetIds[i];
 
-        if (draft.daily_budget_brl) {
-          await fetchJson(`${API_BASE}/meta-adset-budget`, {
-            method: "POST",
-            body: JSON.stringify({
-              adset_id: newAdsetId,
-              daily_budget_brl: draft.daily_budget_brl,
-            }),
-          });
-        }
-
-        const adsRes = await fetchJson(
-          `${API_BASE}/meta-adset-ads?${new URLSearchParams({
-            adset_id: newAdsetId,
-          }).toString()}`
-        );
-        const newAds = adsRes.data || [];
-        const used = new Set();
-        const pickMatch = (origName) => {
-          const norm = normalizeKey(origName);
-          let match = newAds.find(
-            (ad) =>
-              !used.has(ad.id) && normalizeKey(ad.name).includes(norm)
-          );
-          if (!match) {
-            match = newAds.find((ad) => !used.has(ad.id));
-          }
-          if (match) used.add(match.id);
-          return match;
-        };
-
-        for (const ad of draft.ads || []) {
-          const match = pickMatch(ad.name || "");
-          if (!match) continue;
-          if (ad.removed) {
-            await fetchJson(`${API_BASE}/meta-delete-ad`, {
-              method: "POST",
-              body: JSON.stringify({
-                ad_id: match.id,
-              }),
-            });
-            continue;
-          }
-          const nextName = (ad.new_name || "").trim();
-          if (nextName && nextName !== ad.name) {
+          if (draft.adset_new_name && draft.adset_new_name.trim()) {
             await fetchJson(`${API_BASE}/meta-rename`, {
               method: "POST",
               body: JSON.stringify({
-                object_id: match.id,
-                name: nextName,
+                object_id: newAdsetId,
+                name: draft.adset_new_name.trim(),
               }),
             });
+          }
+
+          if (draft.daily_budget_brl) {
+            await fetchJson(`${API_BASE}/meta-adset-budget`, {
+              method: "POST",
+              body: JSON.stringify({
+                adset_id: newAdsetId,
+                daily_budget_brl: draft.daily_budget_brl,
+              }),
+            });
+          }
+
+          let newAds = adIdsMatrix[i] || [];
+          if (!newAds.length) {
+            const adsRes = await fetchJson(
+              `${API_BASE}/meta-adset-ads?${new URLSearchParams({
+                adset_id: newAdsetId,
+              }).toString()}`
+            );
+            newAds = (adsRes.data || []).map((ad) => ad.id);
+          }
+
+          for (let a = 0; a < (draft.ads || []).length; a += 1) {
+            const ad = draft.ads[a];
+            const targetId = newAds[a];
+            if (!targetId) continue;
+            if (ad.removed) {
+              await fetchJson(`${API_BASE}/meta-delete-ad`, {
+                method: "POST",
+                body: JSON.stringify({
+                  ad_id: targetId,
+                }),
+              });
+              continue;
+            }
+            const nextName = (ad.new_name || "").trim();
+            if (nextName && nextName !== ad.name) {
+              await fetchJson(`${API_BASE}/meta-rename`, {
+                method: "POST",
+                body: JSON.stringify({
+                  object_id: targetId,
+                  name: nextName,
+                }),
+              });
+            }
           }
         }
 
@@ -2990,9 +3005,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
-
 
 
 
