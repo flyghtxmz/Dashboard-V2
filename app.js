@@ -891,6 +891,223 @@ function buildAdsetGrouped(rows, joinadsRows, brlRate) {
   return grouped;
 }
 
+function DuplicarView({
+  campaigns,
+  loading,
+  error,
+  onLoad,
+  copyCounts,
+  setCopyCount,
+  onAddDraft,
+  drafts,
+  onRemoveDraft,
+  onUpdateDraft,
+  onUpdateDraftAd,
+  onToggleDraftAd,
+  onPublish,
+  publishing,
+}) {
+  const budgetLabel = (adset) => {
+    const daily =
+      adset?.daily_budget != null ? currencyBRL.format(adset.daily_budget / 100) : null;
+    const life =
+      adset?.lifetime_budget != null
+        ? `${currencyBRL.format(adset.lifetime_budget / 100)} (vitalício)`
+        : null;
+    return daily || life || "-";
+  };
+
+  return html`
+    <main className="dup-grid">
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Duplicar</span>
+            <h2 className="section-title">Campanhas ativas</h2>
+          </div>
+          <button className="ghost" onClick=${onLoad} disabled=${loading}>
+            ${loading ? "Carregando..." : "Atualizar lista"}
+          </button>
+        </div>
+        ${error
+          ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>`
+          : null}
+        ${campaigns.length === 0
+          ? html`<p className="muted small">Nenhuma campanha ativa carregada.</p>`
+          : campaigns.map(
+              (camp) => html`
+                <div className="dup-campaign" key=${camp.id}>
+                  <div className="dup-campaign-head">
+                    <div>
+                      <strong>${camp.name}</strong>
+                      <div className="muted small">
+                        ID: ${camp.id} • ${camp.effective_status || camp.status || "-"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="dup-adsets">
+                    ${(camp.adsets || []).length === 0
+                      ? html`<div className="muted small">Sem conjuntos.</div>`
+                      : camp.adsets.map(
+                          (adset) => html`
+                            <div className="dup-adset" key=${adset.id}>
+                              <div className="dup-adset-head">
+                                <div>
+                                  <strong>${adset.name}</strong>
+                                  <div className="muted small">
+                                    ID: ${adset.id}
+                                    • ${adset.effective_status || adset.status || "-"}
+                                    • Orçamento: ${budgetLabel(adset)}
+                                  </div>
+                                </div>
+                                <div className="dup-actions">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    value=${copyCounts[adset.id] || 1}
+                                    onChange=${(e) =>
+                                      setCopyCount(adset.id, e.target.value)}
+                                  />
+                                  <button
+                                    className="ghost small"
+                                    onClick=${() =>
+                                      onAddDraft(camp, adset, copyCounts[adset.id] || 1)}
+                                  >
+                                    Adicionar
+                                  </button>
+                                </div>
+                              </div>
+                              <details>
+                                <summary>
+                                  Anúncios (${(adset.ads || []).length})
+                                </summary>
+                                <ul className="dup-ads">
+                                  ${(adset.ads || []).map(
+                                    (ad) => html`<li key=${ad.id}>${ad.name}</li>`
+                                  )}
+                                </ul>
+                              </details>
+                            </div>
+                          `
+                        )}
+                  </div>
+                </div>
+              `
+            )}
+      </section>
+
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Rascunho</span>
+            <h2 className="section-title">Duplicações pendentes</h2>
+          </div>
+          <button
+            className="primary"
+            onClick=${onPublish}
+            disabled=${publishing || drafts.length === 0}
+          >
+            ${publishing ? "Publicando..." : "Publicar"}
+          </button>
+        </div>
+        ${drafts.length === 0
+          ? html`<p className="muted small">Nada no rascunho ainda.</p>`
+          : html`
+              <div className="draft-list">
+                ${drafts.map(
+                  (draft) => html`
+                    <div className="draft-card" key=${draft.id}>
+                      <div className="draft-head">
+                        <div>
+                          <strong>${draft.campaign_name}</strong>
+                          <div className="muted small">
+                            Conjunto original: ${draft.source_adset_name}
+                          </div>
+                        </div>
+                        <button
+                          className="ghost small"
+                          onClick=${() => onRemoveDraft(draft.id)}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                      <div className="draft-fields">
+                        <label className="field">
+                          <span>Novo nome do conjunto</span>
+                          <input
+                            type="text"
+                            value=${draft.adset_new_name}
+                            onChange=${(e) =>
+                              onUpdateDraft(draft.id, {
+                                adset_new_name: e.target.value,
+                              })}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Orçamento diário (R$)</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value=${draft.daily_budget_brl}
+                            onChange=${(e) =>
+                              onUpdateDraft(draft.id, {
+                                daily_budget_brl: e.target.value,
+                              })}
+                          />
+                        </label>
+                      </div>
+                      <div className="table-wrapper scroll-x">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Anúncio (origem)</th>
+                              <th>Novo nome</th>
+                              <th>Ação</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${(draft.ads || []).map(
+                              (ad) => html`
+                                <tr key=${ad.id}>
+                                  <td>${ad.name}</td>
+                                  <td>
+                                    <input
+                                      type="text"
+                                      value=${ad.new_name}
+                                      disabled=${ad.removed}
+                                      onChange=${(e) =>
+                                        onUpdateDraftAd(draft.id, ad.id, {
+                                          new_name: e.target.value,
+                                        })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="ghost small"
+                                      onClick=${() =>
+                                        onToggleDraftAd(draft.id, ad.id)}
+                                    >
+                                      ${ad.removed ? "Desfazer" : "Excluir"}
+                                    </button>
+                                  </td>
+                                </tr>
+                              `
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  `
+                )}
+              </div>
+            `}
+      </section>
+    </main>
+  `;
+}
+
 function MetaJoinTable({
   rows,
   adsetFilter,
@@ -1601,6 +1818,12 @@ function App() {
   const [adStatusLoading, setAdStatusLoading] = useState({});
   const [budgetLoading, setBudgetLoading] = useState({});
   const [appliedFilters, setAppliedFilters] = useState(null);
+  const [dupCampaigns, setDupCampaigns] = useState([]);
+  const [dupLoading, setDupLoading] = useState(false);
+  const [dupError, setDupError] = useState("");
+  const [drafts, setDrafts] = useState([]);
+  const [copyCounts, setCopyCounts] = useState({});
+  const [publishing, setPublishing] = useState(false);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -1967,6 +2190,94 @@ function App() {
     }
   };
 
+  const handleLoadDuplicar = async () => {
+    if (!filters.metaAccountId.trim()) {
+      setDupError("Informe o ID da conta de anúncios (Meta).");
+      return;
+    }
+    setDupLoading(true);
+    setDupError("");
+    try {
+      const res = await fetchJson(
+        `${API_BASE}/meta-structure?${new URLSearchParams({
+          account_id: filters.metaAccountId.trim(),
+        }).toString()}`
+      );
+      setDupCampaigns(res.data || []);
+    } catch (err) {
+      setDupError(formatError(err));
+      pushLog("duplicar-load", err);
+      setDupCampaigns([]);
+    } finally {
+      setDupLoading(false);
+    }
+  };
+
+  const setCopyCount = (adsetId, value) => {
+    setCopyCounts((prev) => ({ ...prev, [adsetId]: value }));
+  };
+
+  const addDraftFromAdset = (campaign, adset, countRaw) => {
+    const count = Math.max(1, Number(countRaw) || 1);
+    const created = Array.from({ length: count }).map((_, idx) => ({
+      id: `${adset.id}-${Date.now()}-${idx}`,
+      campaign_id: campaign.id,
+      campaign_name: campaign.name,
+      source_adset_id: adset.id,
+      source_adset_name: adset.name,
+      adset_new_name:
+        count > 1 ? `${adset.name} - Copia ${idx + 1}` : adset.name,
+      daily_budget_brl: "",
+      ads: (adset.ads || []).map((ad) => ({
+        id: ad.id,
+        name: ad.name,
+        new_name: ad.name,
+        removed: false,
+      })),
+    }));
+    setDrafts((prev) => [...created, ...prev]);
+  };
+
+  const removeDraft = (draftId) => {
+    setDrafts((prev) => prev.filter((d) => d.id !== draftId));
+  };
+
+  const updateDraft = (draftId, patch) => {
+    setDrafts((prev) =>
+      prev.map((draft) =>
+        draft.id === draftId ? { ...draft, ...patch } : draft
+      )
+    );
+  };
+
+  const updateDraftAd = (draftId, adId, patch) => {
+    setDrafts((prev) =>
+      prev.map((draft) => {
+        if (draft.id !== draftId) return draft;
+        return {
+          ...draft,
+          ads: (draft.ads || []).map((ad) =>
+            ad.id === adId ? { ...ad, ...patch } : ad
+          ),
+        };
+      })
+    );
+  };
+
+  const toggleDraftAd = (draftId, adId) => {
+    setDrafts((prev) =>
+      prev.map((draft) => {
+        if (draft.id !== draftId) return draft;
+        return {
+          ...draft,
+          ads: (draft.ads || []).map((ad) =>
+            ad.id === adId ? { ...ad, removed: !ad.removed } : ad
+          ),
+        };
+      })
+    );
+  };
+
   const handleToggleAd = async (adId, nextStatus) => {
     if (!adId) return;
     setAdStatusLoading((prev) => ({ ...prev, [adId]: true }));
@@ -2041,6 +2352,98 @@ function App() {
         return next;
       });
     }
+  };
+
+  const handlePublishDrafts = async () => {
+    if (!drafts.length) return;
+    setPublishing(true);
+    const remaining = [];
+    for (const draft of drafts) {
+      try {
+        const copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
+          method: "POST",
+          body: JSON.stringify({
+            adset_id: draft.source_adset_id,
+            status_option: "PAUSED",
+          }),
+        });
+        const newAdsetId =
+          copyRes.new_adset_id ||
+          copyRes.data?.copied_adset_id ||
+          copyRes.data?.id;
+        if (!newAdsetId) {
+          throw new Error("Nao foi possivel obter o ID do novo conjunto.");
+        }
+
+        if (draft.adset_new_name && draft.adset_new_name.trim()) {
+          await fetchJson(`${API_BASE}/meta-rename`, {
+            method: "POST",
+            body: JSON.stringify({
+              object_id: newAdsetId,
+              name: draft.adset_new_name.trim(),
+            }),
+          });
+        }
+
+        if (draft.daily_budget_brl) {
+          await fetchJson(`${API_BASE}/meta-adset-budget`, {
+            method: "POST",
+            body: JSON.stringify({
+              adset_id: newAdsetId,
+              daily_budget_brl: draft.daily_budget_brl,
+            }),
+          });
+        }
+
+        const adsRes = await fetchJson(
+          `${API_BASE}/meta-adset-ads?${new URLSearchParams({
+            adset_id: newAdsetId,
+          }).toString()}`
+        );
+        const newAds = adsRes.data || [];
+        const used = new Set();
+        const pickMatch = (origName) => {
+          const norm = normalizeKey(origName);
+          let match = newAds.find(
+            (ad) =>
+              !used.has(ad.id) && normalizeKey(ad.name).includes(norm)
+          );
+          if (!match) {
+            match = newAds.find((ad) => !used.has(ad.id));
+          }
+          if (match) used.add(match.id);
+          return match;
+        };
+
+        for (const ad of draft.ads || []) {
+          const match = pickMatch(ad.name || "");
+          if (!match) continue;
+          if (ad.removed) {
+            await fetchJson(`${API_BASE}/meta-delete-ad`, {
+              method: "POST",
+              body: JSON.stringify({ ad_id: match.id }),
+            });
+            continue;
+          }
+          const nextName = (ad.new_name || "").trim();
+          if (nextName && nextName !== ad.name) {
+            await fetchJson(`${API_BASE}/meta-rename`, {
+              method: "POST",
+              body: JSON.stringify({ object_id: match.id, name: nextName }),
+            });
+          }
+        }
+
+        pushLog("duplicar", {
+          message: `Publicado: ${draft.source_adset_name} -> ${draft.adset_new_name}`,
+        });
+      } catch (err) {
+        pushLog("duplicar", err);
+        remaining.push(draft);
+      }
+    }
+    setDrafts(remaining);
+    setPublishing(false);
   };
 
   useEffect(() => {
@@ -2443,6 +2846,12 @@ function App() {
           Dashboard
         </button>
         <button
+          className=${`tab ${activeTab === "duplicar" ? "active" : ""}`}
+          onClick=${() => setActiveTab("duplicar")}
+        >
+          Duplicar
+        </button>
+        <button
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
@@ -2500,6 +2909,25 @@ function App() {
               ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
               ${html`<${EarningsTable} rows=${earningsAll} />`}
             </main>
+          `
+        : activeTab === "duplicar"
+        ? html`
+            <${DuplicarView}
+              campaigns=${dupCampaigns}
+              loading=${dupLoading}
+              error=${dupError}
+              onLoad=${handleLoadDuplicar}
+              copyCounts=${copyCounts}
+              setCopyCount=${setCopyCount}
+              onAddDraft=${addDraftFromAdset}
+              drafts=${drafts}
+              onRemoveDraft=${removeDraft}
+              onUpdateDraft=${updateDraft}
+              onUpdateDraftAd=${updateDraftAd}
+              onToggleDraftAd=${toggleDraftAd}
+              onPublish=${handlePublishDrafts}
+              publishing=${publishing}
+            />
           `
         : activeTab === "urls"
         ? html`
