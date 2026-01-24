@@ -2282,10 +2282,9 @@ function App() {
     if (!adId) return;
     setAdStatusLoading((prev) => ({ ...prev, [adId]: true }));
     try {
-      await fetchJson(`${API_BASE}/meta-actions`, {
+      await fetchJson(`${API_BASE}/meta-ad-status`, {
         method: "POST",
         body: JSON.stringify({
-          action: "ad-status",
           ad_id: adId,
           status: nextStatus,
         }),
@@ -2320,10 +2319,9 @@ function App() {
 
     setBudgetLoading((prev) => ({ ...prev, [adsetId]: true }));
     try {
-      const res = await fetchJson(`${API_BASE}/meta-actions`, {
+      const res = await fetchJson(`${API_BASE}/meta-adset-budget`, {
         method: "POST",
         body: JSON.stringify({
-          action: "adset-budget",
           adset_id: adsetId,
           daily_budget_brl: budgetNumber,
         }),
@@ -2365,10 +2363,9 @@ function App() {
     const remaining = [];
     for (const draft of drafts) {
       try {
-        const copyRes = await fetchJson(`${API_BASE}/meta-actions`, {
+        const copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
           method: "POST",
           body: JSON.stringify({
-            action: "adset-copy",
             adset_id: draft.source_adset_id,
             status_option: "PAUSED",
           }),
@@ -2382,10 +2379,9 @@ function App() {
         }
 
         if (draft.adset_new_name && draft.adset_new_name.trim()) {
-          await fetchJson(`${API_BASE}/meta-actions`, {
+          await fetchJson(`${API_BASE}/meta-rename`, {
             method: "POST",
             body: JSON.stringify({
-              action: "rename",
               object_id: newAdsetId,
               name: draft.adset_new_name.trim(),
             }),
@@ -2393,10 +2389,9 @@ function App() {
         }
 
         if (draft.daily_budget_brl) {
-          await fetchJson(`${API_BASE}/meta-actions`, {
+          await fetchJson(`${API_BASE}/meta-adset-budget`, {
             method: "POST",
             body: JSON.stringify({
-              action: "adset-budget",
               adset_id: newAdsetId,
               daily_budget_brl: draft.daily_budget_brl,
             }),
@@ -2404,8 +2399,7 @@ function App() {
         }
 
         const adsRes = await fetchJson(
-          `${API_BASE}/meta-actions?${new URLSearchParams({
-            action: "adset-ads",
+          `${API_BASE}/meta-adset-ads?${new URLSearchParams({
             adset_id: newAdsetId,
           }).toString()}`
         );
@@ -2428,10 +2422,9 @@ function App() {
           const match = pickMatch(ad.name || "");
           if (!match) continue;
           if (ad.removed) {
-            await fetchJson(`${API_BASE}/meta-actions`, {
+            await fetchJson(`${API_BASE}/meta-delete-ad`, {
               method: "POST",
               body: JSON.stringify({
-                action: "delete-ad",
                 ad_id: match.id,
               }),
             });
@@ -2439,10 +2432,9 @@ function App() {
           }
           const nextName = (ad.new_name || "").trim();
           if (nextName && nextName !== ad.name) {
-            await fetchJson(`${API_BASE}/meta-actions`, {
+            await fetchJson(`${API_BASE}/meta-rename`, {
               method: "POST",
               body: JSON.stringify({
-                action: "rename",
                 object_id: match.id,
                 name: nextName,
               }),
@@ -2984,7 +2976,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
 
 
 
