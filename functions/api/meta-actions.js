@@ -19,51 +19,68 @@ async function fetchAll(url) {
   return results;
 }
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+function json(status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", ...corsHeaders },
+  });
+}
+
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
   if (!token) {
-    return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
+    return json(500, { error: "META_ACCESS_TOKEN nao configurado" });
   }
 
   const method = request.method || "GET";
+  if (method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
+  const body = method === "GET" ? null : await readJson(request);
   const action = method === "GET"
     ? getQuery(request).get("action")
-    : (await readJson(request)).action;
+    : body?.action;
 
   if (method === "GET") {
     if (action === "adset-ads") {
       const params = getQuery(request);
       const adset_id = params.get("adset_id");
       if (!adset_id) {
-        return jsonResponse(400, { error: "Parametros obrigatorios: adset_id" });
+        return json(400, { error: "Parametros obrigatorios: adset_id" });
       }
       try {
         const adsUrl = `${API_BASE}/${encodeURIComponent(
           adset_id
         )}/ads?fields=id,name,status,effective_status&limit=200&access_token=${token}`;
         const ads = await fetchAll(adsUrl);
-        return jsonResponse(200, { code: "success", data: ads });
+        return json(200, { code: "success", data: ads });
       } catch (error) {
-        return jsonResponse(500, {
+        return json(500, {
           error: "Erro ao consultar ads",
           details: error.details || error.message,
         });
       }
     }
 
-    return jsonResponse(405, { error: "Method not allowed" });
+    return json(400, { error: "Acao invalida" });
   }
 
   if (method !== "POST") {
-    return jsonResponse(405, { error: "Method not allowed" });
+    return json(405, { error: "Method not allowed" });
   }
 
-  const body = await readJson(request);
   try {
     if (action === "ad-status") {
       const { ad_id, status } = body || {};
       if (!ad_id || !status) {
-        return jsonResponse(400, {
+        return json(400, {
           error: "Parametros obrigatorios: ad_id, status",
         });
       }
@@ -76,21 +93,21 @@ export async function onRequest({ request, env }) {
       });
       const data = await safeJson(response);
       if (!response.ok) {
-        return jsonResponse(response.status, { error: "Erro Meta", details: data });
+        return json(response.status, { error: "Erro Meta", details: data });
       }
-      return jsonResponse(200, { code: "success", data });
+      return json(200, { code: "success", data });
     }
 
     if (action === "adset-budget") {
       const { adset_id, daily_budget_brl } = body || {};
       if (!adset_id || daily_budget_brl === undefined || daily_budget_brl === null) {
-        return jsonResponse(400, {
+        return json(400, {
           error: "Parametros obrigatorios: adset_id, daily_budget_brl",
         });
       }
       const budgetNumber = Number(String(daily_budget_brl).replace(",", "."));
       if (!Number.isFinite(budgetNumber) || budgetNumber <= 0) {
-        return jsonResponse(400, { error: "daily_budget_brl invalido" });
+        return json(400, { error: "daily_budget_brl invalido" });
       }
       const params = new URLSearchParams();
       params.set("daily_budget", String(Math.round(budgetNumber * 100)));
@@ -101,7 +118,7 @@ export async function onRequest({ request, env }) {
       );
       const data = await safeJson(response);
       if (!response.ok) {
-        return jsonResponse(response.status, { error: "Erro Meta", details: data });
+        return json(response.status, { error: "Erro Meta", details: data });
       }
       let adset = null;
       try {
@@ -114,13 +131,13 @@ export async function onRequest({ request, env }) {
       } catch (e) {
         adset = null;
       }
-      return jsonResponse(200, { code: "success", data, adset });
+      return json(200, { code: "success", data, adset });
     }
 
     if (action === "adset-copy") {
       const { adset_id, status_option } = body || {};
       if (!adset_id) {
-        return jsonResponse(400, { error: "Parametros obrigatorios: adset_id" });
+        return json(400, { error: "Parametros obrigatorios: adset_id" });
       }
       const params = new URLSearchParams();
       params.set("deep_copy", "true");
@@ -132,17 +149,17 @@ export async function onRequest({ request, env }) {
       );
       const data = await safeJson(response);
       if (!response.ok) {
-        return jsonResponse(response.status, { error: "Erro Meta", details: data });
+        return json(response.status, { error: "Erro Meta", details: data });
       }
       const newId =
         data?.copied_adset_id || data?.id || data?.copied_id || null;
-      return jsonResponse(200, { code: "success", data, new_adset_id: newId });
+      return json(200, { code: "success", data, new_adset_id: newId });
     }
 
     if (action === "rename") {
       const { object_id, name } = body || {};
       if (!object_id || !name) {
-        return jsonResponse(400, {
+        return json(400, {
           error: "Parametros obrigatorios: object_id, name",
         });
       }
@@ -155,15 +172,15 @@ export async function onRequest({ request, env }) {
       );
       const data = await safeJson(response);
       if (!response.ok) {
-        return jsonResponse(response.status, { error: "Erro Meta", details: data });
+        return json(response.status, { error: "Erro Meta", details: data });
       }
-      return jsonResponse(200, { code: "success", data });
+      return json(200, { code: "success", data });
     }
 
     if (action === "delete-ad") {
       const { ad_id } = body || {};
       if (!ad_id) {
-        return jsonResponse(400, { error: "Parametros obrigatorios: ad_id" });
+        return json(400, { error: "Parametros obrigatorios: ad_id" });
       }
       const response = await fetch(
         `${API_BASE}/${encodeURIComponent(ad_id)}?access_token=${token}`,
@@ -171,14 +188,14 @@ export async function onRequest({ request, env }) {
       );
       const data = await safeJson(response);
       if (!response.ok) {
-        return jsonResponse(response.status, { error: "Erro Meta", details: data });
+        return json(response.status, { error: "Erro Meta", details: data });
       }
-      return jsonResponse(200, { code: "success", data });
+      return json(200, { code: "success", data });
     }
 
-    return jsonResponse(400, { error: "Acao invalida" });
+    return json(400, { error: "Acao invalida" });
   } catch (error) {
-    return jsonResponse(500, {
+    return json(500, {
       error: "Erro Meta",
       details: error.details || error.message,
     });
