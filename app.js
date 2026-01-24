@@ -1175,8 +1175,9 @@ function MetaJoinGroupedTable({ rows }) {
   `;
 }
 
-function SemUtmAttribution({ semUtmRow, joinadsRows }) {
+function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows }) {
   const rows = Array.isArray(joinadsRows) ? joinadsRows : [];
+  const metaList = Array.isArray(metaRows) ? metaRows : [];
   const semImps = toNumber(semUtmRow?.impressions);
   const semClicks = toNumber(semUtmRow?.clicks);
   const semRevenue = toNumber(semUtmRow?.revenue_client || semUtmRow?.revenue);
@@ -1228,7 +1229,21 @@ function SemUtmAttribution({ semUtmRow, joinadsRows }) {
     };
   });
 
-  if (!list.length) {
+  const spendByTerm = new Map();
+  metaList.forEach((row) => {
+    const key = normalizeKey(row.adset_name);
+    if (!key) return;
+    const spend = toNumber(row.spend_value || row.spend);
+    if (!spendByTerm.has(key)) {
+      spendByTerm.set(key, { name: row.adset_name || "-", spend: 0 });
+    }
+    spendByTerm.get(key).spend += spend;
+  });
+  const spendList = Array.from(spendByTerm.values()).sort(
+    (a, b) => b.spend - a.spend
+  );
+
+  if (!list.length && !spendList.length) {
     return html`
       <section className="card wide">
         <div className="card-head">
@@ -1245,13 +1260,29 @@ function SemUtmAttribution({ semUtmRow, joinadsRows }) {
     `;
   }
 
+  const hasSpend = spendList.some((row) => row.spend > 0);
   const hasEcpm = list.some((row) => row.ecpm > 0);
   const hasCtr = list.some((row) => row.ctr > 0);
   let leader = list[0];
   let criterionLabel = "Impressões";
-  let criterionValue = number.format(leader.impressions || 0);
+  let criterionValue = number.format(leader?.impressions || 0);
 
-  if (hasEcpm) {
+  if (hasSpend) {
+    const top = spendList[0];
+    const byJoin = list.find(
+      (row) => normalizeKey(row.name) === normalizeKey(top.name)
+    );
+    leader = byJoin || {
+      name: top.name,
+      impressions: 0,
+      clicks: 0,
+      revenue: 0,
+      ecpm: 0,
+      ctr: 0,
+    };
+    criterionLabel = "Gasto (Meta)";
+    criterionValue = currencyBRL.format(top.spend || 0);
+  } else if (hasEcpm) {
     leader = list.reduce((best, row) => (row.ecpm > best.ecpm ? row : best));
     criterionLabel = "eCPM";
     criterionValue = currencyUSD.format(leader.ecpm || 0);
@@ -2308,7 +2339,7 @@ function App() {
                 />
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
-              ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} />`}
+              ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} />`}
               ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
               ${html`<${EarningsTable} rows=${earningsAll} />`}
             </main>
