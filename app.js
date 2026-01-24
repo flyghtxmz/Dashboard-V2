@@ -843,6 +843,54 @@ const normalizeKey = (value) =>
     .trim()
     .toLowerCase();
 
+function buildAdsetGrouped(rows, joinadsRows, brlRate) {
+  const joinadsByTerm = new Map();
+  (joinadsRows || []).forEach((row) => {
+    const key = normalizeKey(row.custom_value);
+    if (!key) return;
+    joinadsByTerm.set(key, row);
+  });
+
+  const groupedRows = rows.reduce((map, row) => {
+    const key = `${row.adset_name || ""}|||${row.objective || ""}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        adset_name: row.adset_name,
+        objective: row.objective,
+        spend: 0,
+        results: 0,
+        impressions: 0,
+        clicks: 0,
+        revenue_usd: 0,
+        revenue_brl: 0,
+      });
+    }
+    const item = map.get(key);
+    item.spend += toNumber(row.spend_value || row.spend);
+    item.results += toNumber(row.results_meta);
+    return map;
+  }, new Map());
+
+  const grouped = Array.from(groupedRows.values())
+    .map((item) => {
+      const termKey = normalizeKey(item.adset_name);
+      const join = joinadsByTerm.get(termKey);
+      if (join) {
+        const usd = toNumber(join.revenue_client || join.revenue);
+        item.impressions = toNumber(join.impressions);
+        item.clicks = toNumber(join.clicks);
+        item.revenue_usd = usd;
+        item.revenue_brl = brlRate ? usd * brlRate : 0;
+        item.ecpm = item.impressions ? (item.revenue_usd / item.impressions) * 1000 : 0;
+        item.ctr = item.impressions ? (item.clicks / item.impressions) * 100 : 0;
+      }
+      return item;
+    })
+    .sort((a, b) => (b.revenue_usd || 0) - (a.revenue_usd || 0));
+
+  return grouped;
+}
+
 function MetaJoinTable({ rows, adsetFilter, onFilterChange, onToggleAd, statusLoading }) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
@@ -1123,6 +1171,171 @@ function MetaJoinGroupedTable({ rows }) {
           </tbody>
         </table>
       </div>
+    </section>
+  `;
+}
+
+function SemUtmAttribution({ semUtmRow, joinadsRows }) {
+  const rows = Array.isArray(joinadsRows) ? joinadsRows : [];
+  const semImps = toNumber(semUtmRow?.impressions);
+  const semClicks = toNumber(semUtmRow?.clicks);
+  const semRevenue = toNumber(semUtmRow?.revenue_client || semUtmRow?.revenue);
+
+  if (!rows.length || (!semImps && !semClicks && !semRevenue)) {
+    return html`
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Atribuição</span>
+            <h2 className="section-title">Sem UTM -> conjunto líder</h2>
+          </div>
+          <span className="chip neutral">Estimativa</span>
+        </div>
+        <p className="muted small">
+          Sem dados suficientes para atribuir Sem UTM ao conjunto líder.
+        </p>
+      </section>
+    `;
+  }
+
+  const map = new Map();
+  rows.forEach((row) => {
+    const name = row.custom_value || row.name || "";
+    if (!name) return;
+    const key = normalizeKey(name);
+    if (!map.has(key)) {
+      map.set(key, {
+        name,
+        impressions: 0,
+        clicks: 0,
+        revenue: 0,
+      });
+    }
+    const item = map.get(key);
+    item.impressions += toNumber(row.impressions);
+    item.clicks += toNumber(row.clicks);
+    item.revenue += toNumber(row.revenue_client || row.revenue);
+  });
+
+  const list = Array.from(map.values()).map((item) => {
+    const imps = item.impressions || 0;
+    const revenue = item.revenue || 0;
+    const clicks = item.clicks || 0;
+    return {
+      ...item,
+      ecpm: imps ? (revenue / imps) * 1000 : 0,
+      ctr: imps ? (clicks / imps) * 100 : 0,
+    };
+  });
+
+  if (!list.length) {
+    return html`
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Atribuição</span>
+            <h2 className="section-title">Sem UTM -> conjunto líder</h2>
+          </div>
+          <span className="chip neutral">Estimativa</span>
+        </div>
+        <p className="muted small">
+          Sem dados de conjuntos (utm_term) para definir líder.
+        </p>
+      </section>
+    `;
+  }
+
+  const hasEcpm = list.some((row) => row.ecpm > 0);
+  const hasCtr = list.some((row) => row.ctr > 0);
+  let leader = list[0];
+  let criterionLabel = "Impressões";
+  let criterionValue = number.format(leader.impressions || 0);
+
+  if (hasEcpm) {
+    leader = list.reduce((best, row) => (row.ecpm > best.ecpm ? row : best));
+    criterionLabel = "eCPM";
+    criterionValue = currencyUSD.format(leader.ecpm || 0);
+  } else if (hasCtr) {
+    leader = list.reduce((best, row) => (row.ctr > best.ctr ? row : best));
+    criterionLabel = "CTR";
+    criterionValue = `${(leader.ctr || 0).toFixed(2)}%`;
+  } else {
+    leader = list.reduce((best, row) =>
+      row.impressions > best.impressions ? row : best
+    );
+    criterionLabel = "Impressões";
+    criterionValue = number.format(leader.impressions || 0);
+  }
+
+  const leaderImps = leader.impressions || 0;
+  const leaderClicks = leader.clicks || 0;
+  const leaderRevenue = leader.revenue || 0;
+  const leaderEcpm =
+    leaderImps > 0 ? (leaderRevenue / leaderImps) * 1000 : 0;
+
+  const totalImps = leaderImps + semImps;
+  const totalClicks = leaderClicks + semClicks;
+  const totalRevenue = leaderRevenue + semRevenue;
+  const totalEcpm = totalImps > 0 ? (totalRevenue / totalImps) * 1000 : 0;
+
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Atribuição</span>
+          <h2 className="section-title">Sem UTM -> conjunto líder</h2>
+        </div>
+        <div className="chip-group">
+          <span className="chip neutral">Critério: ${criterionLabel}</span>
+          <span className="chip neutral">${criterionValue}</span>
+        </div>
+      </div>
+      <div className="table-wrapper scroll-x">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Conjunto</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>Receita cliente</th>
+              <th>eCPM cliente</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Líder (original)</td>
+              <td>${leader.name}</td>
+              <td>${number.format(leaderImps)}</td>
+              <td>${number.format(leaderClicks)}</td>
+              <td>${currencyUSD.format(leaderRevenue)}</td>
+              <td>${currencyUSD.format(leaderEcpm || 0)}</td>
+            </tr>
+            <tr>
+              <td>Sem UTM (estimado)</td>
+              <td>-</td>
+              <td>${number.format(semImps)}</td>
+              <td>${number.format(semClicks)}</td>
+              <td>${currencyUSD.format(semRevenue)}</td>
+              <td>${currencyUSD.format(
+                semImps ? (semRevenue / semImps) * 1000 : 0
+              )}</td>
+            </tr>
+            <tr className="summary-row">
+              <td><strong>Total atribuído</strong></td>
+              <td><strong>${leader.name}</strong></td>
+              <td><strong>${number.format(totalImps)}</strong></td>
+              <td><strong>${number.format(totalClicks)}</strong></td>
+              <td><strong>${currencyUSD.format(totalRevenue)}</strong></td>
+              <td><strong>${currencyUSD.format(totalEcpm || 0)}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small">
+        Estimativa: Sem UTM foi atribuído ao conjunto líder pelo critério de
+        ${criterionLabel}. Use como referência, não como dado oficial.
+      </p>
     </section>
   `;
 }
@@ -2095,6 +2308,7 @@ function App() {
                 />
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
+              ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} />`}
               ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
               ${html`<${EarningsTable} rows=${earningsAll} />`}
             </main>
