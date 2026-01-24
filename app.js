@@ -1245,6 +1245,7 @@ function App() {
   const [superFilter, setSuperFilter] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
   const [earnings, setEarnings] = useState([]);
+  const [earningsAll, setEarningsAll] = useState([]);
   const [keyValueContent, setKeyValueContent] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1322,6 +1323,15 @@ function App() {
           domain: filters.domain.trim(),
         }).toString()}`
       );
+      const earningsAllPromise = fetchJson(
+        `${API_BASE}/earnings?${new URLSearchParams({
+          start_date: filters.startDate,
+          end_date: filters.endDate,
+        }).toString()}`
+      ).catch((err) => {
+        pushLog("earnings-all", err);
+        return { data: [] };
+      });
       // key-value mantido em utm_campaign para evitar 422 em tokens que não aceitam utm_content
       const keyValueContentPromise = fetchJson(
         `${API_BASE}/key-value?${new URLSearchParams({
@@ -1436,9 +1446,10 @@ function App() {
         pushLog("meta-utmmedium", err);
       }
 
-      const [topRes, earningsRes] = await Promise.all([
+      const [topRes, earningsRes, earningsAllRes] = await Promise.all([
         topPromise,
         earningsPromise,
+        earningsAllPromise,
       ]);
 
       // key-value para coletar UTMs usadas
@@ -1504,6 +1515,7 @@ function App() {
       setSuperTermRows(superTermRes?.data || []);
       setTopUrls(topRes.data || []);
       setEarnings(earningsRes.data || []);
+      setEarningsAll(earningsAllRes.data || []);
       setKeyValueContent(keyValueContentRes.data || []);
       const targetDomain = normalizeKey(filters.domain || "");
       const sourceRows =
@@ -1583,6 +1595,7 @@ function App() {
       setSuperFilter([]);
       setTopUrls([]);
       setEarnings([]);
+      setEarningsAll([]);
       setMetaRows([]);
       setParamPairs([]);
       setKeyValueContent([]);
@@ -2083,7 +2096,7 @@ function App() {
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
               ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
-              ${html`<${EarningsTable} rows=${earnings} />`}
+              ${html`<${EarningsTable} rows=${earningsAll} />`}
             </main>
           `
         : activeTab === "urls"
