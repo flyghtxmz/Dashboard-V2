@@ -1263,13 +1263,6 @@ function App() {
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
-  const metaTotals = useMemo(() => {
-    const spendBrl = (metaRows || []).reduce(
-      (acc, row) => acc + toNumber(row.spend),
-      0
-    );
-    return { spendBrl };
-  }, [metaRows]);
 
   const pushLog = (source, err) => {
     const entry = {
@@ -1785,6 +1778,14 @@ function App() {
       (row.adset_name || "").toLowerCase().includes(term)
     );
   }, [mergedMeta, filters.adsetFilter]);
+
+  const metaTotals = useMemo(() => {
+    const spendBrl = (filteredMeta || []).reduce(
+      (acc, row) => acc + toNumber(row.spend_value || row.spend),
+      0
+    );
+    return { spendBrl };
+  }, [filteredMeta]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
