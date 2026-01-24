@@ -1703,6 +1703,9 @@ function App() {
         kvByCustom[adIdKey] ||
         {};
 
+      const hasJoinads =
+        Object.keys(fromCustom).length > 0 || Object.keys(fromKv).length > 0;
+
       const ecpmClient =
         fromKv.ecpm_client ??
         fromKv.ecpm ??
@@ -1753,6 +1756,7 @@ function App() {
       return {
         ...row,
         date,
+        joinads_matched: hasJoinads,
         cost_per_result: currencyBRL.format(cost),
         spend_brl: currencyBRL.format(spend),
         spend_value: spend,
@@ -1775,8 +1779,9 @@ function App() {
 
   const filteredMeta = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
-    if (!term) return mergedMeta;
-    return mergedMeta.filter((row) =>
+    const base = mergedMeta.filter((row) => row.joinads_matched);
+    if (!term) return base;
+    return base.filter((row) =>
       (row.adset_name || "").toLowerCase().includes(term)
     );
   }, [mergedMeta, filters.adsetFilter]);
