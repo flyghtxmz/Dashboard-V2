@@ -1260,6 +1260,7 @@ function App() {
   const [metaSourceRows, setMetaSourceRows] = useState([]);
   const [superTermRows, setSuperTermRows] = useState([]);
   const [adStatusLoading, setAdStatusLoading] = useState({});
+  const [appliedFilters, setAppliedFilters] = useState(null);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -1573,6 +1574,7 @@ function App() {
           : null;
 
       setMetaSourceRows(semUtmRow ? [...filteredSource, semUtmRow] : filteredSource);
+      setAppliedFilters({ ...filters });
       setLastRefreshed(new Date());
     } catch (err) {
       const msg = formatError(err) || "Erro ao buscar dados.";
@@ -1649,7 +1651,8 @@ function App() {
     if (!metaRows?.length) return [];
     const superRows = Array.isArray(superFilter) ? superFilter : [];
     const termRows = Array.isArray(superTermRows) ? superTermRows : [];
-    const domainKey = normalizeKey(filters.domain || "");
+    const appliedDomain = appliedFilters?.domain || filters.domain || "";
+    const domainKey = normalizeKey(appliedDomain);
     const domainFilteredSuper = superRows.filter((row) => {
       const d = normalizeKey(row.domain || row.name || "");
       return domainKey ? d === domainKey : true;
@@ -1699,6 +1702,7 @@ function App() {
         .map((r) => normalizeKey(r.custom_value))
         .filter(Boolean)
     );
+    const hasTermData = termSet.size > 0;
 
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
@@ -1719,11 +1723,11 @@ function App() {
 
       const matchedByContent = contentSet.has(nameKey) || contentSet.has(adIdKey);
       const matchedByTerm = termSet.has(adsetKey);
-      const hasJoinads =
-        matchedByContent ||
-        matchedByTerm ||
-        Object.keys(fromCustom).length > 0 ||
-        Object.keys(fromKv).length > 0;
+      const hasJoinads = hasTermData
+        ? matchedByTerm
+        : matchedByContent ||
+          Object.keys(fromCustom).length > 0 ||
+          Object.keys(fromKv).length > 0;
 
       const ecpmClient =
         fromKv.ecpm_client ??
@@ -1802,7 +1806,7 @@ function App() {
     keyValueContent,
     brlRate,
     superKey,
-    filters.domain,
+    appliedFilters,
   ]);
 
   const filteredMeta = useMemo(() => {
@@ -2103,7 +2107,7 @@ function App() {
                   kvRows=${Array.isArray(keyValueContent) ? keyValueContent : []}
                   earnings=${earnings}
                   topUrls=${topUrls}
-                  domain=${filters.domain}
+                  domain=${appliedFilters?.domain || filters.domain}
                   superKey=${superKey}
                 />
               `}
