@@ -40,7 +40,18 @@ module.exports = async function handler(req, res) {
       res.status(response.status).json({ error: "Erro Meta", details: data });
       return;
     }
-    res.status(200).json({ code: "success", data });
+    let adset = null;
+    try {
+      const checkRes = await fetch(
+        `${API_BASE}/${encodeURIComponent(
+          adset_id
+        )}?fields=daily_budget,lifetime_budget,budget_remaining&access_token=${token}`
+      );
+      adset = await checkRes.json().catch(() => null);
+    } catch (e) {
+      adset = null;
+    }
+    res.status(200).json({ code: "success", data, adset });
   } catch (error) {
     res.status(500).json({ error: "Erro ao atualizar conjunto", details: error.message });
   }

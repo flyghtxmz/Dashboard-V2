@@ -2005,13 +2005,28 @@ function App() {
 
     setBudgetLoading((prev) => ({ ...prev, [adsetId]: true }));
     try {
-      await fetchJson(`${API_BASE}/meta-adset-budget`, {
+      const res = await fetchJson(`${API_BASE}/meta-adset-budget`, {
         method: "POST",
         body: JSON.stringify({
           adset_id: adsetId,
           daily_budget_brl: budgetNumber,
         }),
       });
+      const updated = res?.adset || null;
+      if (updated) {
+        setMetaRows((prev) =>
+          (prev || []).map((row) =>
+            row.adset_id === adsetId
+              ? {
+                  ...row,
+                  adset_daily_budget: updated.daily_budget,
+                  adset_lifetime_budget: updated.lifetime_budget,
+                  adset_budget_remaining: updated.budget_remaining,
+                }
+              : row
+          )
+        );
+      }
       pushLog("meta-budget", {
         message: `Orcamento atualizado: ${adsetId} -> R$ ${budgetNumber.toFixed(
           2
