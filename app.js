@@ -1856,11 +1856,15 @@ function App() {
   const brlRate = usdBrl || 0;
 
   const pushLog = (source, err) => {
+    const detail =
+      err?.data?.details !== undefined
+        ? err.data.details
+        : err?.data ?? null;
     const entry = {
       time: new Date(),
       source,
       message: formatError(err),
-      detail: err?.data || null,
+      detail,
       status: err?.status,
     };
     setLogs((prev) => [entry, ...prev].slice(0, 50));
@@ -2389,7 +2393,9 @@ function App() {
     setPublishing(true);
     const remaining = [];
     for (const draft of drafts) {
+      let step = "copy";
       try {
+        step = "copy";
         const copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
           method: "POST",
           body: JSON.stringify({
@@ -2416,6 +2422,7 @@ function App() {
           const newAdsetId = adsetIds[i];
 
           if (draft.adset_new_name && draft.adset_new_name.trim()) {
+            step = "rename-adset";
             await fetchJson(`${API_BASE}/meta-rename`, {
               method: "POST",
               body: JSON.stringify({
@@ -2426,6 +2433,7 @@ function App() {
           }
 
           if (draft.daily_budget_brl) {
+            step = "budget";
             await fetchJson(`${API_BASE}/meta-adset-budget`, {
               method: "POST",
               body: JSON.stringify({
@@ -2437,6 +2445,7 @@ function App() {
 
           let newAds = adIdsMatrix[i] || [];
           if (!newAds.length) {
+            step = "list-ads";
             const adsRes = await fetchJson(
               `${API_BASE}/meta-adset-ads?${new URLSearchParams({
                 adset_id: newAdsetId,
@@ -2450,6 +2459,7 @@ function App() {
             const targetId = newAds[a];
             if (!targetId) continue;
             if (ad.removed) {
+              step = "delete-ad";
               await fetchJson(`${API_BASE}/meta-delete-ad`, {
                 method: "POST",
                 body: JSON.stringify({
@@ -2460,6 +2470,7 @@ function App() {
             }
             const nextName = (ad.new_name || "").trim();
             if (nextName && nextName !== ad.name) {
+              step = "rename-ad";
               await fetchJson(`${API_BASE}/meta-rename`, {
                 method: "POST",
                 body: JSON.stringify({
@@ -2475,7 +2486,7 @@ function App() {
           message: `Publicado: ${draft.source_adset_name} -> ${draft.adset_new_name}`,
         });
       } catch (err) {
-        pushLog("duplicar", err);
+        pushLog(`duplicar-${step}`, err);
         remaining.push(draft);
       }
     }
@@ -3005,8 +3016,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
 
 
 
