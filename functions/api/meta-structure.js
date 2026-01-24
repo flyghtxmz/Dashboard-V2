@@ -36,10 +36,10 @@ export async function onRequest({ request, env }) {
   }
 
   try {
-    const campaignsUrl = `${API_BASE}/${encodeURIComponent(
+    const campaignsAllUrl = `${API_BASE}/${encodeURIComponent(
       account_id
-    )}/campaigns?fields=id,name,status,effective_status&effective_status=["ACTIVE"]&limit=200&access_token=${token}`;
-    const campaigns = await fetchAll(campaignsUrl);
+    )}/campaigns?fields=id,name,status,effective_status&limit=200&access_token=${token}`;
+    const campaigns = await fetchAll(campaignsAllUrl);
 
     const withAdsets = await Promise.all(
       campaigns.map(async (camp) => {

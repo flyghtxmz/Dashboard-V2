@@ -917,6 +917,15 @@ function DuplicarView({
     return daily || life || "-";
   };
 
+  const activeCampaigns = (campaigns || []).filter((camp) => {
+    const status = (camp.effective_status || camp.status || "").toUpperCase();
+    return status === "ACTIVE";
+  });
+  const displayCampaigns =
+    activeCampaigns.length > 0 ? activeCampaigns : campaigns || [];
+  const showFallbackNotice =
+    activeCampaigns.length === 0 && (campaigns || []).length > 0;
+
   return html`
     <main className="dup-grid">
       <section className="card wide">
@@ -929,12 +938,17 @@ function DuplicarView({
             ${loading ? "Carregando..." : "Atualizar lista"}
           </button>
         </div>
+        ${showFallbackNotice
+          ? html`<div className="status neutral">
+              Nenhuma campanha ativa foi encontrada. Exibindo todas.
+            </div>`
+          : null}
         ${error
           ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>`
           : null}
-        ${campaigns.length === 0
+        ${displayCampaigns.length === 0
           ? html`<p className="muted small">Nenhuma campanha ativa carregada.</p>`
-          : campaigns.map(
+          : displayCampaigns.map(
               (camp) => html`
                 <div className="dup-campaign" key=${camp.id}>
                   <div className="dup-campaign-head">
@@ -2976,7 +2990,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
 
 
 
