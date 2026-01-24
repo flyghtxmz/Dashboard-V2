@@ -647,7 +647,7 @@ function DiagnosticsJoin({
   const topCount = Array.isArray(topUrls) ? topUrls.length : 0;
 
   return html`
-    <section className="card wide">
+    <section className="card wide meta-campaigns">
       <div className="card-head">
         <div>
           <span className="eyebrow">JoinAds</span>
@@ -789,7 +789,7 @@ function MetaSourceTable({ rows }) {
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
-      <div className="table-wrapper">
+      <div className="table-wrapper scroll-x">
         <table>
           <thead>
             <tr>

@@ -500,6 +500,12 @@ tbody tr:last-child td {
 .scroll-x table th {
   white-space: nowrap;
 }
+.meta-campaigns .table-wrapper.scroll-x table {
+  min-width: 1200px;
+}
+.meta-campaigns .filters {
+  margin-top: 2px;
+}
 @media (max-width: 720px) {
   .table-wrapper {
     margin: 0;
