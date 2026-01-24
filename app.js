@@ -1175,7 +1175,7 @@ function MetaJoinGroupedTable({ rows }) {
   `;
 }
 
-function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows }) {
+function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
   const rows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const metaList = Array.isArray(metaRows) ? metaRows : [];
   const semImps = toNumber(semUtmRow?.impressions);
@@ -1267,8 +1267,10 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows }) {
   let criterionLabel = "Impressões";
   let criterionValue = number.format(leader?.impressions || 0);
 
+  let leaderSpend = 0;
   if (hasSpend) {
     const top = spendList[0];
+    leaderSpend = top.spend || 0;
     const byJoin = list.find(
       (row) => normalizeKey(row.name) === normalizeKey(top.name)
     );
@@ -1303,6 +1305,20 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows }) {
   const leaderRevenue = leader.revenue || 0;
   const leaderEcpm =
     leaderImps > 0 ? (leaderRevenue / leaderImps) * 1000 : 0;
+  const leaderRevenueBrl = brlRate ? leaderRevenue * brlRate : null;
+  const semRevenueBrl = brlRate ? semRevenue * brlRate : null;
+  const totalRevenueBrl =
+    leaderRevenueBrl != null && semRevenueBrl != null
+      ? leaderRevenueBrl + semRevenueBrl
+      : null;
+  const roasLeader =
+    leaderRevenueBrl != null && leaderSpend > 0
+      ? leaderRevenueBrl / leaderSpend
+      : null;
+  const roasTotal =
+    totalRevenueBrl != null && leaderSpend > 0
+      ? totalRevenueBrl / leaderSpend
+      : null;
 
   const totalImps = leaderImps + semImps;
   const totalClicks = leaderClicks + semClicks;
@@ -1331,6 +1347,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows }) {
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>eCPM cliente</th>
+              <th>ROAS</th>
             </tr>
           </thead>
           <tbody>
@@ -1341,6 +1358,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows }) {
               <td>${number.format(leaderClicks)}</td>
               <td>${currencyUSD.format(leaderRevenue)}</td>
               <td>${currencyUSD.format(leaderEcpm || 0)}</td>
+              <td>${roasLeader != null ? `${roasLeader.toFixed(2)}x` : "-"}</td>
             </tr>
             <tr>
               <td>Sem UTM (estimado)</td>
@@ -1351,6 +1369,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows }) {
               <td>${currencyUSD.format(
                 semImps ? (semRevenue / semImps) * 1000 : 0
               )}</td>
+              <td>-</td>
             </tr>
             <tr className="summary-row">
               <td><strong>Total atribuído</strong></td>
@@ -1359,6 +1378,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows }) {
               <td><strong>${number.format(totalClicks)}</strong></td>
               <td><strong>${currencyUSD.format(totalRevenue)}</strong></td>
               <td><strong>${currencyUSD.format(totalEcpm || 0)}</strong></td>
+              <td><strong>${roasTotal != null ? `${roasTotal.toFixed(2)}x` : "-"}</strong></td>
             </tr>
           </tbody>
         </table>
@@ -2339,7 +2359,7 @@ function App() {
                 />
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
-              ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} />`}
+              ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} brlRate=${brlRate} />`}
               ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
               ${html`<${EarningsTable} rows=${earningsAll} />`}
             </main>
