@@ -1648,6 +1648,16 @@ function App() {
   const mergedMeta = useMemo(() => {
     if (!metaRows?.length) return [];
     const superRows = Array.isArray(superFilter) ? superFilter : [];
+    const termRows = Array.isArray(superTermRows) ? superTermRows : [];
+    const domainKey = normalizeKey(filters.domain || "");
+    const domainFilteredSuper = superRows.filter((row) => {
+      const d = normalizeKey(row.domain || row.name || "");
+      return domainKey ? d === domainKey : true;
+    });
+    const domainFilteredTerm = termRows.filter((row) => {
+      const d = normalizeKey(row.domain || row.name || "");
+      return domainKey ? d === domainKey : true;
+    });
     const kvContent = Array.isArray(keyValueContent) ? keyValueContent : [];
 
     const earningsByDate = {};
@@ -1661,9 +1671,13 @@ function App() {
     });
 
     const superByCustom = {};
-    superRows.forEach((row) => {
+    const contentSet = new Set();
+    domainFilteredSuper.forEach((row) => {
       const keyNorm = normalizeKey(row.custom_value);
-      if (keyNorm) superByCustom[keyNorm] = row;
+      if (keyNorm) {
+        superByCustom[keyNorm] = row;
+        contentSet.add(keyNorm);
+      }
     });
 
     const kvByCustom = {};
@@ -1680,11 +1694,18 @@ function App() {
       };
     });
 
+    const termSet = new Set(
+      domainFilteredTerm
+        .map((r) => normalizeKey(r.custom_value))
+        .filter(Boolean)
+    );
+
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
       const join = earningsByDate[date] || {};
       const nameKey = normalizeKey(row.ad_name);
       const adIdKey = normalizeKey(row.ad_id || "");
+      const adsetKey = normalizeKey(row.adset_name || "");
 
       const fromCustom =
         superByCustom[nameKey] ||
@@ -1696,8 +1717,13 @@ function App() {
         kvByCustom[adIdKey] ||
         {};
 
+      const matchedByContent = contentSet.has(nameKey) || contentSet.has(adIdKey);
+      const matchedByTerm = termSet.has(adsetKey);
       const hasJoinads =
-        Object.keys(fromCustom).length > 0 || Object.keys(fromKv).length > 0;
+        matchedByContent ||
+        matchedByTerm ||
+        Object.keys(fromCustom).length > 0 ||
+        Object.keys(fromKv).length > 0;
 
       const ecpmClient =
         fromKv.ecpm_client ??
@@ -1768,7 +1794,16 @@ function App() {
         results_meta: resultsCount,
       };
     });
-  }, [metaRows, earnings, superFilter, keyValueContent, brlRate, superKey]);
+  }, [
+    metaRows,
+    earnings,
+    superFilter,
+    superTermRows,
+    keyValueContent,
+    brlRate,
+    superKey,
+    filters.domain,
+  ]);
 
   const filteredMeta = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
