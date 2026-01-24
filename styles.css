@@ -113,6 +113,11 @@ button.primary {
 button.ghost {
   background: transparent;
 }
+button.small {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  border-radius: 10px;
+}
 .toggle {
   border: none;
   padding: 6px 12px;
@@ -323,6 +328,29 @@ tbody tr:last-child td {
   margin-top: 4px;
 }
 
+.budget-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.budget-cell input {
+  width: 96px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fbfbff;
+  font-size: 0.85rem;
+}
+.budget-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.budget-meta {
+  line-height: 1.1;
+}
+
 .actions.presets {
   display: flex;
   align-items: center;
@@ -470,10 +498,10 @@ tbody tr:last-child td {
     white-space: nowrap;
     word-break: normal;
   }
-  .table-wrapper table td {
-    white-space: normal;
-    word-break: break-word;
-  }
+.table-wrapper table td {
+  white-space: normal;
+  word-break: break-word;
+}
   .table-wrapper table {
     table-layout: auto;
   }
@@ -501,7 +529,7 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 .meta-campaigns .table-wrapper.scroll-x table {
-  min-width: 1200px;
+  min-width: 1350px;
 }
 .meta-campaigns .filters {
   margin-top: 2px;

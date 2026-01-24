@@ -27,13 +27,14 @@ module.exports = async function handler(req, res) {
 
   const params = new URLSearchParams();
   params.set(
-    "fields",
-    [
-      "date_start",
-      "campaign_name",
-      "adset_name",
-      "ad_name",
-      "ad_id",
+      "fields",
+      [
+        "date_start",
+        "campaign_name",
+        "adset_id",
+        "adset_name",
+        "ad_name",
+        "ad_id",
       "objective",
       "spend",
       "results",
@@ -89,6 +90,34 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    // Buscar orcamento dos conjuntos (adset)
+    const adsetIds = Array.from(
+      new Set(insights.map((row) => row.adset_id).filter(Boolean))
+    );
+    const adsetBudgetMap = new Map();
+    for (let i = 0; i < adsetIds.length; i += chunkSize) {
+      const chunk = adsetIds.slice(i, i + chunkSize);
+      try {
+        const budgetRes = await fetch(
+          `${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining&access_token=${token}`
+        );
+        const budgetJson = await budgetRes.json().catch(() => ({}));
+        if (budgetJson && typeof budgetJson === "object") {
+          Object.entries(budgetJson).forEach(([id, value]) => {
+            if (value && (value.daily_budget || value.lifetime_budget || value.budget_remaining)) {
+              adsetBudgetMap.set(id, {
+                adset_daily_budget: value.daily_budget,
+                adset_lifetime_budget: value.lifetime_budget,
+                adset_budget_remaining: value.budget_remaining,
+              });
+            }
+          });
+        }
+      } catch (e) {
+        // silencioso; segue sem orcamento
+      }
+    }
+
     const withAssets = await Promise.all(
       insights.map(async (row) => {
         const enriched = { ...row };
@@ -96,6 +125,12 @@ module.exports = async function handler(req, res) {
         if (statusInfo) {
           enriched.ad_status = statusInfo.ad_status;
           enriched.effective_status = statusInfo.effective_status;
+        }
+        const budgetInfo = adsetBudgetMap.get(row.adset_id);
+        if (budgetInfo) {
+          enriched.adset_daily_budget = budgetInfo.adset_daily_budget;
+          enriched.adset_lifetime_budget = budgetInfo.adset_lifetime_budget;
+          enriched.adset_budget_remaining = budgetInfo.adset_budget_remaining;
         }
         if (!row.ad_id) return enriched;
         try {

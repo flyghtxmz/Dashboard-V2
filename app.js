@@ -891,11 +891,31 @@ function buildAdsetGrouped(rows, joinadsRows, brlRate) {
   return grouped;
 }
 
-function MetaJoinTable({ rows, adsetFilter, onFilterChange, onToggleAd, statusLoading }) {
+function MetaJoinTable({
+  rows,
+  adsetFilter,
+  onFilterChange,
+  onToggleAd,
+  statusLoading,
+  onBudgetUpdate,
+  budgetLoading,
+}) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
+  };
+  const [budgetInputs, setBudgetInputs] = useState({});
+
+  const setBudget = (adsetId, value) => {
+    setBudgetInputs((prev) => ({ ...prev, [adsetId]: value }));
+  };
+  const getBudget = (adsetId, fallback) => {
+    const raw = budgetInputs[adsetId];
+    if (raw === undefined || raw === null || raw === "") {
+      return fallback ?? "";
+    }
+    return raw;
   };
 
   return html`
@@ -942,6 +962,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange, onToggleAd, statusLo
               <th>Custo por resultado</th>
               <th>Resultados (Meta)</th>
               <th>Valor gasto</th>
+              <th>Orçamento (Meta)</th>
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
@@ -954,7 +975,7 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange, onToggleAd, statusLo
             ${rows.length === 0
               ? html`
                   <tr>
-                    <td colSpan="13" className="muted">Sem dados para o periodo.</td>
+                    <td colSpan="14" className="muted">Sem dados para o periodo.</td>
                   </tr>
                 `
               : rows.map(
@@ -984,6 +1005,59 @@ function MetaJoinTable({ rows, adsetFilter, onFilterChange, onToggleAd, statusLo
                           : "-"}
                       </td>
                       <td>${asText(row.spend_brl)}</td>
+                      <td>
+                        ${row.adset_id
+                          ? (() => {
+                              const current =
+                                row.adset_daily_budget_brl != null
+                                  ? currencyBRL.format(row.adset_daily_budget_brl)
+                                  : row.adset_lifetime_budget_brl != null
+                                  ? `${currencyBRL.format(row.adset_lifetime_budget_brl)} (vitalicio)`
+                                  : "-";
+                              const fallbackValue =
+                                row.adset_daily_budget_brl != null
+                                  ? row.adset_daily_budget_brl.toFixed(2)
+                                  : "";
+                              return html`<div className="budget-cell">
+                                <div className="budget-meta">
+                                  <span className="muted small">Atual: ${current}</span>
+                                </div>
+                                <div className="budget-actions">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="R$"
+                                    value=${getBudget(row.adset_id, fallbackValue)}
+                                    onChange=${(e) =>
+                                      setBudget(row.adset_id, e.target.value)}
+                                    onKeyDown=${(e) => {
+                                      if (e.key === "Enter") {
+                                        onBudgetUpdate?.(
+                                          row.adset_id,
+                                          getBudget(row.adset_id, fallbackValue)
+                                        );
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="ghost small"
+                                    disabled=${budgetLoading && budgetLoading[row.adset_id]}
+                                    onClick=${() =>
+                                      onBudgetUpdate?.(
+                                        row.adset_id,
+                                        getBudget(row.adset_id, fallbackValue)
+                                      )}
+                                  >
+                                    ${budgetLoading && budgetLoading[row.adset_id]
+                                      ? "..."
+                                      : "Salvar"}
+                                  </button>
+                                </div>
+                              </div>`;
+                            })()
+                          : "-"}
+                      </td>
                       <td>${row.roas_joinads || "-"}</td>
                       <td>${row.lucro_op_brl || "-"}</td>
                       <td>
@@ -1525,6 +1599,7 @@ function App() {
   const [metaSourceRows, setMetaSourceRows] = useState([]);
   const [superTermRows, setSuperTermRows] = useState([]);
   const [adStatusLoading, setAdStatusLoading] = useState({});
+  const [budgetLoading, setBudgetLoading] = useState({});
   const [appliedFilters, setAppliedFilters] = useState(null);
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
@@ -1918,6 +1993,41 @@ function App() {
     }
   };
 
+  const handleUpdateBudget = async (adsetId, budgetValue) => {
+    if (!adsetId) return;
+    const raw = String(budgetValue ?? "").trim();
+    if (!raw) return;
+    const budgetNumber = Number(raw.replace(",", "."));
+    if (!Number.isFinite(budgetNumber) || budgetNumber <= 0) {
+      pushLog("meta-budget", { message: "Orcamento invalido" });
+      return;
+    }
+
+    setBudgetLoading((prev) => ({ ...prev, [adsetId]: true }));
+    try {
+      await fetchJson(`${API_BASE}/meta-adset-budget`, {
+        method: "POST",
+        body: JSON.stringify({
+          adset_id: adsetId,
+          daily_budget_brl: budgetNumber,
+        }),
+      });
+      pushLog("meta-budget", {
+        message: `Orcamento atualizado: ${adsetId} -> R$ ${budgetNumber.toFixed(
+          2
+        )}`,
+      });
+    } catch (err) {
+      pushLog("meta-budget", err);
+    } finally {
+      setBudgetLoading((prev) => {
+        const next = { ...prev };
+        delete next[adsetId];
+        return next;
+      });
+    }
+  };
+
   useEffect(() => {
     handleLoadDomains();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2052,6 +2162,14 @@ function App() {
         revenueClientBrl != null && spend !== null && spend !== undefined
           ? revenueClientBrl - spend
           : null;
+      const dailyBudgetBrl =
+        row.adset_daily_budget != null
+          ? toNumber(row.adset_daily_budget) / 100
+          : null;
+      const lifetimeBudgetBrl =
+        row.adset_lifetime_budget != null
+          ? toNumber(row.adset_lifetime_budget) / 100
+          : null;
 
       return {
         ...row,
@@ -2073,6 +2191,8 @@ function App() {
         impressions_joinads: impressionsJoin || null,
         data_level: Object.keys(fromKv).length ? "utm_content" : superKey,
         results_meta: resultsCount,
+        adset_daily_budget_brl: dailyBudgetBrl,
+        adset_lifetime_budget_brl: lifetimeBudgetBrl,
       };
     });
   }, [
@@ -2356,6 +2476,8 @@ function App() {
                     setFilters((prev) => ({ ...prev, adsetFilter: value }))}
                   onToggleAd=${handleToggleAd}
                   statusLoading=${adStatusLoading}
+                  onBudgetUpdate=${handleUpdateBudget}
+                  budgetLoading=${budgetLoading}
                 />
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
