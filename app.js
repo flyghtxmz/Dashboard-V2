@@ -60,6 +60,22 @@ function toNumber(value) {
 }
 
 async function fetchJson(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const cacheTtl = options.cacheTtlMs || 0;
+  const cacheKey = options.cacheKey || path;
+  if (method === "GET" && cacheTtl && !options.force) {
+    try {
+      const raw = localStorage.getItem("__cd_cache__");
+      const store = raw ? JSON.parse(raw) : {};
+      const entry = store[cacheKey];
+      if (entry && Date.now() - entry.time <= entry.ttl) {
+        return entry.data;
+      }
+    } catch (e) {
+      // ignore cache errors
+    }
+  }
+
   const res = await fetch(path, {
     ...options,
     headers: {
@@ -78,6 +94,16 @@ async function fetchJson(path, options = {}) {
     error.status = res.status;
     error.data = data;
     throw error;
+  }
+  if (method === "GET" && cacheTtl) {
+    try {
+      const raw = localStorage.getItem("__cd_cache__");
+      const store = raw ? JSON.parse(raw) : {};
+      store[cacheKey] = { time: Date.now(), ttl: cacheTtl, data };
+      localStorage.setItem("__cd_cache__", JSON.stringify(store));
+    } catch (e) {
+      // ignore cache errors
+    }
   }
   return data;
 }
@@ -600,6 +626,18 @@ function Filters({
             <option value="Analytical">Analytical</option>
             <option value="Synthetic">Synthetic</option>
           </select>
+        </label>
+        <label className="field">
+          <span>Carregar criativos (Meta)</span>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked=${!!filters.includeAssets}
+              onChange=${(e) =>
+                setFilters((p) => ({ ...p, includeAssets: e.target.checked }))}
+            />
+            <span>Mais lento</span>
+          </label>
         </label>
       </div>
       <div className="actions presets">
@@ -2014,6 +2052,7 @@ function App() {
     reportType: "Analytical",
     metaAccountId: "act_728792692620145",
     adsetFilter: "",
+    includeAssets: false,
   });
   const [superFilter, setSuperFilter] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
@@ -2101,7 +2140,11 @@ function App() {
           "domain[]": filters.domain.trim(),
           limit: 500,
           sort: "revenue",
-        }).toString()}`
+        }).toString()}`,
+        {
+          cacheTtlMs: 3 * 60 * 1000,
+          cacheKey: `top-url:${filters.domain}:${filters.startDate}:${filters.endDate}`,
+        }
       );
 
       const earningsPromise = fetchJson(
@@ -2109,13 +2152,21 @@ function App() {
           start_date: filters.startDate,
           end_date: filters.endDate,
           domain: filters.domain.trim(),
-        }).toString()}`
+        }).toString()}`,
+        {
+          cacheTtlMs: 3 * 60 * 1000,
+          cacheKey: `earnings:${filters.domain}:${filters.startDate}:${filters.endDate}`,
+        }
       );
       const earningsAllPromise = fetchJson(
         `${API_BASE}/earnings?${new URLSearchParams({
           start_date: filters.startDate,
           end_date: filters.endDate,
-        }).toString()}`
+        }).toString()}`,
+        {
+          cacheTtlMs: 3 * 60 * 1000,
+          cacheKey: `earnings:all:${filters.startDate}:${filters.endDate}`,
+        }
       ).catch((err) => {
         pushLog("earnings-all", err);
         return { data: [] };
@@ -2128,7 +2179,11 @@ function App() {
           domain: filters.domain.trim(),
           report_type: filters.reportType || "Analytical",
           custom_key: "utm_campaign",
-        }).toString()}`
+        }).toString()}`,
+        {
+          cacheTtlMs: 3 * 60 * 1000,
+          cacheKey: `key-value:${filters.domain}:${filters.startDate}:${filters.endDate}:${filters.reportType}`,
+        }
       ).catch((err) => {
         pushLog("key-value-content", err);
         return { data: [] };
@@ -2196,7 +2251,11 @@ function App() {
             domain: filters.domain.trim(),
             report_type: filters.reportType || "Analytical",
             custom_key: "utm_campaign",
-          }).toString()}`
+          }).toString()}`,
+          {
+            cacheTtlMs: 3 * 60 * 1000,
+            cacheKey: `key-value:${filters.domain}:${filters.startDate}:${filters.endDate}:${filters.reportType}`,
+          }
         );
       } catch (err) {
         pushLog("key-value-content", err);
@@ -2285,12 +2344,18 @@ function App() {
       setParamPairs(Array.from(kvMap.values()));
 
       try {
+        const metaParams = new URLSearchParams({
+          account_id: filters.metaAccountId.trim(),
+          start_date: filters.startDate,
+          end_date: filters.endDate,
+          include_assets: filters.includeAssets ? "1" : "0",
+        });
         const metaRes = await fetchJson(
-          `${API_BASE}/meta-insights?${new URLSearchParams({
-            account_id: filters.metaAccountId.trim(),
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-          }).toString()}`
+          `${API_BASE}/meta-insights?${metaParams.toString()}`,
+          {
+            cacheTtlMs: filters.includeAssets ? 2 * 60 * 1000 : 8 * 60 * 1000,
+            cacheKey: `meta-insights:${metaParams.toString()}`,
+          }
         );
         setMetaRows(metaRes.data || []);
       } catch (err) {
@@ -2400,7 +2465,10 @@ function App() {
       const params = new URLSearchParams();
       params.set("start_date", filters.startDate);
       params.set("end_date", filters.endDate);
-      const res = await fetchJson(`${API_BASE}/domains?${params.toString()}`);
+      const res = await fetchJson(`${API_BASE}/domains?${params.toString()}`, {
+        cacheTtlMs: 10 * 60 * 1000,
+        cacheKey: `domains:${filters.startDate}:${filters.endDate}`,
+      });
       const list = res.data || [];
       setDomains(list);
       if (!filters.domain && list.length > 0) {
@@ -3388,13 +3456,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
-
-
-
-
-
 
 
 

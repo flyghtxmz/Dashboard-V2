@@ -16,6 +16,9 @@ export async function onRequest({ request, env }) {
   const account_id = params.get("account_id");
   const start_date = params.get("start_date");
   const end_date = params.get("end_date");
+  const include_assets =
+    params.get("include_assets") === "1" ||
+    params.get("include_assets") === "true";
 
   const missing = [];
   if (!account_id) missing.push("account_id");
@@ -114,20 +117,29 @@ export async function onRequest({ request, env }) {
       }
     }
 
+    const baseRows = insights.map((row) => {
+      const enriched = { ...row };
+      const statusInfo = statusMap.get(row.ad_id);
+      if (statusInfo) {
+        enriched.ad_status = statusInfo.ad_status;
+        enriched.effective_status = statusInfo.effective_status;
+      }
+      const budgetInfo = adsetBudgetMap.get(row.adset_id);
+      if (budgetInfo) {
+        enriched.adset_daily_budget = budgetInfo.adset_daily_budget;
+        enriched.adset_lifetime_budget = budgetInfo.adset_lifetime_budget;
+        enriched.adset_budget_remaining = budgetInfo.adset_budget_remaining;
+      }
+      return enriched;
+    });
+
+    if (!include_assets) {
+      return jsonResponse(200, { code: "success", data: baseRows });
+    }
+
     const withAssets = await Promise.all(
-      insights.map(async (row) => {
+      baseRows.map(async (row) => {
         const enriched = { ...row };
-        const statusInfo = statusMap.get(row.ad_id);
-        if (statusInfo) {
-          enriched.ad_status = statusInfo.ad_status;
-          enriched.effective_status = statusInfo.effective_status;
-        }
-        const budgetInfo = adsetBudgetMap.get(row.adset_id);
-        if (budgetInfo) {
-          enriched.adset_daily_budget = budgetInfo.adset_daily_budget;
-          enriched.adset_lifetime_budget = budgetInfo.adset_lifetime_budget;
-          enriched.adset_budget_remaining = budgetInfo.adset_budget_remaining;
-        }
         if (!row.ad_id) return enriched;
         try {
           const creativeRes = await fetch(
