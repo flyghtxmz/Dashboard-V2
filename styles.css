@@ -138,6 +138,40 @@ button.small {
   cursor: not-allowed;
 }
 
+.status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background: #f2f3fa;
+  color: #3f4650;
+  width: fit-content;
+}
+.status-badge.on {
+  background: #e7f5f0;
+  color: #1d6b5a;
+  border-color: #c9e9dd;
+}
+.status-badge.off {
+  background: #fdecea;
+  color: #9a2a2a;
+  border-color: #f5c8c2;
+}
+.status-badge.warn {
+  background: #fff4d8;
+  color: #8a5b00;
+  border-color: #f2d59b;
+}
+
 .status {
   margin: 16px 0;
   padding: 12px 16px;

@@ -150,6 +150,49 @@ function formatError(err) {
   return err.message || "Erro inesperado";
 }
 
+const statusLabelMap = {
+  ACTIVE: "Ativo",
+  PAUSED: "Pausado",
+  DISABLED: "Desativado",
+  ARCHIVED: "Arquivado",
+  DELETED: "Excluído",
+  PENDING_REVIEW: "Em revisão",
+  IN_PROCESS: "Em processamento",
+  WITH_ISSUES: "Com problemas",
+  REJECTED: "Reprovado",
+  INACTIVE: "Inativo",
+  CLOSED: "Encerrado",
+  CAMPAIGN_PAUSED: "Campanha pausada",
+  CAMPAIGN_ARCHIVED: "Campanha arquivada",
+  ADSET_PAUSED: "Conjunto pausado",
+  ADSET_ARCHIVED: "Conjunto arquivado",
+  ACCOUNT_PAUSED: "Conta pausada",
+};
+
+const statusToneMap = {
+  ACTIVE: "on",
+  PAUSED: "off",
+  DISABLED: "off",
+  ARCHIVED: "neutral",
+  DELETED: "neutral",
+  PENDING_REVIEW: "warn",
+  IN_PROCESS: "warn",
+  WITH_ISSUES: "warn",
+  REJECTED: "off",
+  INACTIVE: "neutral",
+  CLOSED: "neutral",
+  CAMPAIGN_PAUSED: "off",
+  CAMPAIGN_ARCHIVED: "neutral",
+  ADSET_PAUSED: "off",
+  ADSET_ARCHIVED: "neutral",
+  ACCOUNT_PAUSED: "off",
+};
+
+function formatStatusLabel(status) {
+  if (!status) return "Indisponível";
+  return statusLabelMap[status] || status;
+}
+
 function Metrics({ totals, usdToBrl, metaSpendBrl }) {
   const revenueClientBrl =
     usdToBrl && totals.revenueClient != null
@@ -1236,6 +1279,8 @@ function MetaJoinTable({
                     const statusForUi = statusRaw || effective;
                     const isActive = statusForUi === "ACTIVE";
                     const canToggle = statusRaw === "ACTIVE" || statusRaw === "PAUSED";
+                    const statusLabel = formatStatusLabel(statusForUi);
+                    const statusTone = statusToneMap[statusForUi] || "neutral";
                     const busy = statusLoading && statusLoading[row.ad_id];
                     return html`
                     <tr key=${idx}>
@@ -1328,21 +1373,31 @@ function MetaJoinTable({
                       </td>
                       <td>
                         ${row.ad_id
-                          ? canToggle
-                            ? html`<button
-                                className=${`toggle ${isActive ? "on" : "off"}`}
-                                disabled=${busy}
-                                onClick=${() =>
-                                  onToggleAd(
-                                    row.ad_id,
-                                    isActive ? "PAUSED" : "ACTIVE"
-                                  )}
+                          ? html`<div className="status-cell">
+                              <span
+                                className=${`status-badge ${statusTone}`}
+                                title=${statusForUi || ""}
                               >
-                                ${busy ? "..." : isActive ? "Ligado" : "Desligado"}
-                              </button>`
-                            : html`<span className="muted small" title="Status atual: ${statusForUi}">
-                                ${statusForUi || "Indisponivel"}
-                              </span>`
+                                ${statusLabel}
+                              </span>
+                              ${canToggle
+                                ? html`<button
+                                    className=${`toggle ${isActive ? "on" : "off"}`}
+                                    disabled=${busy}
+                                    onClick=${() =>
+                                      onToggleAd(
+                                        row.ad_id,
+                                        isActive ? "PAUSED" : "ACTIVE"
+                                      )}
+                                  >
+                                    ${busy
+                                      ? "..."
+                                      : isActive
+                                      ? "Ligado"
+                                      : "Desligado"}
+                                  </button>`
+                                : html`<span className="muted small">Indisponível</span>`}
+                            </div>`
                           : "-"}
                       </td>
                     </tr>
@@ -3099,8 +3154,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
 
 
 
