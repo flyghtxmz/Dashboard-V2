@@ -2630,6 +2630,7 @@ function App() {
     for (const draft of drafts) {
       let step = "copy";
       let manualCopyAds = false;
+      let adCopyMode = "copy";
       try {
         step = "copy";
         let copyRes;
@@ -2655,6 +2656,25 @@ function App() {
             pushLog("duplicar-copy", {
               message:
                 "Limite Meta ao copiar muitos anuncios. Fazendo copia simples e replicando anuncios individualmente.",
+            });
+            copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
+              method: "POST",
+              body: JSON.stringify({
+                adset_id: draft.source_adset_id,
+                status_option: "PAUSED",
+                rename_strategy: "DEEP_RENAME",
+                rename_options: { prefix: "Copia - ", suffix: "" },
+                number_of_copies: draft.copies || 1,
+                include_creative: false,
+                deep_copy: false,
+              }),
+            });
+          } else if (subcode === 3858504) {
+            manualCopyAds = true;
+            adCopyMode = "create";
+            pushLog("duplicar-copy", {
+              message:
+                "Criativo com aprimoramentos padrao descontinuado. Copiando conjunto e recriando anuncios.",
             });
             copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
               method: "POST",
@@ -2715,22 +2735,62 @@ function App() {
             const sourceAds = (draft.ads || []).filter((ad) => !ad.removed);
             for (let a = 0; a < sourceAds.length; a += 1) {
               const ad = sourceAds[a];
-              step = "copy-ad";
-              const copyAdRes = await fetchJson(`${API_BASE}/meta-ad-copy`, {
-                method: "POST",
-                body: JSON.stringify({
-                  ad_id: ad.id,
-                  adset_id: newAdsetId,
-                  status_option: "PAUSED",
-                  rename_strategy: "DEEP_RENAME",
-                  rename_options: { prefix: "Copia - ", suffix: "" },
-                }),
-              });
-              const newAdId =
-                copyAdRes.new_ad_id ||
-                copyAdRes.data?.copied_ad_id ||
-                copyAdRes.data?.id ||
-                null;
+              let newAdId = null;
+              if (adCopyMode === "create") {
+                step = "create-ad";
+                const createRes = await fetchJson(`${API_BASE}/meta-ad-create`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    ad_id: ad.id,
+                    adset_id: newAdsetId,
+                    name: ad.new_name || ad.name,
+                    status: "PAUSED",
+                  }),
+                });
+                newAdId = createRes.new_ad_id || createRes.data?.id || null;
+              } else {
+                step = "copy-ad";
+                try {
+                  const copyAdRes = await fetchJson(`${API_BASE}/meta-ad-copy`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      ad_id: ad.id,
+                      adset_id: newAdsetId,
+                      status_option: "PAUSED",
+                      rename_strategy: "DEEP_RENAME",
+                      rename_options: { prefix: "Copia - ", suffix: "" },
+                    }),
+                  });
+                  newAdId =
+                    copyAdRes.new_ad_id ||
+                    copyAdRes.data?.copied_ad_id ||
+                    copyAdRes.data?.id ||
+                    null;
+                } catch (err) {
+                  const subcode =
+                    err?.data?.details?.error?.error_subcode ||
+                    err?.data?.details?.error_subcode;
+                  if (subcode === 3858504) {
+                    step = "create-ad";
+                    const createRes = await fetchJson(
+                      `${API_BASE}/meta-ad-create`,
+                      {
+                        method: "POST",
+                        body: JSON.stringify({
+                          ad_id: ad.id,
+                          adset_id: newAdsetId,
+                          name: ad.new_name || ad.name,
+                          status: "PAUSED",
+                        }),
+                      }
+                    );
+                    newAdId =
+                      createRes.new_ad_id || createRes.data?.id || null;
+                  } else {
+                    throw err;
+                  }
+                }
+              }
               adMappings.push({ source: ad, newId: newAdId });
             }
           } else {
@@ -3328,7 +3388,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
 
 
 
