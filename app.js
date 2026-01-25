@@ -137,6 +137,12 @@ function formatError(err) {
   if (!err) return "Erro inesperado";
   if (err.data) {
     if (typeof err.data === "string") return err.data;
+    if (err.data.details?.error?.error_user_msg) {
+      return err.data.details.error.error_user_msg;
+    }
+    if (err.data.details?.error?.message) {
+      return err.data.details.error.message;
+    }
     if (err.data.error) return err.data.error;
     if (err.data.message) return err.data.message;
     if (err.data.detail) return err.data.detail;
@@ -1225,8 +1231,11 @@ function MetaJoinTable({
               : rows.map(
                   (row, idx) => {
                     const adLink = row.permalink_url || null;
-                    const status = row.ad_status || row.effective_status || "";
-                    const isActive = status === "ACTIVE";
+                    const statusRaw = row.ad_status || "";
+                    const effective = row.effective_status || "";
+                    const statusForUi = statusRaw || effective;
+                    const isActive = statusForUi === "ACTIVE";
+                    const canToggle = statusRaw === "ACTIVE" || statusRaw === "PAUSED";
                     const busy = statusLoading && statusLoading[row.ad_id];
                     return html`
                     <tr key=${idx}>
@@ -1319,17 +1328,21 @@ function MetaJoinTable({
                       </td>
                       <td>
                         ${row.ad_id
-                          ? html`<button
-                              className=${`toggle ${isActive ? "on" : "off"}`}
-                              disabled=${busy}
-                              onClick=${() =>
-                                onToggleAd(
-                                  row.ad_id,
-                                  isActive ? "PAUSED" : "ACTIVE"
-                                )}
-                            >
-                              ${busy ? "..." : isActive ? "Ligado" : "Desligado"}
-                            </button>`
+                          ? canToggle
+                            ? html`<button
+                                className=${`toggle ${isActive ? "on" : "off"}`}
+                                disabled=${busy}
+                                onClick=${() =>
+                                  onToggleAd(
+                                    row.ad_id,
+                                    isActive ? "PAUSED" : "ACTIVE"
+                                  )}
+                              >
+                                ${busy ? "..." : isActive ? "Ligado" : "Desligado"}
+                              </button>`
+                            : html`<span className="muted small" title="Status atual: ${statusForUi}">
+                                ${statusForUi || "Indisponivel"}
+                              </span>`
                           : "-"}
                       </td>
                     </tr>
@@ -2328,7 +2341,17 @@ function App() {
         )
       );
     } catch (err) {
-      pushLog("meta-status", err);
+      const subcode = err?.data?.details?.error?.error_subcode;
+      if (subcode === 2446289) {
+        const custom = new Error(
+          "Nao foi possivel ativar: criativo/reel indisponivel no Meta."
+        );
+        custom.status = err?.status;
+        custom.data = err?.data;
+        pushLog("meta-status", custom);
+      } else {
+        pushLog("meta-status", err);
+      }
     } finally {
       setAdStatusLoading((prev) => {
         const next = { ...prev };
@@ -3076,9 +3099,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
-
 
 
 
