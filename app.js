@@ -2394,19 +2394,49 @@ function App() {
     const remaining = [];
     for (const draft of drafts) {
       let step = "copy";
+      let manualCopyAds = false;
       try {
         step = "copy";
-        const copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
-          method: "POST",
-          body: JSON.stringify({
-            adset_id: draft.source_adset_id,
-            status_option: "PAUSED",
-            rename_strategy: "DEEP_RENAME",
-            rename_options: { prefix: "Copia - ", suffix: "" },
-            number_of_copies: draft.copies || 1,
-            include_creative: true,
-          }),
-        });
+        let copyRes;
+        try {
+          copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
+            method: "POST",
+            body: JSON.stringify({
+              adset_id: draft.source_adset_id,
+              status_option: "PAUSED",
+              rename_strategy: "DEEP_RENAME",
+              rename_options: { prefix: "Copia - ", suffix: "" },
+              number_of_copies: draft.copies || 1,
+              include_creative: true,
+              deep_copy: true,
+            }),
+          });
+        } catch (err) {
+          const subcode =
+            err?.data?.details?.error?.error_subcode ||
+            err?.data?.details?.error_subcode;
+          if (subcode === 1885194) {
+            manualCopyAds = true;
+            pushLog("duplicar-copy", {
+              message:
+                "Limite Meta ao copiar muitos anuncios. Fazendo copia simples e replicando anuncios individualmente.",
+            });
+            copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
+              method: "POST",
+              body: JSON.stringify({
+                adset_id: draft.source_adset_id,
+                status_option: "PAUSED",
+                rename_strategy: "DEEP_RENAME",
+                rename_options: { prefix: "Copia - ", suffix: "" },
+                number_of_copies: draft.copies || 1,
+                include_creative: false,
+                deep_copy: false,
+              }),
+            });
+          } else {
+            throw err;
+          }
+        }
         const adsetIds =
           copyRes.data?.adset_ids ||
           (copyRes.new_adset_id ? [copyRes.new_adset_id] : null) ||
@@ -2444,21 +2474,50 @@ function App() {
           }
 
           let newAds = adIdsMatrix[i] || [];
-          if (!newAds.length) {
-            step = "list-ads";
-            const adsRes = await fetchJson(
-              `${API_BASE}/meta-adset-ads?${new URLSearchParams({
-                adset_id: newAdsetId,
-              }).toString()}`
-            );
-            newAds = (adsRes.data || []).map((ad) => ad.id);
+          let adMappings = [];
+
+          if (manualCopyAds) {
+            const sourceAds = (draft.ads || []).filter((ad) => !ad.removed);
+            for (let a = 0; a < sourceAds.length; a += 1) {
+              const ad = sourceAds[a];
+              step = "copy-ad";
+              const copyAdRes = await fetchJson(`${API_BASE}/meta-ad-copy`, {
+                method: "POST",
+                body: JSON.stringify({
+                  ad_id: ad.id,
+                  adset_id: newAdsetId,
+                  status_option: "PAUSED",
+                  rename_strategy: "DEEP_RENAME",
+                  rename_options: { prefix: "Copia - ", suffix: "" },
+                }),
+              });
+              const newAdId =
+                copyAdRes.new_ad_id ||
+                copyAdRes.data?.copied_ad_id ||
+                copyAdRes.data?.id ||
+                null;
+              adMappings.push({ source: ad, newId: newAdId });
+            }
+          } else {
+            if (!newAds.length) {
+              step = "list-ads";
+              const adsRes = await fetchJson(
+                `${API_BASE}/meta-adset-ads?${new URLSearchParams({
+                  adset_id: newAdsetId,
+                }).toString()}`
+              );
+              newAds = (adsRes.data || []).map((ad) => ad.id);
+            }
+            adMappings = (draft.ads || []).map((ad, idx) => ({
+              source: ad,
+              newId: newAds[idx],
+            }));
           }
 
-          for (let a = 0; a < (draft.ads || []).length; a += 1) {
-            const ad = draft.ads[a];
-            const targetId = newAds[a];
+          for (let a = 0; a < adMappings.length; a += 1) {
+            const { source: ad, newId: targetId } = adMappings[a];
             if (!targetId) continue;
-            if (ad.removed) {
+            if (!manualCopyAds && ad.removed) {
               step = "delete-ad";
               await fetchJson(`${API_BASE}/meta-delete-ad`, {
                 method: "POST",
@@ -2468,6 +2527,7 @@ function App() {
               });
               continue;
             }
+            if (ad.removed) continue;
             const nextName = (ad.new_name || "").trim();
             if (nextName && nextName !== ad.name) {
               step = "rename-ad";
@@ -3016,7 +3076,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
 
 
 

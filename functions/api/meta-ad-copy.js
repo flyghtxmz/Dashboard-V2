@@ -14,38 +14,28 @@ export async function onRequest({ request, env }) {
 
   const body = await readJson(request);
   const {
+    ad_id,
     adset_id,
     status_option,
     rename_strategy,
     rename_options,
-    number_of_copies,
-    include_creative,
-    deep_copy,
   } = body || {};
-  if (!adset_id) {
-    return jsonResponse(400, { error: "Parametros obrigatorios: adset_id" });
+  if (!ad_id || !adset_id) {
+    return jsonResponse(400, { error: "Parametros obrigatorios: ad_id, adset_id" });
   }
 
   try {
     const params = new URLSearchParams();
-    if (deep_copy !== undefined && deep_copy !== null) {
-      params.set("deep_copy", deep_copy ? "true" : "false");
-    } else {
-      params.set("deep_copy", "true");
-    }
+    params.set("adset_id", adset_id);
     if (status_option) params.set("status_option", status_option);
     if (rename_strategy) params.set("rename_strategy", rename_strategy);
     if (rename_options) {
       params.set("rename_options", JSON.stringify(rename_options));
     }
-    if (number_of_copies) params.set("number_of_copies", String(number_of_copies));
-    if (include_creative !== undefined && include_creative !== null) {
-      params.set("include_creative", include_creative ? "true" : "false");
-    }
     params.set("access_token", token);
 
     const response = await fetch(
-      `${API_BASE}/${encodeURIComponent(adset_id)}/copies`,
+      `${API_BASE}/${encodeURIComponent(ad_id)}/copies`,
       {
         method: "POST",
         body: params,
@@ -55,11 +45,11 @@ export async function onRequest({ request, env }) {
     if (!response.ok) {
       return jsonResponse(response.status, { error: "Erro Meta", details: data });
     }
-    const newId = data?.copied_adset_id || data?.id || data?.copied_id || null;
-    return jsonResponse(200, { code: "success", data, new_adset_id: newId });
+    const newId = data?.copied_ad_id || data?.id || data?.copied_id || null;
+    return jsonResponse(200, { code: "success", data, new_ad_id: newId });
   } catch (error) {
     return jsonResponse(500, {
-      error: "Erro ao duplicar conjunto",
+      error: "Erro ao copiar anuncio",
       details: error.message,
     });
   }
