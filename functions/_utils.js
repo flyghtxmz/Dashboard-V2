@@ -27,6 +27,14 @@ export function getMetaToken(env) {
   return env.META_ACCESS_TOKEN || env.META_TOKEN;
 }
 
+export function getMetaAppId(env) {
+  return env.META_APP_ID;
+}
+
+export function getMetaAppSecret(env) {
+  return env.META_APP_SECRET;
+}
+
 export async function safeJson(response) {
   try {
     return await response.json();

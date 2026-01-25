@@ -298,6 +298,129 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
   `;
 }
 
+function MetaTokenView({
+  info,
+  refresh,
+  loading,
+  error,
+  onCheck,
+  onRefresh,
+}) {
+  const expiresAt =
+    info?.expires_at && Number(info.expires_at) > 0
+      ? new Date(Number(info.expires_at) * 1000)
+      : null;
+  const daysLeft =
+    expiresAt != null
+      ? Math.ceil((expiresAt.getTime() - Date.now()) / 86400000)
+      : null;
+  const scopes = Array.isArray(info?.scopes) ? info.scopes.join(", ") : "-";
+  const tokenText = refresh?.access_token || "";
+  const refreshExpiresAt =
+    refresh?.expires_at ? new Date(refresh.expires_at * 1000) : null;
+
+  return html`
+    <main className="grid">
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Meta</span>
+            <h2 className="section-title">Token e Permissoes</h2>
+          </div>
+          <div className="chip-group">
+            <button className="ghost" onClick=${onCheck} disabled=${loading}>
+              ${loading ? "Verificando..." : "Verificar token"}
+            </button>
+            <button className="primary" onClick=${onRefresh} disabled=${loading}>
+              ${loading ? "Renovando..." : "Renovar token"}
+            </button>
+          </div>
+        </div>
+
+        ${error
+          ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>`
+          : null}
+
+        <div className="token-grid">
+          <div className="metric-card">
+            <span className="muted">Tipo</span>
+            <div className="metric-value">${info?.type || "-"}</div>
+          </div>
+          <div className="metric-card">
+            <span className="muted">Valido</span>
+            <div className="metric-value">
+              ${info?.is_valid === true
+                ? "Sim"
+                : info?.is_valid === false
+                ? "Nao"
+                : "-"}
+            </div>
+          </div>
+          <div className="metric-card">
+            <span className="muted">Expira em</span>
+            <div className="metric-value">
+              ${expiresAt ? expiresAt.toLocaleString("pt-BR") : "-"}
+            </div>
+            <div className="metric-helper">
+              ${daysLeft != null ? `${daysLeft} dias restantes` : ""}
+            </div>
+          </div>
+          <div className="metric-card">
+            <span className="muted">User/Page ID</span>
+            <div className="metric-value">${info?.user_id || "-"}</div>
+          </div>
+          <div className="metric-card">
+            <span className="muted">App ID</span>
+            <div className="metric-value">${info?.app_id || "-"}</div>
+          </div>
+          <div className="metric-card">
+            <span className="muted">Escopos</span>
+            <div className="metric-value small">${scopes}</div>
+          </div>
+        </div>
+
+        <div className="token-note">
+          <p className="muted small">
+            Para renovar via API, configure <strong>META_APP_ID</strong> e
+            <strong> META_APP_SECRET</strong> no Cloudflare. O novo token nao eh
+            salvo automaticamente.
+          </p>
+        </div>
+
+        ${refresh
+          ? html`
+              <div className="token-output">
+                <div className="token-output-head">
+                  <div>
+                    <strong>Novo token gerado</strong>
+                    ${refreshExpiresAt
+                      ? html`<div className="muted small">
+                          Expira em ${refreshExpiresAt.toLocaleString("pt-BR")}
+                        </div>`
+                      : null}
+                  </div>
+                  <button
+                    className="ghost small"
+                    onClick=${() =>
+                      tokenText &&
+                      navigator.clipboard?.writeText(tokenText).catch(() => {})}
+                  >
+                    Copiar
+                  </button>
+                </div>
+                <textarea readonly value=${tokenText}></textarea>
+                <div className="muted small">
+                  Cole este token em <strong>META_ACCESS_TOKEN</strong> no
+                  Cloudflare.
+                </div>
+              </div>
+            `
+          : null}
+      </section>
+    </main>
+  `;
+}
+
 function EarningsTable({ rows }) {
   return html`
     <section className="card wide">
@@ -1919,6 +2042,10 @@ function App() {
   const [drafts, setDrafts] = useState([]);
   const [copyCounts, setCopyCounts] = useState({});
   const [publishing, setPublishing] = useState(false);
+  const [tokenInfo, setTokenInfo] = useState(null);
+  const [tokenRefresh, setTokenRefresh] = useState(null);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [tokenError, setTokenError] = useState("");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -2309,6 +2436,36 @@ function App() {
       setDupCampaigns([]);
     } finally {
       setDupLoading(false);
+    }
+  };
+
+  const handleTokenCheck = async () => {
+    setTokenLoading(true);
+    setTokenError("");
+    try {
+      const res = await fetchJson(`${API_BASE}/meta-token-debug`);
+      setTokenInfo(res.data || res);
+    } catch (err) {
+      setTokenError(formatError(err));
+      pushLog("meta-token", err);
+    } finally {
+      setTokenLoading(false);
+    }
+  };
+
+  const handleTokenRefresh = async () => {
+    setTokenLoading(true);
+    setTokenError("");
+    try {
+      const res = await fetchJson(`${API_BASE}/meta-token-refresh`, {
+        method: "POST",
+      });
+      setTokenRefresh(res);
+    } catch (err) {
+      setTokenError(formatError(err));
+      pushLog("meta-token", err);
+    } finally {
+      setTokenLoading(false);
     }
   };
 
@@ -3055,6 +3212,12 @@ function App() {
         >
           Diagnóstico JoinAds
         </button>
+        <button
+          className=${`tab ${activeTab === "token" ? "active" : ""}`}
+          onClick=${() => setActiveTab("token")}
+        >
+          Token Meta
+        </button>
       </div>
 
       ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
@@ -3128,6 +3291,17 @@ function App() {
               ${html`<${MetaSourceTable} rows=${metaSourceRows} />`}
             </main>
           `
+        : activeTab === "token"
+        ? html`
+            <${MetaTokenView}
+              info=${tokenInfo}
+              refresh=${tokenRefresh}
+              loading=${tokenLoading}
+              error=${tokenError}
+              onCheck=${handleTokenCheck}
+              onRefresh=${handleTokenRefresh}
+            />
+          `
         : html`
             <main className="grid">
               ${html`
@@ -3154,9 +3328,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
-
 
 
 
