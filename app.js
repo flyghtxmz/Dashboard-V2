@@ -176,6 +176,27 @@ function formatError(err) {
   return err.message || "Erro inesperado";
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function retryOnSubcode33(fn) {
+  const delays = [1500, 3000, 5000];
+  for (let i = 0; i <= delays.length; i += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      const subcode =
+        err?.data?.details?.error?.error_subcode ||
+        err?.data?.details?.error_subcode;
+      if (subcode === 33 && i < delays.length) {
+        await sleep(delays[i]);
+        continue;
+      }
+      throw err;
+    }
+  }
+  return null;
+}
+
 const statusLabelMap = {
   ACTIVE: "Ativo",
   PAUSED: "Pausado",
@@ -2977,15 +2998,17 @@ function App() {
               if (adCopyMode === "create") {
                 step = "create-ad";
                 try {
-                  const createRes = await fetchJson(`${API_BASE}/meta-ad-create`, {
-                    method: "POST",
-                    body: JSON.stringify({
-                      ad_id: ad.id,
-                      adset_id: newAdsetId,
-                      name: ad.new_name || ad.name,
-                      status: "PAUSED",
-                    }),
-                  });
+                  const createRes = await retryOnSubcode33(() =>
+                    fetchJson(`${API_BASE}/meta-ad-create`, {
+                      method: "POST",
+                      body: JSON.stringify({
+                        ad_id: ad.id,
+                        adset_id: newAdsetId,
+                        name: ad.new_name || ad.name,
+                        status: "PAUSED",
+                      }),
+                    })
+                  );
                   newAdId = createRes.new_ad_id || createRes.data?.id || null;
                 } catch (err) {
                   const subcode =
@@ -3004,16 +3027,18 @@ function App() {
               } else {
                 step = "copy-ad";
                 try {
-                  const copyAdRes = await fetchJson(`${API_BASE}/meta-ad-copy`, {
-                    method: "POST",
-                    body: JSON.stringify({
-                      ad_id: ad.id,
-                      adset_id: newAdsetId,
-                      status_option: "PAUSED",
-                      rename_strategy: "DEEP_RENAME",
-                      rename_options: { prefix: "Copia - ", suffix: "" },
-                    }),
-                  });
+                  const copyAdRes = await retryOnSubcode33(() =>
+                    fetchJson(`${API_BASE}/meta-ad-copy`, {
+                      method: "POST",
+                      body: JSON.stringify({
+                        ad_id: ad.id,
+                        adset_id: newAdsetId,
+                        status_option: "PAUSED",
+                        rename_strategy: "DEEP_RENAME",
+                        rename_options: { prefix: "Copia - ", suffix: "" },
+                      }),
+                    })
+                  );
                   newAdId =
                     copyAdRes.new_ad_id ||
                     copyAdRes.data?.copied_ad_id ||
@@ -3026,9 +3051,8 @@ function App() {
                   if (subcode === 3858504) {
                     step = "create-ad";
                     try {
-                      const createRes = await fetchJson(
-                        `${API_BASE}/meta-ad-create`,
-                        {
+                      const createRes = await retryOnSubcode33(() =>
+                        fetchJson(`${API_BASE}/meta-ad-create`, {
                           method: "POST",
                           body: JSON.stringify({
                             ad_id: ad.id,
@@ -3036,7 +3060,7 @@ function App() {
                             name: ad.new_name || ad.name,
                             status: "PAUSED",
                           }),
-                        }
+                        })
                       );
                       newAdId =
                         createRes.new_ad_id || createRes.data?.id || null;
