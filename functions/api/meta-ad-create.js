@@ -9,6 +9,30 @@ const STRIP_KEYS = new Set([
   "standard_enhancements_status",
 ]);
 
+function dropRedundantImageFields(target) {
+  if (!target || typeof target !== "object") return;
+  if (target.image_hash && target.image_url) {
+    delete target.image_url;
+  }
+  if (target.image_hash && target.picture) {
+    delete target.picture;
+  }
+}
+
+function normalizeStorySpec(spec) {
+  if (!spec || typeof spec !== "object") return spec;
+  if (spec.video_data) dropRedundantImageFields(spec.video_data);
+  if (spec.photo_data) dropRedundantImageFields(spec.photo_data);
+  if (spec.link_data) {
+    dropRedundantImageFields(spec.link_data);
+    if (Array.isArray(spec.link_data.child_attachments)) {
+      spec.link_data.child_attachments.forEach(dropRedundantImageFields);
+    }
+  }
+  if (spec.template_data) dropRedundantImageFields(spec.template_data);
+  return spec;
+}
+
 function stripEnhancements(value) {
   if (Array.isArray(value)) {
     return value.map(stripEnhancements).filter((item) => item !== undefined);
@@ -73,6 +97,10 @@ export async function onRequest({ request, env }) {
       : null;
     const objectStoryId =
       creative.object_story_id || creative.effective_object_story_id || null;
+
+    if (objectStorySpec) {
+      objectStorySpec = normalizeStorySpec(objectStorySpec);
+    }
 
     if (objectStorySpec && !objectStorySpec.page_id && creative.actor_id) {
       objectStorySpec.page_id = creative.actor_id;
