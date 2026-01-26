@@ -1106,6 +1106,8 @@ function DuplicarView({
   loading,
   error,
   onLoad,
+  onRefreshStatus,
+  statusLoading,
   copyCounts,
   setCopyCount,
   onAddDraft,
@@ -1148,8 +1150,15 @@ function DuplicarView({
             <h2 className="section-title">Campanhas ativas</h2>
           </div>
           <div className="chip-group">
-            <button className="ghost" onClick=${onLoad} disabled=${loading}>
+            <button className="ghost" onClick=${() => onLoad?.(true)} disabled=${loading}>
               ${loading ? "Carregando..." : "Atualizar lista"}
+            </button>
+            <button
+              className="ghost"
+              onClick=${onRefreshStatus}
+              disabled=${statusLoading || !campaigns || campaigns.length === 0}
+            >
+              ${statusLoading ? "Atualizando..." : "Atualizar status"}
             </button>
             <button
               className="ghost"
@@ -2097,6 +2106,7 @@ function App() {
   const [appliedFilters, setAppliedFilters] = useState(null);
   const [dupCampaigns, setDupCampaigns] = useState([]);
   const [dupLoading, setDupLoading] = useState(false);
+  const [dupStatusLoading, setDupStatusLoading] = useState(false);
   const [dupError, setDupError] = useState("");
   const [drafts, setDrafts] = useState([]);
   const [copyCounts, setCopyCounts] = useState({});
@@ -2505,7 +2515,7 @@ function App() {
     }
   };
 
-  const handleLoadDuplicar = async () => {
+  const handleLoadDuplicar = async (force = false) => {
     if (!filters.metaAccountId.trim()) {
       setDupError("Informe o ID da conta de anúncios (Meta).");
       return;
@@ -2516,7 +2526,12 @@ function App() {
       const res = await fetchJson(
         `${API_BASE}/meta-structure?${new URLSearchParams({
           account_id: filters.metaAccountId.trim(),
-        }).toString()}`
+        }).toString()}`,
+        {
+          cacheTtlMs: 10 * 60 * 1000,
+          cacheKey: `meta-structure:${filters.metaAccountId.trim()}`,
+          force,
+        }
       );
       setDupCampaigns(res.data || []);
     } catch (err) {
@@ -2525,6 +2540,63 @@ function App() {
       setDupCampaigns([]);
     } finally {
       setDupLoading(false);
+    }
+  };
+
+  const handleRefreshDuplicarStatus = async () => {
+    if (!dupCampaigns || dupCampaigns.length === 0) return;
+    setDupStatusLoading(true);
+    try {
+      const campaignIds = [];
+      const adsetIds = [];
+      const adIds = [];
+      (dupCampaigns || []).forEach((camp) => {
+        if (camp?.id) campaignIds.push(camp.id);
+        (camp.adsets || []).forEach((adset) => {
+          if (adset?.id) adsetIds.push(adset.id);
+          (adset.ads || []).forEach((ad) => {
+            if (ad?.id) adIds.push(ad.id);
+          });
+        });
+      });
+
+      const statusRes = await fetchJson(`${API_BASE}/meta-status-bulk`, {
+        method: "POST",
+        body: JSON.stringify({
+          campaign_ids: campaignIds,
+          adset_ids: adsetIds,
+          ad_ids: adIds,
+        }),
+      });
+
+      const campaignMap = statusRes.campaigns || {};
+      const adsetMap = statusRes.adsets || {};
+      const adMap = statusRes.ads || {};
+
+      setDupCampaigns((prev) =>
+        (prev || []).map((camp) => ({
+          ...camp,
+          status: campaignMap[camp.id]?.status || camp.status,
+          effective_status:
+            campaignMap[camp.id]?.effective_status || camp.effective_status,
+          adsets: (camp.adsets || []).map((adset) => ({
+            ...adset,
+            status: adsetMap[adset.id]?.status || adset.status,
+            effective_status:
+              adsetMap[adset.id]?.effective_status || adset.effective_status,
+            ads: (adset.ads || []).map((ad) => ({
+              ...ad,
+              status: adMap[ad.id]?.status || ad.status,
+              effective_status:
+                adMap[ad.id]?.effective_status || ad.effective_status,
+            })),
+          })),
+        }))
+      );
+    } catch (err) {
+      pushLog("duplicar-status", err);
+    } finally {
+      setDupStatusLoading(false);
     }
   };
 
@@ -3457,6 +3529,8 @@ function App() {
               loading=${dupLoading}
               error=${dupError}
               onLoad=${handleLoadDuplicar}
+              onRefreshStatus=${handleRefreshDuplicarStatus}
+              statusLoading=${dupStatusLoading}
               copyCounts=${copyCounts}
               setCopyCount=${setCopyCount}
               onAddDraft=${addDraftFromAdset}
@@ -3522,7 +3596,4 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
-
 
