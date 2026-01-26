@@ -7,6 +7,8 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
+const APP_VERSION_BUILD = 19;
+const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -3561,6 +3563,7 @@ function App() {
           <h1>Dashboard de Publisher</h1>
           <p className="subtitle">
             Arbitragem de tráfego com dados em tempo real da JoinAds.
+            <span className="muted small"> • Versão ${APP_VERSION}</span>
           </p>
         </div>
         <div className="actions">
