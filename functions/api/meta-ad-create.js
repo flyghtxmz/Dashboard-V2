@@ -5,8 +5,12 @@ const API_BASE = "https://graph.facebook.com/v24.0";
 const STRIP_KEYS = new Set([
   "degrees_of_freedom_spec",
   "standard_enhancements",
+  "standard_enhancement",
   "standard_enhancements_spec",
   "standard_enhancements_status",
+  "auto_enhancements",
+  "auto_enhancement",
+  "creative_enhancement_spec",
 ]);
 
 const DROP_STORY_KEYS = new Set([
@@ -58,6 +62,29 @@ function normalizeStorySpec(spec) {
   }
   if (cleaned.template_data) dropRedundantImageFields(cleaned.template_data);
   return cleaned;
+}
+
+function normalizeAssetFeedSpec(spec) {
+  if (!spec || typeof spec !== "object") return spec;
+  let cleaned = removeStoryIdsDeep(spec);
+  if (!cleaned || typeof cleaned !== "object") return cleaned;
+  if (Array.isArray(cleaned.asset_customization_rules)) {
+    cleaned.asset_customization_rules.forEach((rule) => {
+      if (rule?.link_data) dropRedundantImageFields(rule.link_data);
+      if (rule?.video_data) dropRedundantImageFields(rule.video_data);
+      if (rule?.photo_data) dropRedundantImageFields(rule.photo_data);
+    });
+  }
+  return cleaned;
+}
+
+function isEmptyObject(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+  );
 }
 
 function stripEnhancements(value) {
@@ -127,6 +154,15 @@ export async function onRequest({ request, env }) {
 
     if (objectStorySpec) {
       objectStorySpec = normalizeStorySpec(objectStorySpec);
+      if (isEmptyObject(objectStorySpec)) {
+        objectStorySpec = null;
+      }
+    }
+    if (assetFeedSpec) {
+      assetFeedSpec = normalizeAssetFeedSpec(assetFeedSpec);
+      if (isEmptyObject(assetFeedSpec)) {
+        assetFeedSpec = null;
+      }
     }
 
     if (objectStorySpec && !objectStorySpec.page_id && creative.actor_id) {
