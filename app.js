@@ -2945,7 +2945,32 @@ function App() {
           let adMappings = [];
 
           if (manualCopyAds) {
-            const sourceAds = (draft.ads || []).filter((ad) => !ad.removed);
+            let sourceAds = (draft.ads || []).filter((ad) => !ad.removed);
+            try {
+              const liveAdsRes = await fetchJson(
+                `${API_BASE}/meta-adset-ads?${new URLSearchParams({
+                  adset_id: draft.source_adset_id,
+                }).toString()}`
+              );
+              const liveAds = liveAdsRes.data || [];
+              const liveMap = new Map(
+                liveAds.map((ad) => [ad.id, { id: ad.id, name: ad.name }])
+              );
+              const before = sourceAds.length;
+              sourceAds = sourceAds
+                .filter((ad) => liveMap.has(ad.id))
+                .map((ad) => {
+                  const live = liveMap.get(ad.id);
+                  return live ? { ...ad, name: live.name } : ad;
+                });
+              if (before !== sourceAds.length) {
+                pushLog("duplicar-validate", {
+                  message: `Removidos ${before - sourceAds.length} anuncios inexistentes do rascunho.`,
+                });
+              }
+            } catch (err) {
+              pushLog("duplicar-validate", err);
+            }
             for (let a = 0; a < sourceAds.length; a += 1) {
               const ad = sourceAds[a];
               let newAdId = null;
