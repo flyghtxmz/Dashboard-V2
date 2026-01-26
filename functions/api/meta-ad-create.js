@@ -21,6 +21,7 @@ function dropRedundantImageFields(target) {
 
 function normalizeStorySpec(spec) {
   if (!spec || typeof spec !== "object") return spec;
+  if (spec.object_story_id) delete spec.object_story_id;
   if (spec.video_data) dropRedundantImageFields(spec.video_data);
   if (spec.photo_data) dropRedundantImageFields(spec.photo_data);
   if (spec.link_data) {
@@ -95,7 +96,7 @@ export async function onRequest({ request, env }) {
     let assetFeedSpec = creative.asset_feed_spec
       ? stripEnhancements(creative.asset_feed_spec)
       : null;
-    const objectStoryId =
+    let objectStoryId =
       creative.object_story_id || creative.effective_object_story_id || null;
 
     if (objectStorySpec) {
@@ -117,6 +118,10 @@ export async function onRequest({ request, env }) {
         page_id: creative.actor_id,
         instagram_actor_id: creative.instagram_actor_id || undefined,
       };
+    }
+
+    if (objectStorySpec || assetFeedSpec) {
+      objectStoryId = null;
     }
 
     if (!objectStorySpec && !assetFeedSpec && !objectStoryId) {
