@@ -1116,6 +1116,9 @@ function DuplicarView({
   onToggleDraftAd,
   onPublish,
   publishing,
+  selectedAdsets,
+  onToggleAdset,
+  onDeleteAdsets,
 }) {
   const budgetLabel = (adset) => {
     const daily =
@@ -1144,9 +1147,19 @@ function DuplicarView({
             <span className="eyebrow">Duplicar</span>
             <h2 className="section-title">Campanhas ativas</h2>
           </div>
-          <button className="ghost" onClick=${onLoad} disabled=${loading}>
-            ${loading ? "Carregando..." : "Atualizar lista"}
-          </button>
+          <div className="chip-group">
+            <button className="ghost" onClick=${onLoad} disabled=${loading}>
+              ${loading ? "Carregando..." : "Atualizar lista"}
+            </button>
+            <button
+              className="ghost"
+              onClick=${onDeleteAdsets}
+              disabled=${!selectedAdsets || Object.keys(selectedAdsets).length === 0}
+              title="Apagar conjuntos selecionados"
+            >
+              Apagar selecionados
+            </button>
+          </div>
         </div>
         ${showFallbackNotice
           ? html`<div className="status neutral">
@@ -1177,7 +1190,14 @@ function DuplicarView({
                             <div className="dup-adset" key=${adset.id}>
                               <div className="dup-adset-head">
                                 <div>
-                                  <strong>${adset.name}</strong>
+                                  <label className="dup-select">
+                                    <input
+                                      type="checkbox"
+                                      checked=${!!(selectedAdsets && selectedAdsets[adset.id])}
+                                      onChange=${() => onToggleAdset?.(adset.id)}
+                                    />
+                                    <strong>${adset.name}</strong>
+                                  </label>
                                   <div className="muted small">
                                     ID: ${adset.id}
                                     • ${adset.effective_status || adset.status || "-"}
@@ -2081,6 +2101,7 @@ function App() {
   const [drafts, setDrafts] = useState([]);
   const [copyCounts, setCopyCounts] = useState({});
   const [publishing, setPublishing] = useState(false);
+  const [selectedAdsets, setSelectedAdsets] = useState({});
   const [tokenInfo, setTokenInfo] = useState(null);
   const [tokenRefresh, setTokenRefresh] = useState(null);
   const [tokenLoading, setTokenLoading] = useState(false);
@@ -2504,6 +2525,48 @@ function App() {
       setDupCampaigns([]);
     } finally {
       setDupLoading(false);
+    }
+  };
+
+  const toggleSelectAdset = (adsetId) => {
+    if (!adsetId) return;
+    setSelectedAdsets((prev) => {
+      const next = { ...(prev || {}) };
+      if (next[adsetId]) {
+        delete next[adsetId];
+      } else {
+        next[adsetId] = true;
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteAdsets = async () => {
+    const ids = Object.keys(selectedAdsets || {});
+    if (!ids.length) return;
+    const confirm = window.confirm(
+      `Apagar ${ids.length} conjunto(s) selecionado(s)? Esta acao nao pode ser desfeita.`
+    );
+    if (!confirm) return;
+    try {
+      for (const id of ids) {
+        await fetchJson(`${API_BASE}/meta-adset-delete`, {
+          method: "POST",
+          body: JSON.stringify({ adset_id: id }),
+        });
+      }
+      setDupCampaigns((prev) =>
+        (prev || []).map((camp) => ({
+          ...camp,
+          adsets: (camp.adsets || []).filter((adset) => !ids.includes(adset.id)),
+        }))
+      );
+      setSelectedAdsets({});
+      pushLog("duplicar-delete", {
+        message: `Conjuntos apagados: ${ids.length}`,
+      });
+    } catch (err) {
+      pushLog("duplicar-delete", err);
     }
   };
 
@@ -3404,6 +3467,9 @@ function App() {
               onToggleDraftAd=${toggleDraftAd}
               onPublish=${handlePublishDrafts}
               publishing=${publishing}
+              selectedAdsets=${selectedAdsets}
+              onToggleAdset=${toggleSelectAdset}
+              onDeleteAdsets=${handleDeleteAdsets}
             />
           `
         : activeTab === "urls"
@@ -3456,9 +3522,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
-
 
 
 

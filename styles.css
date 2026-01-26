@@ -539,6 +539,15 @@ tbody tr:last-child td {
   align-items: center;
   gap: 12px;
 }
+.dup-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.dup-select input {
+  width: 16px;
+  height: 16px;
+}
 .dup-actions {
   display: flex;
   align-items: center;
