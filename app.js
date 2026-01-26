@@ -6,6 +6,7 @@ const html = htm.bind(React.createElement);
 const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
+const DUPLICATE_STATUS = "ACTIVE";
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -2876,7 +2877,7 @@ function App() {
             method: "POST",
             body: JSON.stringify({
               adset_id: draft.source_adset_id,
-              status_option: "PAUSED",
+              status_option: DUPLICATE_STATUS,
               rename_strategy: "DEEP_RENAME",
               rename_options: { prefix: "Copia - ", suffix: "" },
               number_of_copies: draft.copies || 1,
@@ -2890,7 +2891,7 @@ function App() {
               method: "POST",
               body: JSON.stringify({
                 adset_id: draft.source_adset_id,
-                status_option: "PAUSED",
+                status_option: DUPLICATE_STATUS,
                 rename_strategy: "DEEP_RENAME",
                 rename_options: { prefix: "Copia - ", suffix: "" },
                 number_of_copies: draft.copies || 1,
@@ -2912,7 +2913,7 @@ function App() {
                 method: "POST",
                 body: JSON.stringify({
                   adset_id: draft.source_adset_id,
-                  status_option: "PAUSED",
+                  status_option: DUPLICATE_STATUS,
                   rename_strategy: "DEEP_RENAME",
                   rename_options: { prefix: "Copia - ", suffix: "" },
                   number_of_copies: draft.copies || 1,
@@ -2931,7 +2932,7 @@ function App() {
                 method: "POST",
                 body: JSON.stringify({
                   adset_id: draft.source_adset_id,
-                  status_option: "PAUSED",
+                  status_option: DUPLICATE_STATUS,
                   rename_strategy: "DEEP_RENAME",
                   rename_options: { prefix: "Copia - ", suffix: "" },
                   number_of_copies: draft.copies || 1,
@@ -3023,7 +3024,7 @@ function App() {
                         ad_id: ad.id,
                         adset_id: newAdsetId,
                         name: ad.new_name || ad.name,
-                        status: "PAUSED",
+                        status: DUPLICATE_STATUS,
                         utm_tags: DEFAULT_UTM_TAGS,
                         sanitize_video_placements: true,
                       }),
@@ -3053,7 +3054,7 @@ function App() {
                       body: JSON.stringify({
                         ad_id: ad.id,
                         adset_id: newAdsetId,
-                        status_option: "PAUSED",
+                        status_option: DUPLICATE_STATUS,
                         rename_strategy: "DEEP_RENAME",
                         rename_options: { prefix: "Copia - ", suffix: "" },
                       }),
@@ -3078,7 +3079,7 @@ function App() {
                             ad_id: ad.id,
                             adset_id: newAdsetId,
                             name: ad.new_name || ad.name,
-                            status: "PAUSED",
+                            status: DUPLICATE_STATUS,
                             utm_tags: DEFAULT_UTM_TAGS,
                             sanitize_video_placements: true,
                           }),
