@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 19;
+const APP_VERSION_BUILD = 20;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -1777,6 +1777,154 @@ function MetaJoinGroupedTable({ rows }) {
   `;
 }
 
+function CPAView({
+  groups,
+  totals,
+  filter,
+  onFilterChange,
+  rule,
+  onRuleChange,
+  onApplyRule,
+  ruleLoading,
+  onToggleGroup,
+  statusLoading,
+}) {
+  return html`
+    <main className="grid">
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">CPA Farming</span>
+            <h2 className="section-title">Conjuntos agrupados</h2>
+          </div>
+          <div className="chip-group">
+            <span className="chip neutral">${groups.length} grupos</span>
+            <span className="chip neutral">${totals.adsets} conjuntos</span>
+            <span className="chip neutral">
+              Gasto total: ${currencyBRL.format(totals.spend)}
+            </span>
+          </div>
+        </div>
+
+        <div className="filters">
+          <label className="field">
+            <span>Filtrar por conjunto</span>
+            <input
+              type="text"
+              placeholder="Ex: cpa-farming"
+              value=${filter}
+              onInput=${(e) => onFilterChange?.(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>CPA máximo (R$)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.05"
+              value=${rule.cpa || ""}
+              onInput=${(e) =>
+                onRuleChange?.({ ...rule, cpa: e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>Gasto máximo (R$)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.05"
+              value=${rule.spend || ""}
+              onInput=${(e) =>
+                onRuleChange?.({ ...rule, spend: e.target.value })}
+            />
+          </label>
+          <div className="field">
+            <span>&nbsp;</span>
+            <button
+              className="ghost"
+              disabled=${ruleLoading}
+              onClick=${onApplyRule}
+            >
+              ${ruleLoading ? "Aplicando..." : "Aplicar regra"}
+            </button>
+          </div>
+        </div>
+
+        <div className="table-wrapper scroll-x" style=${{ marginTop: "12px" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Conjunto</th>
+                <th>Qtd. conjuntos</th>
+                <th>Resultados</th>
+                <th>CPA</th>
+                <th>Valor gasto</th>
+                <th>ROAS</th>
+                <th>Receita JoinAds</th>
+                <th>eCPM JoinAds</th>
+                <th>Impressões JoinAds</th>
+                <th>Status</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${groups.length === 0
+                ? html`<tr><td colSpan="11" className="muted">Sem dados para o período.</td></tr>`
+                : groups.map((group) => {
+                    const busy = group.adset_ids.some(
+                      (id) => statusLoading && statusLoading[id]
+                    );
+                    const toggleLabel = group.all_active ? "Desligar" : "Ligar";
+                    const nextStatus = group.all_active ? "PAUSED" : "ACTIVE";
+                    return html`
+                      <tr key=${group.key}>
+                        <td>${group.name}</td>
+                        <td>${number.format(group.adset_count)}</td>
+                        <td>${number.format(group.results || 0)}</td>
+                        <td>${group.cpa_value != null ? currencyBRL.format(group.cpa_value) : "-"}</td>
+                        <td>${currencyBRL.format(group.spend)}</td>
+                        <td>${group.roas != null ? `${group.roas.toFixed(2)}x` : "-"}</td>
+                        <td>${group.revenue_usd != null ? currencyUSD.format(group.revenue_usd) : "-"}</td>
+                        <td>${group.ecpm != null ? currencyUSD.format(group.ecpm) : "-"}</td>
+                        <td>${group.impressions ? number.format(group.impressions) : "-"}</td>
+                        <td>
+                          <span className=${`status-badge ${group.status_tone}`}>
+                            ${group.status_label}
+                          </span>
+                          <div className="muted small">
+                            ${group.active_count} ativos • ${group.paused_count} pausados
+                          </div>
+                        </td>
+                        <td>
+                          <button
+                            className=${`toggle ${group.all_active ? "on" : "off"}`}
+                            disabled=${busy}
+                            onClick=${() => onToggleGroup?.(group.adset_ids, nextStatus)}
+                          >
+                            ${busy ? "..." : toggleLabel}
+                          </button>
+                        </td>
+                      </tr>
+                    `;
+                  })}
+            </tbody>
+          </table>
+          ${groups.length
+            ? html`<div className="totals-row">
+                <div><strong>Totais</strong></div>
+                <div>Gasto: ${currencyBRL.format(totals.spend)}</div>
+                <div>Receita: ${currencyUSD.format(totals.revenue_usd)}</div>
+                <div>Impressões: ${number.format(totals.impressions)}</div>
+              </div>`
+            : null}
+        </div>
+      </section>
+    </main>
+  `;
+}
+
 function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
   const rows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const metaList = Array.isArray(metaRows) ? metaRows : [];
@@ -2142,6 +2290,10 @@ function App() {
   const [tokenRefresh, setTokenRefresh] = useState(null);
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState("");
+  const [cpaFilter, setCpaFilter] = useState("");
+  const [cpaRule, setCpaRule] = useState({ cpa: "", spend: "" });
+  const [cpaRuleLoading, setCpaRuleLoading] = useState(false);
+  const [adsetStatusLoading, setAdsetStatusLoading] = useState({});
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -2812,6 +2964,51 @@ function App() {
     }
   };
 
+  const updateAdsetStatuses = async (adsetIds, nextStatus) => {
+    const uniqueIds = Array.from(new Set(adsetIds || [])).filter(Boolean);
+    if (!uniqueIds.length) return [];
+    const updated = [];
+    for (const id of uniqueIds) {
+      setAdsetStatusLoading((prev) => ({ ...prev, [id]: true }));
+      try {
+        await fetchJson(`${API_BASE}/meta-adset-status`, {
+          method: "POST",
+          body: JSON.stringify({
+            adset_id: id,
+            status: nextStatus,
+          }),
+        });
+        updated.push(id);
+      } catch (err) {
+        pushLog("meta-adset-status", err);
+      } finally {
+        setAdsetStatusLoading((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+    }
+    if (updated.length) {
+      setMetaRows((prev) =>
+        (prev || []).map((row) =>
+          updated.includes(row.adset_id)
+            ? {
+                ...row,
+                adset_status: nextStatus,
+                adset_effective_status: nextStatus,
+              }
+            : row
+        )
+      );
+    }
+    return updated;
+  };
+
+  const handleToggleAdset = async (adsetIds, nextStatus) => {
+    await updateAdsetStatuses(adsetIds, nextStatus);
+  };
+
   const handleUpdateBudget = async (adsetId, budgetValue) => {
     if (!adsetId) return;
     const raw = String(budgetValue ?? "").trim();
@@ -2859,6 +3056,47 @@ function App() {
         delete next[adsetId];
         return next;
       });
+    }
+  };
+
+  const handleApplyCpaRule = async () => {
+    const cpaLimit = Number(String(cpaRule.cpa || "").replace(",", "."));
+    const spendLimit = Number(String(cpaRule.spend || "").replace(",", "."));
+    const hasCpa = Number.isFinite(cpaLimit) && cpaLimit > 0;
+    const hasSpend = Number.isFinite(spendLimit) && spendLimit > 0;
+    if (!hasCpa && !hasSpend) {
+      pushLog("cpa-rule", { message: "Informe um CPA ou gasto máximo." });
+      return;
+    }
+    const toPause = [];
+    cpaGroups.forEach((group) => {
+      const exceedSpend = hasSpend && group.spend > spendLimit;
+      let exceedCpa = false;
+      if (hasCpa) {
+        if (group.cpa_value != null) {
+          exceedCpa = group.cpa_value > cpaLimit;
+        } else {
+          exceedCpa = group.spend > 0;
+        }
+      }
+      if (exceedSpend || exceedCpa) {
+        toPause.push(...group.adset_ids);
+      }
+    });
+    if (!toPause.length) {
+      pushLog("cpa-rule", { message: "Nenhum conjunto atingiu a regra." });
+      return;
+    }
+    setCpaRuleLoading(true);
+    try {
+      await updateAdsetStatuses(toPause, "PAUSED");
+      pushLog("cpa-rule", {
+        message: `Regra aplicada em ${new Set(toPause).size} conjuntos.`,
+      });
+    } catch (err) {
+      pushLog("cpa-rule", err);
+    } finally {
+      setCpaRuleLoading(false);
     }
   };
 
@@ -3359,6 +3597,131 @@ function App() {
     );
   }, [mergedMeta, filters.adsetFilter]);
 
+  const joinadsByTerm = useMemo(() => {
+    const rows = Array.isArray(superTermRows) ? superTermRows : [];
+    const domainKey = normalizeKey(appliedFilters?.domain || filters.domain || "");
+    const map = new Map();
+    rows.forEach((row) => {
+      const d = normalizeKey(row.domain || row.name || "");
+      if (domainKey && d !== domainKey) return;
+      const key = normalizeKey(row.custom_value);
+      if (!key) return;
+      const entry = map.get(key) || {
+        impressions: 0,
+        clicks: 0,
+        revenue: 0,
+        ecpm: 0,
+      };
+      entry.impressions += toNumber(row.impressions);
+      entry.clicks += toNumber(row.clicks);
+      entry.revenue += toNumber(row.revenue_client || row.revenue);
+      map.set(key, entry);
+    });
+    return map;
+  }, [superTermRows, appliedFilters, filters.domain]);
+
+  const cpaGroups = useMemo(() => {
+    const term = cpaFilter.trim().toLowerCase();
+    const map = new Map();
+    (mergedMeta || []).forEach((row) => {
+      const name = (row.adset_name || "").trim();
+      if (!name) return;
+      if (term && !name.toLowerCase().includes(term)) return;
+      const key = normalizeKey(name);
+      const entry =
+        map.get(key) || {
+          key,
+          name,
+          adsetIds: new Set(),
+          statusById: new Map(),
+          spend: 0,
+          results: 0,
+        };
+      const spendValue = toNumber(row.spend_value || row.spend);
+      entry.spend += spendValue;
+      entry.results += toNumber(row.results_meta || row.results);
+      if (row.adset_id) {
+        entry.adsetIds.add(row.adset_id);
+        if (!entry.statusById.has(row.adset_id)) {
+          const status =
+            (row.adset_effective_status || row.adset_status || "").toUpperCase();
+          entry.statusById.set(row.adset_id, status);
+        }
+      }
+      map.set(key, entry);
+    });
+
+    return Array.from(map.values())
+      .map((entry) => {
+      const join = joinadsByTerm.get(entry.key) || {};
+      const impressions = toNumber(join.impressions);
+      const revenueUsd = toNumber(join.revenue);
+      const ecpm =
+        impressions > 0 ? (revenueUsd / impressions) * 1000 : null;
+      const revenueBrl = brlRate ? revenueUsd * brlRate : null;
+      const roas =
+        revenueBrl != null && entry.spend > 0 ? revenueBrl / entry.spend : null;
+      const cpaValue =
+        entry.results > 0 ? entry.spend / entry.results : null;
+
+      const statuses = Array.from(entry.statusById.values());
+      const activeCount = statuses.filter((s) => s === "ACTIVE").length;
+      const pausedCount = statuses.filter((s) => s === "PAUSED").length;
+      const otherCount = Math.max(0, statuses.length - activeCount - pausedCount);
+      const allActive = statuses.length > 0 && pausedCount === 0 && otherCount === 0;
+      const allPaused = statuses.length > 0 && activeCount === 0 && otherCount === 0;
+      const statusLabel = allActive
+        ? "Ativo"
+        : allPaused
+        ? "Pausado"
+        : statuses.length
+        ? "Misto"
+        : "Sem status";
+      const statusTone = allActive
+        ? "on"
+        : allPaused
+        ? "off"
+        : "warn";
+
+      return {
+        key: entry.key,
+        name: entry.name,
+        adset_ids: Array.from(entry.adsetIds),
+        adset_count: entry.adsetIds.size,
+        spend: entry.spend,
+        results: entry.results,
+        cpa_value: cpaValue,
+        impressions,
+        revenue_usd: revenueUsd,
+        ecpm,
+        roas,
+        status_label: statusLabel,
+        status_tone: statusTone,
+        all_active: allActive,
+        active_count: activeCount,
+        paused_count: pausedCount,
+      };
+    })
+      .sort((a, b) => (b.spend || 0) - (a.spend || 0));
+  }, [mergedMeta, joinadsByTerm, cpaFilter, brlRate]);
+
+  const cpaTotals = useMemo(() => {
+    const totals = {
+      groups: cpaGroups.length,
+      adsets: 0,
+      spend: 0,
+      impressions: 0,
+      revenue_usd: 0,
+    };
+    cpaGroups.forEach((group) => {
+      totals.adsets += group.adset_count || 0;
+      totals.spend += group.spend || 0;
+      totals.impressions += group.impressions || 0;
+      totals.revenue_usd += group.revenue_usd || 0;
+    });
+    return totals;
+  }, [cpaGroups]);
+
   const metaTotals = useMemo(() => {
     const spendBrl = (filteredMeta || []).reduce(
       (acc, row) => acc + toNumber(row.spend_value || row.spend),
@@ -3597,6 +3960,12 @@ function App() {
           Duplicar
         </button>
         <button
+          className=${`tab ${activeTab === "cpa" ? "active" : ""}`}
+          onClick=${() => setActiveTab("cpa")}
+        >
+          CPA Farming
+        </button>
+        <button
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
@@ -3683,6 +4052,21 @@ function App() {
               selectedAdsets=${selectedAdsets}
               onToggleAdset=${toggleSelectAdset}
               onDeleteAdsets=${handleDeleteAdsets}
+            />
+          `
+        : activeTab === "cpa"
+        ? html`
+            <${CPAView}
+              groups=${cpaGroups}
+              totals=${cpaTotals}
+              filter=${cpaFilter}
+              onFilterChange=${setCpaFilter}
+              rule=${cpaRule}
+              onRuleChange=${setCpaRule}
+              onApplyRule=${handleApplyCpaRule}
+              ruleLoading=${cpaRuleLoading}
+              onToggleGroup=${handleToggleAdset}
+              statusLoading=${adsetStatusLoading}
             />
           `
         : activeTab === "urls"
