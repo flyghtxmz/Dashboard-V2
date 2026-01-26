@@ -9,6 +9,31 @@ const STRIP_KEYS = new Set([
   "standard_enhancements_status",
 ]);
 
+const DROP_STORY_KEYS = new Set([
+  "object_story_id",
+  "effective_object_story_id",
+]);
+
+function removeStoryIdsDeep(value) {
+  if (Array.isArray(value)) {
+    return value.map(removeStoryIdsDeep).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    const next = {};
+    Object.entries(value).forEach(([key, val]) => {
+      if (DROP_STORY_KEYS.has(key)) {
+        return;
+      }
+      const cleaned = removeStoryIdsDeep(val);
+      if (cleaned !== undefined) {
+        next[key] = cleaned;
+      }
+    });
+    return next;
+  }
+  return value;
+}
+
 function dropRedundantImageFields(target) {
   if (!target || typeof target !== "object") return;
   if (target.image_hash && target.image_url) {
@@ -21,17 +46,18 @@ function dropRedundantImageFields(target) {
 
 function normalizeStorySpec(spec) {
   if (!spec || typeof spec !== "object") return spec;
-  if (spec.object_story_id) delete spec.object_story_id;
-  if (spec.video_data) dropRedundantImageFields(spec.video_data);
-  if (spec.photo_data) dropRedundantImageFields(spec.photo_data);
-  if (spec.link_data) {
-    dropRedundantImageFields(spec.link_data);
-    if (Array.isArray(spec.link_data.child_attachments)) {
-      spec.link_data.child_attachments.forEach(dropRedundantImageFields);
+  let cleaned = removeStoryIdsDeep(spec);
+  if (!cleaned || typeof cleaned !== "object") return cleaned;
+  if (cleaned.video_data) dropRedundantImageFields(cleaned.video_data);
+  if (cleaned.photo_data) dropRedundantImageFields(cleaned.photo_data);
+  if (cleaned.link_data) {
+    dropRedundantImageFields(cleaned.link_data);
+    if (Array.isArray(cleaned.link_data.child_attachments)) {
+      cleaned.link_data.child_attachments.forEach(dropRedundantImageFields);
     }
   }
-  if (spec.template_data) dropRedundantImageFields(spec.template_data);
-  return spec;
+  if (cleaned.template_data) dropRedundantImageFields(cleaned.template_data);
+  return cleaned;
 }
 
 function stripEnhancements(value) {
