@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 20;
+const APP_VERSION_BUILD = 21;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -3597,6 +3597,26 @@ function App() {
     );
   }, [mergedMeta, filters.adsetFilter]);
 
+  const dupNameMap = useMemo(() => {
+    const map = new Map();
+    (dupCampaigns || []).forEach((camp) => {
+      (camp.adsets || []).forEach((adset) => {
+        const key = normalizeKey(adset.name || "");
+        if (!key) return;
+        const entry = map.get(key) || { name: adset.name, ids: new Set() };
+        if (adset.id) entry.ids.add(adset.id);
+        map.set(key, entry);
+      });
+    });
+    const duplicates = new Map();
+    map.forEach((entry, key) => {
+      if (entry.ids.size > 1) {
+        duplicates.set(key, entry);
+      }
+    });
+    return duplicates;
+  }, [dupCampaigns]);
+
   const joinadsByTerm = useMemo(() => {
     const rows = Array.isArray(superTermRows) ? superTermRows : [];
     const domainKey = normalizeKey(appliedFilters?.domain || filters.domain || "");
@@ -3651,8 +3671,26 @@ function App() {
       map.set(key, entry);
     });
 
+    dupNameMap.forEach((entry, key) => {
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          name: entry.name,
+          adsetIds: new Set(entry.ids),
+          statusById: new Map(),
+          spend: 0,
+          results: 0,
+        });
+      } else {
+        const existing = map.get(key);
+        entry.ids.forEach((id) => existing.adsetIds.add(id));
+      }
+    });
+
     return Array.from(map.values())
       .map((entry) => {
+      const duplicateName =
+        entry.adsetIds.size > 1 || dupNameMap.has(entry.key);
       const join = joinadsByTerm.get(entry.key) || {};
       const impressions = toNumber(join.impressions);
       const revenueUsd = toNumber(join.revenue);
@@ -3700,11 +3738,12 @@ function App() {
         all_active: allActive,
         active_count: activeCount,
         paused_count: pausedCount,
+        duplicate_name: duplicateName,
       };
     })
-      .filter((group) => group.adset_count > 1)
+      .filter((group) => group.duplicate_name)
       .sort((a, b) => (b.spend || 0) - (a.spend || 0));
-  }, [mergedMeta, joinadsByTerm, cpaFilter, brlRate]);
+  }, [mergedMeta, joinadsByTerm, cpaFilter, brlRate, dupNameMap]);
 
   const cpaTotals = useMemo(() => {
     const totals = {
