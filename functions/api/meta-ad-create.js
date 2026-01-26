@@ -2,6 +2,33 @@ import { jsonResponse, readJson, getMetaToken, safeJson } from "../_utils.js";
 
 const API_BASE = "https://graph.facebook.com/v24.0";
 
+const STRIP_KEYS = new Set([
+  "degrees_of_freedom_spec",
+  "standard_enhancements",
+  "standard_enhancements_spec",
+  "standard_enhancements_status",
+]);
+
+function stripEnhancements(value) {
+  if (Array.isArray(value)) {
+    return value.map(stripEnhancements).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    const next = {};
+    Object.entries(value).forEach(([key, val]) => {
+      if (STRIP_KEYS.has(key)) {
+        return;
+      }
+      const cleaned = stripEnhancements(val);
+      if (cleaned !== undefined) {
+        next[key] = cleaned;
+      }
+    });
+    return next;
+  }
+  return value;
+}
+
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
   if (!token) {
@@ -19,39 +46,112 @@ export async function onRequest({ request, env }) {
   }
 
   try {
-    const creativeRes = await fetch(
+    const adRes = await fetch(
       `${API_BASE}/${encodeURIComponent(
         ad_id
-      )}?fields=creative{id},name&access_token=${token}`
+      )}?fields=name,account_id,creative{object_story_spec,asset_feed_spec,effective_object_story_id,object_story_id,actor_id,instagram_actor_id}&access_token=${token}`
     );
-    const creativeJson = await safeJson(creativeRes);
-    if (!creativeRes.ok) {
-      return jsonResponse(creativeRes.status, {
+    const adJson = await safeJson(adRes);
+    if (!adRes.ok) {
+      return jsonResponse(adRes.status, {
         error: "Erro Meta",
-        details: creativeJson,
+        details: adJson,
       });
     }
 
-    const creativeId = creativeJson?.creative?.id;
-    if (!creativeId) {
-      return jsonResponse(400, { error: "Creative_id nao encontrado" });
+    const accountId = adJson?.account_id;
+    if (!accountId) {
+      return jsonResponse(400, { error: "account_id nao encontrado" });
+    }
+
+    const creative = adJson?.creative || {};
+    let objectStorySpec = creative.object_story_spec
+      ? stripEnhancements(creative.object_story_spec)
+      : null;
+    let assetFeedSpec = creative.asset_feed_spec
+      ? stripEnhancements(creative.asset_feed_spec)
+      : null;
+    const objectStoryId =
+      creative.object_story_id || creative.effective_object_story_id || null;
+
+    if (objectStorySpec && !objectStorySpec.page_id && creative.actor_id) {
+      objectStorySpec.page_id = creative.actor_id;
+    }
+    if (
+      objectStorySpec &&
+      !objectStorySpec.instagram_actor_id &&
+      creative.instagram_actor_id
+    ) {
+      objectStorySpec.instagram_actor_id = creative.instagram_actor_id;
+    }
+    if (!objectStorySpec && assetFeedSpec && creative.actor_id) {
+      objectStorySpec = {
+        page_id: creative.actor_id,
+        instagram_actor_id: creative.instagram_actor_id || undefined,
+      };
+    }
+
+    if (!objectStorySpec && !assetFeedSpec && !objectStoryId) {
+      return jsonResponse(400, {
+        error: "Creative sem object_story_spec/asset_feed_spec/object_story_id",
+      });
+    }
+
+    const creativeParams = new URLSearchParams();
+    creativeParams.set("name", name || adJson?.name || "Copia");
+    if (objectStoryId) {
+      creativeParams.set("object_story_id", objectStoryId);
+    }
+    if (objectStorySpec) {
+      creativeParams.set("object_story_spec", JSON.stringify(objectStorySpec));
+    }
+    if (assetFeedSpec) {
+      creativeParams.set("asset_feed_spec", JSON.stringify(assetFeedSpec));
+    }
+    creativeParams.set("access_token", token);
+
+    const creativeRes = await fetch(
+      `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
+      { method: "POST", body: creativeParams }
+    );
+    const creativeData = await safeJson(creativeRes);
+    if (!creativeRes.ok) {
+      return jsonResponse(creativeRes.status, {
+        error: "Erro Meta",
+        details: creativeData,
+        stage: "create-creative",
+      });
+    }
+
+    const newCreativeId = creativeData?.id;
+    if (!newCreativeId) {
+      return jsonResponse(400, { error: "creative_id nao gerado" });
     }
 
     const params = new URLSearchParams();
-    params.set("name", name || creativeJson?.name || "Copia");
+    params.set("name", name || adJson?.name || "Copia");
     params.set("status", status || "PAUSED");
-    params.set("creative", JSON.stringify({ creative_id: creativeId }));
+    params.set("adset_id", adset_id);
+    params.set("creative", JSON.stringify({ creative_id: newCreativeId }));
     params.set("access_token", token);
 
     const response = await fetch(
-      `${API_BASE}/${encodeURIComponent(adset_id)}/ads`,
+      `${API_BASE}/act_${encodeURIComponent(accountId)}/ads`,
       { method: "POST", body: params }
     );
     const data = await safeJson(response);
     if (!response.ok) {
-      return jsonResponse(response.status, { error: "Erro Meta", details: data });
+      return jsonResponse(response.status, {
+        error: "Erro Meta",
+        details: data,
+        stage: "create-ad",
+      });
     }
-    return jsonResponse(200, { code: "success", data, new_ad_id: data?.id || null });
+    return jsonResponse(200, {
+      code: "success",
+      data,
+      new_ad_id: data?.id || null,
+    });
   } catch (error) {
     return jsonResponse(500, {
       error: "Erro ao criar anuncio",
