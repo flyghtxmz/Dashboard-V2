@@ -4,6 +4,8 @@ import htm from "https://esm.sh/htm@3.1.1";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
+const DEFAULT_UTM_TAGS =
+  "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -2860,15 +2862,16 @@ function App() {
   const handlePublishDrafts = async () => {
     if (!drafts.length) return;
     setPublishing(true);
+    const forceUtmCopy = true;
     const remaining = [];
     for (const draft of drafts) {
       let step = "copy";
-      let manualCopyAds = false;
-      let adCopyMode = "copy";
+      let manualCopyAds = forceUtmCopy;
+      let adCopyMode = forceUtmCopy ? "create" : "copy";
       try {
         step = "copy";
         let copyRes;
-        try {
+        if (forceUtmCopy) {
           copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
             method: "POST",
             body: JSON.stringify({
@@ -2877,20 +2880,12 @@ function App() {
               rename_strategy: "DEEP_RENAME",
               rename_options: { prefix: "Copia - ", suffix: "" },
               number_of_copies: draft.copies || 1,
-              include_creative: true,
-              deep_copy: true,
+              include_creative: false,
+              deep_copy: false,
             }),
           });
-        } catch (err) {
-          const subcode =
-            err?.data?.details?.error?.error_subcode ||
-            err?.data?.details?.error_subcode;
-          if (subcode === 1885194) {
-            manualCopyAds = true;
-            pushLog("duplicar-copy", {
-              message:
-                "Limite Meta ao copiar muitos anuncios. Fazendo copia simples e replicando anuncios individualmente.",
-            });
+        } else {
+          try {
             copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
               method: "POST",
               body: JSON.stringify({
@@ -2899,31 +2894,54 @@ function App() {
                 rename_strategy: "DEEP_RENAME",
                 rename_options: { prefix: "Copia - ", suffix: "" },
                 number_of_copies: draft.copies || 1,
-                include_creative: false,
-                deep_copy: false,
+                include_creative: true,
+                deep_copy: true,
               }),
             });
-          } else if (subcode === 3858504) {
-            manualCopyAds = true;
-            adCopyMode = "create";
-            pushLog("duplicar-copy", {
-              message:
-                "Criativo com aprimoramentos padrao descontinuado. Copiando conjunto e recriando anuncios.",
-            });
-            copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
-              method: "POST",
-              body: JSON.stringify({
-                adset_id: draft.source_adset_id,
-                status_option: "PAUSED",
-                rename_strategy: "DEEP_RENAME",
-                rename_options: { prefix: "Copia - ", suffix: "" },
-                number_of_copies: draft.copies || 1,
-                include_creative: false,
-                deep_copy: false,
-              }),
-            });
-          } else {
-            throw err;
+          } catch (err) {
+            const subcode =
+              err?.data?.details?.error?.error_subcode ||
+              err?.data?.details?.error_subcode;
+            if (subcode === 1885194) {
+              manualCopyAds = true;
+              pushLog("duplicar-copy", {
+                message:
+                  "Limite Meta ao copiar muitos anuncios. Fazendo copia simples e replicando anuncios individualmente.",
+              });
+              copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
+                method: "POST",
+                body: JSON.stringify({
+                  adset_id: draft.source_adset_id,
+                  status_option: "PAUSED",
+                  rename_strategy: "DEEP_RENAME",
+                  rename_options: { prefix: "Copia - ", suffix: "" },
+                  number_of_copies: draft.copies || 1,
+                  include_creative: false,
+                  deep_copy: false,
+                }),
+              });
+            } else if (subcode === 3858504) {
+              manualCopyAds = true;
+              adCopyMode = "create";
+              pushLog("duplicar-copy", {
+                message:
+                  "Criativo com aprimoramentos padrao descontinuado. Copiando conjunto e recriando anuncios.",
+              });
+              copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
+                method: "POST",
+                body: JSON.stringify({
+                  adset_id: draft.source_adset_id,
+                  status_option: "PAUSED",
+                  rename_strategy: "DEEP_RENAME",
+                  rename_options: { prefix: "Copia - ", suffix: "" },
+                  number_of_copies: draft.copies || 1,
+                  include_creative: false,
+                  deep_copy: false,
+                }),
+              });
+            } else {
+              throw err;
+            }
           }
         }
         const adsetIds =
@@ -3006,6 +3024,8 @@ function App() {
                         adset_id: newAdsetId,
                         name: ad.new_name || ad.name,
                         status: "PAUSED",
+                        utm_tags: DEFAULT_UTM_TAGS,
+                        sanitize_video_placements: true,
                       }),
                     })
                   );
@@ -3059,6 +3079,8 @@ function App() {
                             adset_id: newAdsetId,
                             name: ad.new_name || ad.name,
                             status: "PAUSED",
+                            utm_tags: DEFAULT_UTM_TAGS,
+                            sanitize_video_placements: true,
                           }),
                         })
                       );

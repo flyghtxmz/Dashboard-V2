@@ -87,6 +87,149 @@ function isEmptyObject(value) {
   );
 }
 
+function extractVideoIdFromSpec(objectStorySpec, assetFeedSpec) {
+  const direct =
+    objectStorySpec?.video_data?.video_id ||
+    objectStorySpec?.link_data?.video_id ||
+    objectStorySpec?.video_id ||
+    assetFeedSpec?.video_id;
+  if (direct) return direct;
+  const assetVideo =
+    assetFeedSpec?.videos?.[0]?.video_id ||
+    assetFeedSpec?.videos?.[0]?.video_id?.id;
+  return assetVideo || null;
+}
+
+async function maybeRestrictPlacementsForVideo(adsetId, videoId, token) {
+  if (!adsetId || !videoId) return { adjusted: false };
+  let ratio = null;
+  try {
+    const videoRes = await fetch(
+      `${API_BASE}/${encodeURIComponent(
+        videoId
+      )}?fields=width,height&access_token=${token}`
+    );
+    const videoJson = await safeJson(videoRes);
+    if (videoRes.ok) {
+      const width = Number(videoJson?.width || 0);
+      const height = Number(videoJson?.height || 0);
+      if (width > 0 && height > 0) {
+        ratio = width / height;
+      }
+    }
+  } catch (e) {
+    ratio = null;
+  }
+
+  try {
+    const adsetRes = await fetch(
+      `${API_BASE}/${encodeURIComponent(
+        adsetId
+      )}?fields=targeting&access_token=${token}`
+    );
+    const adsetJson = await safeJson(adsetRes);
+    if (!adsetRes.ok) {
+      return { adjusted: false, error: adsetJson };
+    }
+    const targeting = adsetJson?.targeting;
+    if (!targeting) {
+      return { adjusted: false };
+    }
+
+    if (!ratio) {
+      return { adjusted: false };
+    }
+
+    const verticalCompatible = ratio <= 0.7;
+    const feedCompatible = ratio >= 0.7;
+    const exploreCompatible = ratio >= 0.8 && ratio <= 1.25;
+
+    const removeInstagram = new Set();
+    if (!verticalCompatible) {
+      removeInstagram.add("story");
+      removeInstagram.add("reels");
+    }
+    if (!feedCompatible) {
+      removeInstagram.add("stream");
+    }
+    if (!exploreCompatible) {
+      removeInstagram.add("explore");
+      removeInstagram.add("explore_home");
+    }
+
+    const removeFacebook = new Set();
+    if (!verticalCompatible) {
+      removeFacebook.add("story");
+      removeFacebook.add("reels");
+    }
+    if (!feedCompatible) {
+      removeFacebook.add("feed");
+      removeFacebook.add("video_feeds");
+    }
+
+    const nextTargeting = { ...targeting };
+    let adjusted = false;
+
+    if (Array.isArray(targeting.instagram_positions) && removeInstagram.size) {
+      const nextInstagram = targeting.instagram_positions.filter(
+        (pos) => !removeInstagram.has(pos)
+      );
+      if (nextInstagram.length !== targeting.instagram_positions.length) {
+        nextTargeting.instagram_positions = nextInstagram;
+        adjusted = true;
+      }
+      if (nextInstagram.length === 0) {
+        delete nextTargeting.instagram_positions;
+        adjusted = true;
+      }
+    }
+
+    if (Array.isArray(targeting.facebook_positions) && removeFacebook.size) {
+      const nextFacebook = targeting.facebook_positions.filter(
+        (pos) => !removeFacebook.has(pos)
+      );
+      if (nextFacebook.length !== targeting.facebook_positions.length) {
+        nextTargeting.facebook_positions = nextFacebook;
+        adjusted = true;
+      }
+      if (nextFacebook.length === 0) {
+        delete nextTargeting.facebook_positions;
+        adjusted = true;
+      }
+    }
+
+    if (adjusted && Array.isArray(nextTargeting.publisher_platforms)) {
+      if (!nextTargeting.instagram_positions) {
+        nextTargeting.publisher_platforms =
+          nextTargeting.publisher_platforms.filter((p) => p !== "instagram");
+      }
+      if (!nextTargeting.facebook_positions) {
+        nextTargeting.publisher_platforms =
+          nextTargeting.publisher_platforms.filter((p) => p !== "facebook");
+      }
+    }
+
+    if (!adjusted) {
+      return { adjusted: false, ratio };
+    }
+
+    const params = new URLSearchParams();
+    params.set("targeting", JSON.stringify(nextTargeting));
+    params.set("access_token", token);
+    const updateRes = await fetch(
+      `${API_BASE}/${encodeURIComponent(adsetId)}`,
+      { method: "POST", body: params }
+    );
+    const updateJson = await safeJson(updateRes);
+    if (!updateRes.ok) {
+      return { adjusted: false, error: updateJson };
+    }
+    return { adjusted: true, ratio };
+  } catch (e) {
+    return { adjusted: false, error: e?.message || String(e) };
+  }
+}
+
 function stripEnhancements(value) {
   if (Array.isArray(value)) {
     return value.map(stripEnhancements).filter((item) => item !== undefined);
@@ -118,7 +261,14 @@ export async function onRequest({ request, env }) {
   }
 
   const body = await readJson(request);
-  const { ad_id, adset_id, name, status } = body || {};
+  const {
+    ad_id,
+    adset_id,
+    name,
+    status,
+    utm_tags,
+    sanitize_video_placements,
+  } = body || {};
   if (!ad_id || !adset_id) {
     return jsonResponse(400, { error: "Parametros obrigatorios: ad_id, adset_id" });
   }
@@ -192,6 +342,18 @@ export async function onRequest({ request, env }) {
       });
     }
 
+    let placementAdjust = null;
+    if (sanitize_video_placements && adset_id) {
+      const videoId = extractVideoIdFromSpec(objectStorySpec, assetFeedSpec);
+      if (videoId) {
+        placementAdjust = await maybeRestrictPlacementsForVideo(
+          adset_id,
+          videoId,
+          token
+        );
+      }
+    }
+
     const creativeParams = new URLSearchParams();
     creativeParams.set("name", name || adJson?.name || "Copia");
     if (objectStoryId) {
@@ -202,6 +364,9 @@ export async function onRequest({ request, env }) {
     }
     if (assetFeedSpec) {
       creativeParams.set("asset_feed_spec", JSON.stringify(assetFeedSpec));
+    }
+    if (utm_tags && typeof utm_tags === "string") {
+      creativeParams.set("url_tags", utm_tags);
     }
     creativeParams.set("access_token", token);
 
@@ -246,6 +411,8 @@ export async function onRequest({ request, env }) {
       code: "success",
       data,
       new_ad_id: data?.id || null,
+      placement_adjusted: placementAdjust?.adjusted || false,
+      placement_ratio: placementAdjust?.ratio || null,
     });
   } catch (error) {
     return jsonResponse(500, {
