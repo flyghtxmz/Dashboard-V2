@@ -2941,16 +2941,31 @@ function App() {
               let newAdId = null;
               if (adCopyMode === "create") {
                 step = "create-ad";
-                const createRes = await fetchJson(`${API_BASE}/meta-ad-create`, {
-                  method: "POST",
-                  body: JSON.stringify({
-                    ad_id: ad.id,
-                    adset_id: newAdsetId,
-                    name: ad.new_name || ad.name,
-                    status: "PAUSED",
-                  }),
-                });
-                newAdId = createRes.new_ad_id || createRes.data?.id || null;
+                try {
+                  const createRes = await fetchJson(`${API_BASE}/meta-ad-create`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      ad_id: ad.id,
+                      adset_id: newAdsetId,
+                      name: ad.new_name || ad.name,
+                      status: "PAUSED",
+                    }),
+                  });
+                  newAdId = createRes.new_ad_id || createRes.data?.id || null;
+                } catch (err) {
+                  const subcode =
+                    err?.data?.details?.error?.error_subcode ||
+                    err?.data?.details?.error_subcode;
+                  if (subcode === 33) {
+                    pushLog("duplicar-create", {
+                      message: `Anuncio nao encontrado ou sem permissao: ${ad.id}`,
+                      detail: err?.data?.details || err?.data,
+                    });
+                    newAdId = null;
+                  } else {
+                    throw err;
+                  }
+                }
               } else {
                 step = "copy-ad";
                 try {
@@ -2975,20 +2990,41 @@ function App() {
                     err?.data?.details?.error_subcode;
                   if (subcode === 3858504) {
                     step = "create-ad";
-                    const createRes = await fetchJson(
-                      `${API_BASE}/meta-ad-create`,
-                      {
-                        method: "POST",
-                        body: JSON.stringify({
-                          ad_id: ad.id,
-                          adset_id: newAdsetId,
-                          name: ad.new_name || ad.name,
-                          status: "PAUSED",
-                        }),
+                    try {
+                      const createRes = await fetchJson(
+                        `${API_BASE}/meta-ad-create`,
+                        {
+                          method: "POST",
+                          body: JSON.stringify({
+                            ad_id: ad.id,
+                            adset_id: newAdsetId,
+                            name: ad.new_name || ad.name,
+                            status: "PAUSED",
+                          }),
+                        }
+                      );
+                      newAdId =
+                        createRes.new_ad_id || createRes.data?.id || null;
+                    } catch (errCreate) {
+                      const subcodeCreate =
+                        errCreate?.data?.details?.error?.error_subcode ||
+                        errCreate?.data?.details?.error_subcode;
+                      if (subcodeCreate === 33) {
+                        pushLog("duplicar-create", {
+                          message: `Anuncio nao encontrado ou sem permissao: ${ad.id}`,
+                          detail: errCreate?.data?.details || errCreate?.data,
+                        });
+                        newAdId = null;
+                      } else {
+                        throw errCreate;
                       }
-                    );
-                    newAdId =
-                      createRes.new_ad_id || createRes.data?.id || null;
+                    }
+                  } else if (subcode === 33) {
+                    pushLog("duplicar-copy", {
+                      message: `Anuncio nao encontrado ou sem permissao: ${ad.id}`,
+                      detail: err?.data?.details || err?.data,
+                    });
+                    newAdId = null;
                   } else {
                     throw err;
                   }
@@ -3596,4 +3632,3 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
