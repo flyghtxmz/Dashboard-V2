@@ -3702,6 +3702,7 @@ function App() {
         paused_count: pausedCount,
       };
     })
+      .filter((group) => group.adset_count > 1)
       .sort((a, b) => (b.spend || 0) - (a.spend || 0));
   }, [mergedMeta, joinadsByTerm, cpaFilter, brlRate]);
 
