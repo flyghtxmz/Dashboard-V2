@@ -2534,6 +2534,16 @@ function App() {
         }
       );
       setDupCampaigns(res.data || []);
+      try {
+        const payload = {
+          time: Date.now(),
+          account: filters.metaAccountId.trim(),
+          data: res.data || [],
+        };
+        localStorage.setItem("__cd_dup_campaigns__", JSON.stringify(payload));
+      } catch (e) {
+        // ignore cache errors
+      }
     } catch (err) {
       setDupError(formatError(err));
       pushLog("duplicar-load", err);
@@ -3452,6 +3462,24 @@ function App() {
         if (rate) setUsdBrl(rate);
       })
       .catch((err) => pushLog("dollar", err));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("__cd_dup_campaigns__");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.data || !parsed?.time) return;
+      const isSameAccount =
+        (parsed.account || "").trim() === filters.metaAccountId.trim();
+      const maxAge = 10 * 60 * 1000;
+      if (isSameAccount && Date.now() - parsed.time <= maxAge) {
+        setDupCampaigns(parsed.data);
+      }
+    } catch (e) {
+      // ignore cache errors
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return html`
