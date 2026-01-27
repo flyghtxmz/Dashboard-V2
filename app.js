@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 29;
+const APP_VERSION_BUILD = 30;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1089,10 +1089,14 @@ function buildAdsetGrouped(rows, joinadsRows, brlRate) {
       impressions: 0,
       clicks: 0,
       revenue: 0,
+      ecpm_client: null,
+      ecpm: null,
     };
     entry.impressions += toNumber(row.impressions);
     entry.clicks += toNumber(row.clicks);
     entry.revenue += toNumber(row.revenue_client || row.revenue);
+    if (row.ecpm_client != null) entry.ecpm_client = toNumber(row.ecpm_client);
+    if (row.ecpm != null) entry.ecpm = toNumber(row.ecpm);
     joinadsByTerm.set(key, entry);
   });
 
@@ -2346,6 +2350,8 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
         item.impressions = toNumber(join.impressions);
         item.revenue_usd = usd;
         item.revenue_brl = brlRate ? usd * brlRate : null;
+        item.ecpm_client =
+          join.ecpm_client ?? join.ecpm ?? (item.impressions > 0 ? (usd / item.impressions) * 1000 : null);
       }
       return item;
     })
@@ -2380,7 +2386,9 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
               ? html`<tr><td colSpan="9" className="muted">Sem dados para o periodo.</td></tr>`
               : grouped.map((row, idx) => {
                   const ecpm =
-                    row.impressions > 0 && row.revenue_usd != null
+                    row.ecpm_client != null
+                      ? row.ecpm_client
+                      : row.impressions > 0 && row.revenue_usd != null
                       ? (row.revenue_usd / row.impressions) * 1000
                       : null;
                   const roas =
