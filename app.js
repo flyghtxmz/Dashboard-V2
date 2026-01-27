@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 26;
+const APP_VERSION_BUILD = 27;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1732,6 +1732,7 @@ function MetaJoinGroupedTable({ rows }) {
               <th>Conjunto</th>
               <th>Anuncio</th>
               <th>Resultados (Meta)</th>
+              <th>CPA</th>
               <th>Valor gasto</th>
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
@@ -1742,11 +1743,15 @@ function MetaJoinGroupedTable({ rows }) {
           </thead>
           <tbody>
             ${grouped.length === 0
-              ? html`<tr><td colSpan="10" className="muted">Sem dados para o periodo.</td></tr>`
+              ? html`<tr><td colSpan="11" className="muted">Sem dados para o periodo.</td></tr>`
               : grouped.map((row, idx) => {
                   const ecpm =
                     row.impressions > 0
                       ? (row.revenue_usd / row.impressions) * 1000
+                      : null;
+                  const cpa =
+                    row.results > 0
+                      ? row.spend / row.results
                       : null;
                   const roas =
                     row.revenue_brl > 0 && row.spend > 0
@@ -1762,6 +1767,7 @@ function MetaJoinGroupedTable({ rows }) {
                       <td>${asText(row.adset_name)}</td>
                       <td>${asText(row.ad_name)}</td>
                       <td>${number.format(row.results || 0)}</td>
+                      <td>${cpa != null ? currencyBRL.format(cpa) : "-"}</td>
                       <td>${currencyBRL.format(row.spend || 0)}</td>
                       <td>${roas != null ? `${roas.toFixed(2)}x` : "-"}</td>
                       <td>${lucro != null ? currencyBRL.format(lucro) : "-"}</td>
