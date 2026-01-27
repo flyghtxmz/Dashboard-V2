@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 24;
+const APP_VERSION_BUILD = 25;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -3201,43 +3201,6 @@ function App() {
     });
   };
 
-  useEffect(() => {
-    if (!Object.keys(cpaWatch || {}).length) return;
-    const evaluate = async () => {
-      const toPause = [];
-      const watchKeys = Object.keys(cpaWatch || {});
-      const watchMap = new Map(watchKeys.map((key) => [key, cpaWatch[key]]));
-      cpaGroups.forEach((group) => {
-        const rule = watchMap.get(group.key);
-        if (!rule) return;
-        if (!group.all_active) return;
-        const exceedSpend =
-          rule.spend != null && group.spend > rule.spend;
-        let exceedCpa = false;
-        if (rule.cpa != null) {
-          if (group.cpa_value != null) {
-            exceedCpa = group.cpa_value > rule.cpa;
-          } else {
-            exceedCpa = group.spend > 0;
-          }
-        }
-        if (exceedSpend || exceedCpa) {
-          toPause.push(...group.adset_ids);
-        }
-      });
-      if (toPause.length) {
-        await updateAdsetStatuses(toPause, "PAUSED");
-        pushLog("cpa-watch", {
-          message: `Regra automática aplicada em ${new Set(toPause).size} conjuntos.`,
-        });
-      }
-    };
-    const timer = setInterval(() => {
-      evaluate().catch((err) => pushLog("cpa-watch", err));
-    }, 2 * 60 * 1000);
-    return () => clearInterval(timer);
-  }, [cpaWatch, cpaGroups]);
-
   const handlePublishDrafts = async () => {
     if (!drafts.length) return;
     setPublishing(true);
@@ -3915,6 +3878,43 @@ function App() {
     });
     return totals;
   }, [cpaGroups]);
+
+  useEffect(() => {
+    if (!Object.keys(cpaWatch || {}).length) return;
+    const evaluate = async () => {
+      const toPause = [];
+      const watchKeys = Object.keys(cpaWatch || {});
+      const watchMap = new Map(watchKeys.map((key) => [key, cpaWatch[key]]));
+      cpaGroups.forEach((group) => {
+        const rule = watchMap.get(group.key);
+        if (!rule) return;
+        if (!group.all_active) return;
+        const exceedSpend =
+          rule.spend != null && group.spend > rule.spend;
+        let exceedCpa = false;
+        if (rule.cpa != null) {
+          if (group.cpa_value != null) {
+            exceedCpa = group.cpa_value > rule.cpa;
+          } else {
+            exceedCpa = group.spend > 0;
+          }
+        }
+        if (exceedSpend || exceedCpa) {
+          toPause.push(...group.adset_ids);
+        }
+      });
+      if (toPause.length) {
+        await updateAdsetStatuses(toPause, "PAUSED");
+        pushLog("cpa-watch", {
+          message: `Regra automática aplicada em ${new Set(toPause).size} conjuntos.`,
+        });
+      }
+    };
+    const timer = setInterval(() => {
+      evaluate().catch((err) => pushLog("cpa-watch", err));
+    }, 2 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [cpaWatch, cpaGroups]);
 
   const metaTotals = useMemo(() => {
     const spendBrl = (filteredMeta || []).reduce(
