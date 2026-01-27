@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 28;
+const APP_VERSION_BUILD = 29;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1085,7 +1085,15 @@ function buildAdsetGrouped(rows, joinadsRows, brlRate) {
   (joinadsRows || []).forEach((row) => {
     const key = normalizeKey(row.custom_value);
     if (!key) return;
-    joinadsByTerm.set(key, row);
+    const entry = joinadsByTerm.get(key) || {
+      impressions: 0,
+      clicks: 0,
+      revenue: 0,
+    };
+    entry.impressions += toNumber(row.impressions);
+    entry.clicks += toNumber(row.clicks);
+    entry.revenue += toNumber(row.revenue_client || row.revenue);
+    joinadsByTerm.set(key, entry);
   });
 
   const groupedRows = rows.reduce((map, row) => {
@@ -1409,6 +1417,7 @@ function MetaJoinTable({
   statusLoading,
   onBudgetUpdate,
   budgetLoading,
+  isMultiDay,
 }) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
@@ -1427,6 +1436,8 @@ function MetaJoinTable({
     }
     return raw;
   };
+
+  const showJoinads = !isMultiDay;
 
   return html`
     <section className="card wide">
@@ -1573,18 +1584,20 @@ function MetaJoinTable({
                             })()
                           : "-"}
                       </td>
-                      <td>${row.roas_joinads || "-"}</td>
-                      <td>${row.lucro_op_brl || "-"}</td>
+                      <td>${showJoinads ? row.roas_joinads || "-" : "-"}</td>
+                      <td>${showJoinads ? row.lucro_op_brl || "-" : "-"}</td>
                       <td>
-                        ${row.revenue_client_joinads != null
+                        ${showJoinads && row.revenue_client_joinads != null
                           ? asText(row.revenue_client_joinads)
                           : "-"}
                       </td>
                       <td>
-                        ${row.ecpm_client != null ? asText(row.ecpm_client) : "-"}
+                        ${showJoinads && row.ecpm_client != null
+                          ? asText(row.ecpm_client)
+                          : "-"}
                       </td>
                       <td>
-                        ${row.impressions_joinads != null
+                        ${showJoinads && row.impressions_joinads != null
                           ? number.format(row.impressions_joinads)
                           : "-"}
                       </td>
@@ -1625,6 +1638,13 @@ function MetaJoinTable({
         </table>
         ${rows.length
           ? (() => {
+              if (!showJoinads) {
+                return html`<div className="muted small" style=${{ marginTop: "8px" }}>
+                  JoinAds por anúncio é agregado no período. Em intervalos maiores
+                  que 1 dia, os valores não são exibidos aqui para evitar distorções.
+                  Veja o resumo agrupado para totais corretos.
+                </div>`;
+              }
               const totalImps = rows.reduce(
                 (acc, r) =>
                   acc + (r.impressions_joinads ? Number(r.impressions_joinads) : 0),
@@ -1665,47 +1685,51 @@ function MetaJoinGroupedTable({ rows }) {
     const key = `${row.ad_name || ""}|||${row.adset_name || ""}|||${
       row.objective || ""
     }`;
-    if (!map.has(key)) {
-      map.set(key, {
-        ad_name: row.ad_name,
-        adset_name: row.adset_name,
-        objective: row.objective,
-        spend: 0,
-        results: 0,
-        impressions: 0,
-        revenue_usd: 0,
-        revenue_brl: 0,
-        hasAdLevel: false,
-        joinadsAdded: false,
-        fallbackImps: 0,
-        fallbackRevenueUsd: 0,
-        fallbackRevenueBrl: 0,
-      });
-    }
-    const item = map.get(key);
-    item.spend += toNumber(row.spend_value || row.spend);
-    item.results += toNumber(row.results_meta);
-    const isAdLevel = row.data_level === "utm_content";
-    const joinImps = toNumber(row.impressions_joinads);
-    const joinUsd = toNumber(row.revenue_client_value);
-    const joinBrl = toNumber(row.revenue_client_brl_value);
-    if (isAdLevel) {
-      item.hasAdLevel = true;
-      if (!item.joinadsAdded && (joinImps || joinUsd || joinBrl)) {
-        item.impressions += joinImps;
-        item.revenue_usd += joinUsd;
-        item.revenue_brl += joinBrl;
-        item.joinadsAdded = true;
+      if (!map.has(key)) {
+        map.set(key, {
+          ad_name: row.ad_name,
+          adset_name: row.adset_name,
+          objective: row.objective,
+          spend: 0,
+          results: 0,
+          impressions: 0,
+          revenue_usd: 0,
+          revenue_brl: 0,
+          hasAdLevel: false,
+          joinadsAdded: false,
+          fallbackImps: 0,
+          fallbackRevenueUsd: 0,
+          fallbackRevenueBrl: 0,
+          joinadsMaxImps: 0,
+          joinadsMaxUsd: 0,
+          joinadsMaxBrl: 0,
+        });
       }
-    } else if (!item.hasAdLevel) {
-      item.fallbackImps = Math.max(item.fallbackImps, joinImps);
-      item.fallbackRevenueUsd = Math.max(item.fallbackRevenueUsd, joinUsd);
-      item.fallbackRevenueBrl = Math.max(item.fallbackRevenueBrl, joinBrl);
-    }
-    return map;
+      const item = map.get(key);
+      item.spend += toNumber(row.spend_value || row.spend);
+      item.results += toNumber(row.results_meta);
+      const isAdLevel = row.data_level === "utm_content";
+      const joinImps = toNumber(row.impressions_joinads);
+      const joinUsd = toNumber(row.revenue_client_value);
+      const joinBrl = toNumber(row.revenue_client_brl_value);
+      if (isAdLevel) {
+        item.hasAdLevel = true;
+        item.joinadsMaxImps = Math.max(item.joinadsMaxImps, joinImps);
+        item.joinadsMaxUsd = Math.max(item.joinadsMaxUsd, joinUsd);
+        item.joinadsMaxBrl = Math.max(item.joinadsMaxBrl, joinBrl);
+      } else if (!item.hasAdLevel) {
+        item.fallbackImps = Math.max(item.fallbackImps, joinImps);
+        item.fallbackRevenueUsd = Math.max(item.fallbackRevenueUsd, joinUsd);
+        item.fallbackRevenueBrl = Math.max(item.fallbackRevenueBrl, joinBrl);
+      }
+      return map;
   }, new Map());
   const grouped = Array.from(groupedRows.values()).map((item) => {
-    if (!item.hasAdLevel && !item.joinadsAdded) {
+    if (item.hasAdLevel) {
+      item.impressions += item.joinadsMaxImps;
+      item.revenue_usd += item.joinadsMaxUsd;
+      item.revenue_brl += item.joinadsMaxBrl;
+    } else {
       item.impressions += item.fallbackImps;
       item.revenue_usd += item.fallbackRevenueUsd;
       item.revenue_brl += item.fallbackRevenueBrl;
@@ -2318,7 +2342,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
       const termKey = normalizeKey(item.adset_name);
       const join = joinadsByTerm.get(termKey);
       if (join) {
-        const usd = toNumber(join.revenue_client || join.revenue);
+        const usd = toNumber(join.revenue);
         item.impressions = toNumber(join.impressions);
         item.revenue_usd = usd;
         item.revenue_brl = brlRate ? usd * brlRate : null;
@@ -3697,28 +3721,48 @@ function App() {
       earningsByDate[iso] = row;
     });
 
-    const superByCustom = {};
+    const superByCustom = new Map();
     const contentSet = new Set();
     domainFilteredSuper.forEach((row) => {
       const keyNorm = normalizeKey(row.custom_value);
-      if (keyNorm) {
-        superByCustom[keyNorm] = row;
-        contentSet.add(keyNorm);
-      }
+      if (!keyNorm) return;
+      contentSet.add(keyNorm);
+      const entry = superByCustom.get(keyNorm) || {
+        impressions: 0,
+        clicks: 0,
+        revenue: 0,
+        revenue_client: 0,
+        ecpm: null,
+        ecpm_client: null,
+      };
+      entry.impressions += toNumber(row.impressions);
+      entry.clicks += toNumber(row.clicks);
+      entry.revenue += toNumber(row.revenue);
+      entry.revenue_client += toNumber(row.revenue_client);
+      if (row.ecpm != null) entry.ecpm = toNumber(row.ecpm);
+      if (row.ecpm_client != null) entry.ecpm_client = toNumber(row.ecpm_client);
+      superByCustom.set(keyNorm, entry);
     });
 
-    const kvByCustom = {};
+    const kvByCustom = new Map();
     kvContent.forEach((row) => {
       const keyNorm = normalizeKey(row.custon_value || row.custom_value);
       if (!keyNorm) return;
-      kvByCustom[keyNorm] = {
-        impressions: toNumber(row.impressions),
-        clicks: toNumber(row.clicks),
-        revenue: toNumber(row.earnings || row.earnings_client),
-        revenue_client: toNumber(row.earnings_client),
-        ecpm: toNumber(row.ecpm),
-        ecpm_client: toNumber(row.ecpm_client),
+      const entry = kvByCustom.get(keyNorm) || {
+        impressions: 0,
+        clicks: 0,
+        revenue: 0,
+        revenue_client: 0,
+        ecpm: null,
+        ecpm_client: null,
       };
+      entry.impressions += toNumber(row.impressions);
+      entry.clicks += toNumber(row.clicks);
+      entry.revenue += toNumber(row.earnings || row.earnings_client);
+      entry.revenue_client += toNumber(row.earnings_client);
+      if (row.ecpm != null) entry.ecpm = toNumber(row.ecpm);
+      if (row.ecpm_client != null) entry.ecpm_client = toNumber(row.ecpm_client);
+      kvByCustom.set(keyNorm, entry);
     });
 
     const termSet = new Set(
@@ -3736,13 +3780,13 @@ function App() {
       const adsetKey = normalizeKey(row.adset_name || "");
 
       const fromCustom =
-        superByCustom[nameKey] ||
-        superByCustom[adIdKey] ||
+        superByCustom.get(nameKey) ||
+        superByCustom.get(adIdKey) ||
         {};
 
       const fromKv =
-        kvByCustom[nameKey] ||
-        kvByCustom[adIdKey] ||
+        kvByCustom.get(nameKey) ||
+        kvByCustom.get(adIdKey) ||
         {};
 
       const matchedByContent = contentSet.has(nameKey) || contentSet.has(adIdKey);
@@ -3753,16 +3797,23 @@ function App() {
           Object.keys(fromCustom).length > 0 ||
           Object.keys(fromKv).length > 0;
 
+      const impressionsJoin = toNumber(
+        fromKv.impressions ?? fromCustom.impressions ?? null
+      );
+
       const ecpmClient =
         fromKv.ecpm_client ??
         fromKv.ecpm ??
         fromCustom.ecpm_client ??
         fromCustom.ecpm ??
-        null;
-
-      const impressionsJoin = toNumber(
-        fromKv.impressions ?? fromCustom.impressions ?? null
-      );
+        (impressionsJoin
+          ? ((fromKv.revenue_client ??
+              fromKv.revenue ??
+              fromCustom.revenue_client ??
+              fromCustom.revenue) /
+              impressionsJoin) *
+            1000
+          : null);
 
       const revenueClientRaw =
         fromKv.revenue_client ??
@@ -4077,6 +4128,18 @@ function App() {
     );
     return { spendBrl };
   }, [filteredMeta]);
+
+  const isMultiDay = useMemo(() => {
+    const startRaw = appliedFilters?.startDate || filters.startDate;
+    const endRaw = appliedFilters?.endDate || filters.endDate;
+    const start = new Date(startRaw);
+    const end = new Date(endRaw);
+    if (!startRaw || !endRaw || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return false;
+    }
+    const diffMs = end.getTime() - start.getTime();
+    return diffMs >= 24 * 60 * 60 * 1000;
+  }, [appliedFilters, filters.startDate, filters.endDate]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -4418,6 +4481,7 @@ function App() {
                   statusLoading=${adStatusLoading}
                   onBudgetUpdate=${handleUpdateBudget}
                   budgetLoading=${budgetLoading}
+                  isMultiDay=${isMultiDay}
                 />
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
