@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 27;
+const APP_VERSION_BUILD = 28;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1963,6 +1963,107 @@ function CPAView({
   `;
 }
 
+function ControleView({ form, setForm, onSubmit, loading, result, error }) {
+  return html`
+    <main className="grid">
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Controle</span>
+            <h2 className="section-title">Criar Admin no WordPress</h2>
+          </div>
+        </div>
+        ${error
+          ? html`<div className="status error">
+              <strong>Erro:</strong> ${error}
+            </div>`
+          : null}
+        ${result
+          ? html`<div className="status success">
+              ${result.success ? "Usuário criado!" : "Resposta recebida."}
+            </div>`
+          : null}
+        <div className="filters">
+          <label className="field">
+            <span>Site (URL)</span>
+            <input
+              type="url"
+              placeholder="https://seusite.com"
+              value=${form.site_url}
+              onInput=${(e) =>
+                setForm((prev) => ({ ...prev, site_url: e.target.value }))}
+            />
+          </label>
+          <label className="field">
+            <span>Usuário da autenticação</span>
+            <input
+              type="text"
+              placeholder="felipe"
+              value=${form.auth_user}
+              onInput=${(e) =>
+                setForm((prev) => ({ ...prev, auth_user: e.target.value }))}
+            />
+          </label>
+          <label className="field">
+            <span>Application Password</span>
+            <input
+              type="password"
+              placeholder="abcd1234..."
+              value=${form.auth_pass}
+              onInput=${(e) =>
+                setForm((prev) => ({ ...prev, auth_pass: e.target.value }))}
+            />
+          </label>
+          <label className="field">
+            <span>Usuário do novo admin</span>
+            <input
+              type="text"
+              placeholder="admin_oculto"
+              value=${form.new_username}
+              onInput=${(e) =>
+                setForm((prev) => ({ ...prev, new_username: e.target.value }))}
+            />
+          </label>
+          <label className="field">
+            <span>Email do novo admin</span>
+            <input
+              type="email"
+              placeholder="seuemail+oculto@gmail.com"
+              value=${form.new_email}
+              onInput=${(e) =>
+                setForm((prev) => ({ ...prev, new_email: e.target.value }))}
+            />
+          </label>
+          <label className="field">
+            <span>Senha do novo admin (opcional)</span>
+            <input
+              type="text"
+              placeholder="defina se quiser"
+              value=${form.new_password}
+              onInput=${(e) =>
+                setForm((prev) => ({ ...prev, new_password: e.target.value }))}
+            />
+          </label>
+          <div className="field">
+            <span>&nbsp;</span>
+            <button className="primary" onClick=${onSubmit} disabled=${loading}>
+              ${loading ? "Criando..." : "Criar Admin no WordPress"}
+            </button>
+          </div>
+        </div>
+        ${result
+          ? html`<div className="token-output">
+              <div className="token-output-head">
+                <strong>Resposta</strong>
+              </div>
+              <textarea readonly value=${JSON.stringify(result, null, 2)}></textarea>
+            </div>`
+          : null}
+      </section>
+    </main>
+  `;
+}
+
 function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
   const rows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const metaList = Array.isArray(metaRows) ? metaRows : [];
@@ -2334,6 +2435,17 @@ function App() {
   const [adsetStatusLoading, setAdsetStatusLoading] = useState({});
   const [cpaWatch, setCpaWatch] = useState({});
   const [cpaSyncError, setCpaSyncError] = useState("");
+  const [controleForm, setControleForm] = useState({
+    site_url: "",
+    auth_user: "",
+    auth_pass: "",
+    new_username: "",
+    new_email: "",
+    new_password: "",
+  });
+  const [controleLoading, setControleLoading] = useState(false);
+  const [controleResult, setControleResult] = useState(null);
+  const [controleError, setControleError] = useState("");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -3206,6 +3318,41 @@ function App() {
       saveCpaRules(next);
       return next;
     });
+  };
+
+  const handleControleSubmit = async () => {
+    setControleLoading(true);
+    setControleError("");
+    setControleResult("");
+    try {
+      const payload = {
+        site_url: controleForm.site_url.trim(),
+        auth_user: controleForm.auth_user.trim(),
+        auth_pass: controleForm.auth_pass.trim(),
+        new_username: controleForm.new_username.trim(),
+        new_email: controleForm.new_email.trim(),
+        new_password: controleForm.new_password.trim(),
+      };
+      if (!payload.site_url || !payload.auth_user || !payload.auth_pass) {
+        throw new Error("Preencha site, usuário e senha de aplicação.");
+      }
+      if (!payload.new_username || !payload.new_email) {
+        throw new Error("Preencha o usuário e o email do novo admin.");
+      }
+      if (!payload.new_password) {
+        delete payload.new_password;
+      }
+      const res = await fetchJson(`${API_BASE}/wp-create-admin`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setControleResult(res);
+    } catch (err) {
+      setControleError(formatError(err));
+      pushLog("controle", err);
+    } finally {
+      setControleLoading(false);
+    }
   };
 
   const handlePublishDrafts = async () => {
@@ -4209,6 +4356,12 @@ function App() {
           CPA Farming
         </button>
         <button
+          className=${`tab ${activeTab === "controle" ? "active" : ""}`}
+          onClick=${() => setActiveTab("controle")}
+        >
+          Controle
+        </button>
+        <button
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
@@ -4313,6 +4466,17 @@ function App() {
               watchMap=${cpaWatch}
               onToggleWatch=${handleToggleWatch}
               syncError=${cpaSyncError}
+            />
+          `
+        : activeTab === "controle"
+        ? html`
+            <${ControleView}
+              form=${controleForm}
+              setForm=${setControleForm}
+              onSubmit=${handleControleSubmit}
+              loading=${controleLoading}
+              result=${controleResult}
+              error=${controleError}
             />
           `
         : activeTab === "urls"
