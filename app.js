@@ -7,8 +7,9 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 21;
+const APP_VERSION_BUILD = 23;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
+const CPA_MIN_ACTIVE = 2;
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -1788,6 +1789,8 @@ function CPAView({
   ruleLoading,
   onToggleGroup,
   statusLoading,
+  watchMap,
+  onToggleWatch,
 }) {
   return html`
     <main className="grid">
@@ -1805,6 +1808,11 @@ function CPAView({
             </span>
           </div>
         </div>
+        ${cpaSyncError
+          ? html`<div className="status error">
+              <strong>Erro KV:</strong> ${cpaSyncError}
+            </div>`
+          : null}
 
         <div className="filters">
           <label className="field">
@@ -1851,6 +1859,12 @@ function CPAView({
             </button>
           </div>
         </div>
+        ${watchMap && Object.keys(watchMap).length
+          ? html`<div className="status neutral" style=${{ marginTop: "12px" }}>
+              Vigilância ativa em ${Object.keys(watchMap).length} conjunto(s).
+              Requer atualizar os dados para acompanhar.
+            </div>`
+          : null}
 
         <div className="table-wrapper scroll-x" style=${{ marginTop: "12px" }}>
           <table>
@@ -1866,18 +1880,20 @@ function CPAView({
                 <th>eCPM JoinAds</th>
                 <th>Impressões JoinAds</th>
                 <th>Status</th>
+                <th>Vigiar</th>
                 <th>Ação</th>
               </tr>
             </thead>
             <tbody>
               ${groups.length === 0
-                ? html`<tr><td colSpan="11" className="muted">Sem dados para o período.</td></tr>`
+                ? html`<tr><td colSpan="12" className="muted">Sem dados para o período.</td></tr>`
                 : groups.map((group) => {
                     const busy = group.adset_ids.some(
                       (id) => statusLoading && statusLoading[id]
                     );
                     const toggleLabel = group.all_active ? "Desligar" : "Ligar";
                     const nextStatus = group.all_active ? "PAUSED" : "ACTIVE";
+                    const watch = watchMap && watchMap[group.key];
                     return html`
                       <tr key=${group.key}>
                         <td>${group.name}</td>
@@ -1896,6 +1912,21 @@ function CPAView({
                           <div className="muted small">
                             ${group.active_count} ativos • ${group.paused_count} pausados
                           </div>
+                        </td>
+                        <td>
+                          <button
+                            className=${`toggle ${watch ? "on" : "off"}`}
+                            onClick=${() => onToggleWatch?.(group)}
+                          >
+                            ${watch ? "Vigiando" : "Desligado"}
+                          </button>
+                          ${watch
+                            ? html`<div className="muted small">
+                                ${watch.cpa ? `CPA<=${watch.cpa}` : ""}
+                                ${watch.cpa && watch.spend ? " • " : ""}
+                                ${watch.spend ? `Gasto<=${watch.spend}` : ""}
+                              </div>`
+                            : null}
                         </td>
                         <td>
                           <button
@@ -2294,6 +2325,8 @@ function App() {
   const [cpaRule, setCpaRule] = useState({ cpa: "", spend: "" });
   const [cpaRuleLoading, setCpaRuleLoading] = useState(false);
   const [adsetStatusLoading, setAdsetStatusLoading] = useState({});
+  const [cpaWatch, setCpaWatch] = useState({});
+  const [cpaSyncError, setCpaSyncError] = useState("");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -3009,6 +3042,36 @@ function App() {
     await updateAdsetStatuses(adsetIds, nextStatus);
   };
 
+  const saveCpaRules = async (nextWatch) => {
+    if (!filters.metaAccountId.trim()) return;
+    const rules = {};
+    Object.entries(nextWatch || {}).forEach(([key, rule]) => {
+      const group = cpaGroups.find((g) => g.key === key);
+      if (!group) return;
+      rules[key] = {
+        name: group.name,
+        adset_ids: group.adset_ids,
+        cpa: rule.cpa ?? null,
+        spend: rule.spend ?? null,
+      };
+    });
+    try {
+      await fetchJson(
+        `${API_BASE}/cpa-rules?${new URLSearchParams({
+          account_id: filters.metaAccountId.trim(),
+        }).toString()}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ rules }),
+        }
+      );
+      setCpaSyncError("");
+    } catch (err) {
+      setCpaSyncError(formatError(err));
+      pushLog("cpa-rules", err);
+    }
+  };
+
   const handleUpdateBudget = async (adsetId, budgetValue) => {
     if (!adsetId) return;
     const raw = String(budgetValue ?? "").trim();
@@ -3068,9 +3131,25 @@ function App() {
       pushLog("cpa-rule", { message: "Informe um CPA ou gasto máximo." });
       return;
     }
+    const watchedKeys = Object.keys(cpaWatch || {});
+    if (!watchedKeys.length) {
+      pushLog("cpa-rule", { message: "Selecione conjuntos para vigiar." });
+      return;
+    }
+    const updatedWatch = { ...cpaWatch };
+    watchedKeys.forEach((key) => {
+      updatedWatch[key] = {
+        cpa: hasCpa ? cpaLimit : null,
+        spend: hasSpend ? spendLimit : null,
+      };
+    });
+    setCpaWatch(updatedWatch);
+    await saveCpaRules(updatedWatch);
     const toPause = [];
     cpaGroups.forEach((group) => {
-      const exceedSpend = hasSpend && group.spend > spendLimit;
+      if (!updatedWatch[group.key]) return;
+      const exceedSpend =
+        hasSpend && group.spend > spendLimit;
       let exceedCpa = false;
       if (hasCpa) {
         if (group.cpa_value != null) {
@@ -3079,7 +3158,7 @@ function App() {
           exceedCpa = group.spend > 0;
         }
       }
-      if (exceedSpend || exceedCpa) {
+      if ((exceedSpend || exceedCpa) && group.all_active) {
         toPause.push(...group.adset_ids);
       }
     });
@@ -3099,6 +3178,65 @@ function App() {
       setCpaRuleLoading(false);
     }
   };
+
+  const handleToggleWatch = (group) => {
+    if (!group?.key) return;
+    setCpaWatch((prev) => {
+      const next = { ...prev };
+      if (next[group.key]) {
+        delete next[group.key];
+        saveCpaRules(next);
+        return next;
+      }
+      const cpaValue = Number(String(cpaRule.cpa || "").replace(",", "."));
+      const spendValue = Number(String(cpaRule.spend || "").replace(",", "."));
+      const hasCpa = Number.isFinite(cpaValue) && cpaValue > 0;
+      const hasSpend = Number.isFinite(spendValue) && spendValue > 0;
+      next[group.key] = {
+        cpa: hasCpa ? cpaValue : null,
+        spend: hasSpend ? spendValue : null,
+      };
+      saveCpaRules(next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!Object.keys(cpaWatch || {}).length) return;
+    const evaluate = async () => {
+      const toPause = [];
+      const watchKeys = Object.keys(cpaWatch || {});
+      const watchMap = new Map(watchKeys.map((key) => [key, cpaWatch[key]]));
+      cpaGroups.forEach((group) => {
+        const rule = watchMap.get(group.key);
+        if (!rule) return;
+        if (!group.all_active) return;
+        const exceedSpend =
+          rule.spend != null && group.spend > rule.spend;
+        let exceedCpa = false;
+        if (rule.cpa != null) {
+          if (group.cpa_value != null) {
+            exceedCpa = group.cpa_value > rule.cpa;
+          } else {
+            exceedCpa = group.spend > 0;
+          }
+        }
+        if (exceedSpend || exceedCpa) {
+          toPause.push(...group.adset_ids);
+        }
+      });
+      if (toPause.length) {
+        await updateAdsetStatuses(toPause, "PAUSED");
+        pushLog("cpa-watch", {
+          message: `Regra automática aplicada em ${new Set(toPause).size} conjuntos.`,
+        });
+      }
+    };
+    const timer = setInterval(() => {
+      evaluate().catch((err) => pushLog("cpa-watch", err));
+    }, 2 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [cpaWatch, cpaGroups]);
 
   const handlePublishDrafts = async () => {
     if (!drafts.length) return;
@@ -3603,8 +3741,14 @@ function App() {
       (camp.adsets || []).forEach((adset) => {
         const key = normalizeKey(adset.name || "");
         if (!key) return;
-        const entry = map.get(key) || { name: adset.name, ids: new Set() };
+        const entry =
+          map.get(key) || { name: adset.name, ids: new Set(), statuses: new Map() };
         if (adset.id) entry.ids.add(adset.id);
+        const status =
+          (adset.effective_status || adset.status || "").toUpperCase();
+        if (adset.id && status) {
+          entry.statuses.set(adset.id, status);
+        }
         map.set(key, entry);
       });
     });
@@ -3677,13 +3821,18 @@ function App() {
           key,
           name: entry.name,
           adsetIds: new Set(entry.ids),
-          statusById: new Map(),
+          statusById: new Map(entry.statuses),
           spend: 0,
           results: 0,
         });
       } else {
         const existing = map.get(key);
         entry.ids.forEach((id) => existing.adsetIds.add(id));
+        entry.statuses.forEach((status, id) => {
+          if (!existing.statusById.has(id)) {
+            existing.statusById.set(id, status);
+          }
+        });
       }
     });
 
@@ -3741,7 +3890,12 @@ function App() {
         duplicate_name: duplicateName,
       };
     })
-      .filter((group) => group.duplicate_name)
+      .filter(
+        (group) =>
+          group.duplicate_name &&
+          group.paused_count === 0 &&
+          group.active_count >= CPA_MIN_ACTIVE
+      )
       .sort((a, b) => (b.spend || 0) - (a.spend || 0));
   }, [mergedMeta, joinadsByTerm, cpaFilter, brlRate, dupNameMap]);
 
@@ -3959,6 +4113,48 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("__cd_cpa_watch__");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        setCpaWatch(parsed);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!filters.metaAccountId.trim()) return;
+    (async () => {
+      try {
+        const res = await fetchJson(
+          `${API_BASE}/cpa-rules?${new URLSearchParams({
+            account_id: filters.metaAccountId.trim(),
+          }).toString()}`
+        );
+        if (res?.data) {
+          setCpaWatch(res.data);
+        }
+        setCpaSyncError("");
+      } catch (err) {
+        setCpaSyncError(formatError(err));
+        pushLog("cpa-rules", err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.metaAccountId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("__cd_cpa_watch__", JSON.stringify(cpaWatch));
+    } catch (e) {
+      // ignore
+    }
+  }, [cpaWatch]);
+
   return html`
     <div className="layout">
       <header className="topbar">
@@ -4107,6 +4303,8 @@ function App() {
               ruleLoading=${cpaRuleLoading}
               onToggleGroup=${handleToggleAdset}
               statusLoading=${adsetStatusLoading}
+              watchMap=${cpaWatch}
+              onToggleWatch=${handleToggleWatch}
             />
           `
         : activeTab === "urls"
