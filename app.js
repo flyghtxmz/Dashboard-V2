@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 25;
+const APP_VERSION_BUILD = 26;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1791,6 +1791,7 @@ function CPAView({
   statusLoading,
   watchMap,
   onToggleWatch,
+  syncError,
 }) {
   return html`
     <main className="grid">
@@ -1808,9 +1809,9 @@ function CPAView({
             </span>
           </div>
         </div>
-        ${cpaSyncError
+        ${syncError
           ? html`<div className="status error">
-              <strong>Erro KV:</strong> ${cpaSyncError}
+              <strong>Erro KV:</strong> ${syncError}
             </div>`
           : null}
 
@@ -4305,6 +4306,7 @@ function App() {
               statusLoading=${adsetStatusLoading}
               watchMap=${cpaWatch}
               onToggleWatch=${handleToggleWatch}
+              syncError=${cpaSyncError}
             />
           `
         : activeTab === "urls"
