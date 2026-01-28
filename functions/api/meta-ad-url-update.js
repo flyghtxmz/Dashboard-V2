@@ -14,6 +14,8 @@ function cleanSpec(spec) {
   delete clean.standard_enhancement;
   delete clean.auto_enhancements;
   delete clean.template_data;
+  delete clean.instagram_user_id;
+  delete clean.instagram_user;
 
   if (clean.link_data) {
     delete clean.link_data.object_story_id;
@@ -26,6 +28,15 @@ function cleanSpec(spec) {
     delete clean.video_data.standard_enhancements;
     if (clean.video_data.image_hash && clean.video_data.image_url) {
       delete clean.video_data.image_url;
+    }
+    if (clean.video_data.call_to_action?.value?.link) {
+      delete clean.video_data.call_to_action.value.link;
+    }
+    if (
+      clean.video_data.call_to_action &&
+      Object.keys(clean.video_data.call_to_action.value || {}).length === 0
+    ) {
+      delete clean.video_data.call_to_action.value;
     }
   }
   if (clean.video_data?.video_id && clean.link_data) {
@@ -49,9 +60,11 @@ function applyUrl(spec, url) {
     applied = true;
   }
   if (spec.video_data?.call_to_action?.value) {
-    spec.video_data.call_to_action.value.link = url;
-    applied = true;
+    if (spec.video_data.call_to_action.value.link) {
+      delete spec.video_data.call_to_action.value.link;
+    }
   }
+  if (spec.video_data) applied = true;
   return applied;
 }
 
@@ -207,14 +220,20 @@ export async function onRequest({ request, env }) {
         );
         const thirdJson = await safeJson(thirdRes);
         if (!thirdRes.ok) {
+          const scrub = (payload) => {
+            if (!payload || typeof payload !== "object") return payload;
+            const copy = { ...payload };
+            delete copy.access_token;
+            return copy;
+          };
           return jsonResponse(thirdRes.status, {
             error: "Erro Meta",
             details: thirdJson,
             stage: "create-creative",
             attempts: [
-              { type: "default", payload: createPayload, error: createJson },
-              { type: "retry", payload: retryPayload, error: retryJson },
-              { type: "minimal", payload: minimalPayload, error: thirdJson },
+              { type: "default", payload: scrub(createPayload), error: createJson },
+              { type: "retry", payload: scrub(retryPayload), error: retryJson },
+              { type: "minimal", payload: scrub(minimalPayload), error: thirdJson },
             ],
           });
         }
