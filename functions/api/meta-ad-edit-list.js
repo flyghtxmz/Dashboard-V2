@@ -44,9 +44,9 @@ export async function onRequest({ request, env }) {
   }
 
   try {
-    const adsUrl = `${API_BASE}/${encodeURIComponent(
+  const adsUrl = `${API_BASE}/${encodeURIComponent(
       account_id
-    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,campaign_id,campaign_name,creative{url_tags,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
+    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,campaign_id,campaign_name,updated_time,creative{url_tags,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
     const adsetIds = Array.from(
@@ -99,6 +99,7 @@ export async function onRequest({ request, env }) {
         campaign_name: campaignName,
         url_tags: ad?.creative?.url_tags || "",
         url: extractUrl(spec),
+        updated_time: ad.updated_time || "",
       };
     });
 

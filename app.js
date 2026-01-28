@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 42;
+const APP_VERSION_BUILD = 43;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -32,6 +32,19 @@ const formatDate = (date) => {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 const defaultDates = () => {
@@ -1463,6 +1476,8 @@ function EditarView({
                 <th>Anúncio</th>
                 <th>URL</th>
                 <th>Parâmetros de URL</th>
+                <th>Status URL</th>
+                <th>Atualizado</th>
                 <th>Status</th>
                 <th>Limpar Parâmetro e Melhorar URL</th>
                 <th>Ação</th>
@@ -1470,9 +1485,21 @@ function EditarView({
             </thead>
             <tbody>
               ${ads.length === 0
-                ? html`<tr><td colSpan="8" className="muted">Sem dados.</td></tr>`
+                ? html`<tr><td colSpan="10" className="muted">Sem dados.</td></tr>`
                 : ads.map((row, idx) => {
                     const busy = saving && saving[row.id];
+                    const urlHasUtm = /\butm_source=/i.test(row.url || "");
+                    const statusUrl = row.url
+                      ? urlHasUtm
+                        ? "OK"
+                        : "Sem UTM"
+                      : "Sem URL";
+                    const statusTone =
+                      statusUrl === "OK"
+                        ? "good"
+                        : statusUrl === "Sem UTM"
+                        ? "warn"
+                        : "off";
                     return html`
                       <tr key=${row.id || idx}>
                         <td>${row.campaign_name || "-"}</td>
@@ -1496,6 +1523,12 @@ function EditarView({
                               onUpdateField(row.id, { url_tags: e.target.value })}
                           />
                         </td>
+                        <td>
+                          <span className=${`status-badge ${statusTone}`}>
+                            ${statusUrl}
+                          </span>
+                        </td>
+                        <td>${formatDateTime(row.updated_time)}</td>
                         <td>${formatStatusLabel(row.status || row.effective_status)}</td>
                         <td>
                           <button
@@ -3186,9 +3219,11 @@ function App() {
           url_tags: row.url_tags || "",
         }),
       });
-      if (res?.data?.url_tags !== undefined) {
+      if (res?.data) {
         updateEditAdField(row.id, {
-          url_tags: res.data.url_tags,
+          url_tags: res.data.url_tags ?? row.url_tags,
+          url: res.data.url ?? row.url,
+          updated_time: new Date().toISOString(),
         });
       }
       pushLog("meta-edit-save", {
