@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 32;
+const APP_VERSION_BUILD = 35;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1423,6 +1423,7 @@ function EditarView({
   saving,
   campaignFilter,
   onCampaignFilter,
+  onCleanParams,
 }) {
   return html`
     <main className="dup-grid">
@@ -1463,12 +1464,13 @@ function EditarView({
                 <th>URL</th>
                 <th>Parâmetros de URL</th>
                 <th>Status</th>
+                <th>Limpar Parâmetro e Melhorar URL</th>
                 <th>Ação</th>
               </tr>
             </thead>
             <tbody>
               ${ads.length === 0
-                ? html`<tr><td colSpan="7" className="muted">Sem dados.</td></tr>`
+                ? html`<tr><td colSpan="8" className="muted">Sem dados.</td></tr>`
                 : ads.map((row, idx) => {
                     const busy = saving && saving[row.id];
                     return html`
@@ -1495,6 +1497,15 @@ function EditarView({
                           />
                         </td>
                         <td>${formatStatusLabel(row.status || row.effective_status)}</td>
+                        <td>
+                          <button
+                            className="ghost small"
+                            disabled=${busy || !row.url}
+                            onClick=${() => onCleanParams?.(row)}
+                          >
+                            Limpar e aplicar
+                          </button>
+                        </td>
                         <td>
                           <button
                             className="ghost small"
@@ -3190,6 +3201,39 @@ function App() {
     }
   };
 
+  const cleanUtmValue = (value) =>
+    (value ?? "")
+      .toString()
+      .replace(/[{}]/g, "")
+      .trim();
+
+  const buildUtmTags = (row) => {
+    const campaignRaw = row.campaign_name || row.campaign_id || "";
+    const adsetRaw = row.adset_name || row.adset_id || "";
+    const adRaw = row.name || row.ad_id || "";
+    const adIdRaw = row.ad_id || row.id || "";
+    const campaign = encodeURIComponent(cleanUtmValue(campaignRaw));
+    const adset = encodeURIComponent(cleanUtmValue(adsetRaw));
+    const ad = encodeURIComponent(cleanUtmValue(adRaw));
+    const adId = encodeURIComponent(cleanUtmValue(adIdRaw));
+    return `utm_source=fb&utm_medium=cpc&utm_campaign=${campaign}&utm_term=${adset}&utm_content=${ad}&ad_id=${adId}`;
+  };
+
+  const stripQuery = (url) => {
+    if (!url) return "";
+    const idx = url.indexOf("?");
+    return idx >= 0 ? url.slice(0, idx) : url;
+  };
+
+  const handleCleanParams = async (row) => {
+    if (!row?.id || !row.url) return;
+    const baseUrl = stripQuery(row.url);
+    const newTags = buildUtmTags(row);
+    const newUrl = `${baseUrl}?${newTags}`;
+    updateEditAdField(row.id, { url: newUrl, url_tags: "" });
+    await handleSaveEditAd({ ...row, url: newUrl, url_tags: "" });
+  };
+
   const handleTokenCheck = async () => {
     setTokenLoading(true);
     setTokenError("");
@@ -4724,6 +4768,7 @@ function App() {
               saving=${editSaving}
               campaignFilter=${editCampaignFilter}
               onCampaignFilter=${setEditCampaignFilter}
+              onCleanParams=${handleCleanParams}
             />
           `
         : activeTab === "cpa"

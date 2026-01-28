@@ -89,6 +89,7 @@ export async function onRequest({ request, env }) {
         ad.campaign_name || nameMap.get(ad.campaign_id) || "";
       return {
         id: ad.id,
+        ad_id: ad.id,
         name: ad.name,
         status: ad.status,
         effective_status: ad.effective_status,
