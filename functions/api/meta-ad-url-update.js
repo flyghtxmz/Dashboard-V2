@@ -55,6 +55,30 @@ function applyUrl(spec, url) {
   return applied;
 }
 
+function buildUrlTagsFromUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const keys = [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "ad_id",
+    ];
+    const parts = [];
+    keys.forEach((k) => {
+      const v = parsed.searchParams.get(k);
+      if (v != null) {
+        parts.push(`${k}=${v}`);
+      }
+    });
+    return parts.join("&");
+  } catch (e) {
+    return "";
+  }
+}
+
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
   if (!token) {
@@ -85,7 +109,7 @@ export async function onRequest({ request, env }) {
     const creativeRes = await fetch(
       `${API_BASE}/${encodeURIComponent(
         ad_id
-      )}?fields=creative{object_story_spec,url_tags,name}&access_token=${token}`
+      )}?fields=creative{object_story_spec,url_tags,name,object_type,asset_feed_spec,image_hash,video_id,instagram_actor_id,call_to_action_type,link_url,object_url}&access_token=${token}`
     );
     const creativeJson = await safeJson(creativeRes);
     if (!creativeRes.ok) {
@@ -95,7 +119,8 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    const originalSpec = creativeJson?.creative?.object_story_spec || {};
+    const creative = creativeJson?.creative || {};
+    const originalSpec = creative.object_story_spec || {};
     const clean = cleanSpec(originalSpec);
     const applied = applyUrl(clean, url);
     if (!applied) {
@@ -105,17 +130,36 @@ export async function onRequest({ request, env }) {
     }
 
     const accountId = account_id_raw.toString().replace(/^act_+/i, "");
+    const tagsFromUrl = buildUrlTagsFromUrl(url);
+    const createPayload = {
+      name: `URL Update - ${ad_id}`,
+      object_story_spec: clean,
+      url_tags: url_tags || tagsFromUrl,
+      object_type: creative.object_type,
+      asset_feed_spec: creative.asset_feed_spec,
+      image_hash: creative.image_hash,
+      video_id: creative.video_id,
+      instagram_actor_id: creative.instagram_actor_id,
+      call_to_action_type: creative.call_to_action_type,
+      link_url: creative.link_url,
+      object_url: creative.object_url,
+      access_token: token,
+    };
+    Object.keys(createPayload).forEach((key) => {
+      if (
+        createPayload[key] === undefined ||
+        createPayload[key] === null ||
+        createPayload[key] === ""
+      ) {
+        delete createPayload[key];
+      }
+    });
     const createRes = await fetch(
       `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `URL Update - ${ad_id}`,
-          object_story_spec: clean,
-          url_tags: url_tags,
-          access_token: token,
-        }),
+        body: JSON.stringify(createPayload),
       }
     );
     const createJson = await safeJson(createRes);
@@ -132,19 +176,38 @@ export async function onRequest({ request, env }) {
           body: JSON.stringify({
             name: `URL Retry - ${ad_id}`,
             object_story_spec: retrySpec,
+            url_tags: url_tags || tagsFromUrl,
             access_token: token,
           }),
         }
       );
       const retryJson = await safeJson(retryRes);
       if (!retryRes.ok) {
-        return jsonResponse(retryRes.status, {
-          error: "Erro Meta",
-          details: retryJson,
-          stage: "create-creative",
-        });
+        const thirdRes = await fetch(
+          `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: `URL Retry2 - ${ad_id}`,
+              object_story_spec: retrySpec,
+              url_tags: url_tags || tagsFromUrl,
+              access_token: token,
+            }),
+          }
+        );
+        const thirdJson = await safeJson(thirdRes);
+        if (!thirdRes.ok) {
+          return jsonResponse(thirdRes.status, {
+            error: "Erro Meta",
+            details: thirdJson,
+            stage: "create-creative",
+          });
+        }
+        createJson.id = thirdJson.id;
+      } else {
+        createJson.id = retryJson.id;
       }
-      createJson.id = retryJson.id;
     }
 
     const creativeId = createJson.id;
