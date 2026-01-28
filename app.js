@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 43;
+const APP_VERSION_BUILD = 44;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1437,6 +1437,8 @@ function EditarView({
   campaignFilter,
   onCampaignFilter,
   onCleanParams,
+  onVerify,
+  verifying,
 }) {
   return html`
     <main className="dup-grid">
@@ -1478,6 +1480,7 @@ function EditarView({
                 <th>Parâmetros de URL</th>
                 <th>Status URL</th>
                 <th>Atualizado</th>
+                <th>Verificado</th>
                 <th>Status</th>
                 <th>Limpar Parâmetro e Melhorar URL</th>
                 <th>Ação</th>
@@ -1485,9 +1488,10 @@ function EditarView({
             </thead>
             <tbody>
               ${ads.length === 0
-                ? html`<tr><td colSpan="10" className="muted">Sem dados.</td></tr>`
+                ? html`<tr><td colSpan="11" className="muted">Sem dados.</td></tr>`
                 : ads.map((row, idx) => {
                     const busy = saving && saving[row.id];
+                    const verifyingRow = verifying && verifying[row.id];
                     const urlHasUtm = /\butm_source=/i.test(row.url || "");
                     const statusUrl = row.url
                       ? urlHasUtm
@@ -1529,6 +1533,7 @@ function EditarView({
                           </span>
                         </td>
                         <td>${formatDateTime(row.updated_time)}</td>
+                        <td>${formatDateTime(row.verified_time)}</td>
                         <td>${formatStatusLabel(row.status || row.effective_status)}</td>
                         <td>
                           <button
@@ -1546,6 +1551,13 @@ function EditarView({
                             onClick=${() => onSave(row)}
                           >
                             ${busy ? "Salvando..." : "Salvar"}
+                          </button>
+                          <button
+                            className="ghost small"
+                            disabled=${verifyingRow}
+                            onClick=${() => onVerify?.(row)}
+                          >
+                            ${verifyingRow ? "Verificando..." : "Verificar"}
                           </button>
                         </td>
                       </tr>
@@ -2632,6 +2644,7 @@ function App() {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState({});
+  const [editVerifying, setEditVerifying] = useState({});
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
@@ -3233,6 +3246,39 @@ function App() {
       pushLog("meta-edit-save", err);
     } finally {
       setEditSaving((prev) => ({ ...prev, [row.id]: false }));
+    }
+  };
+
+  const extractUrlFromSpec = (spec) => {
+    if (!spec || typeof spec !== "object") return "";
+    if (spec.link_data?.link) return spec.link_data.link;
+    const linkFromVideo = spec.video_data?.call_to_action?.value?.link;
+    if (linkFromVideo) return linkFromVideo;
+    return "";
+  };
+
+  const handleVerifyEditAd = async (row) => {
+    if (!row?.id) return;
+    setEditVerifying((prev) => ({ ...prev, [row.id]: true }));
+    try {
+      const res = await fetchJson(
+        `${API_BASE}/meta-ad-verify?${new URLSearchParams({
+          ad_id: row.id,
+        }).toString()}`
+      );
+      const data = res?.data || {};
+      const spec = data?.creative?.object_story_spec || {};
+      const url = extractUrlFromSpec(spec) || row.url;
+      updateEditAdField(row.id, {
+        status: data.status || row.status,
+        effective_status: data.effective_status || row.effective_status,
+        url,
+        verified_time: new Date().toISOString(),
+      });
+    } catch (err) {
+      pushLog("meta-edit-verify", err);
+    } finally {
+      setEditVerifying((prev) => ({ ...prev, [row.id]: false }));
     }
   };
 
@@ -4804,6 +4850,8 @@ function App() {
               campaignFilter=${editCampaignFilter}
               onCampaignFilter=${setEditCampaignFilter}
               onCleanParams=${handleCleanParams}
+              onVerify=${handleVerifyEditAd}
+              verifying=${editVerifying}
             />
           `
         : activeTab === "cpa"
