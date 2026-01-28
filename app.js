@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 31;
+const APP_VERSION_BUILD = 32;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1421,6 +1421,8 @@ function EditarView({
   onUpdateField,
   onSave,
   saving,
+  campaignFilter,
+  onCampaignFilter,
 }) {
   return html`
     <main className="dup-grid">
@@ -1436,6 +1438,17 @@ function EditarView({
             </button>
             <span className="chip neutral">${ads.length} anúncios</span>
           </div>
+        </div>
+        <div className="filters">
+          <label className="field">
+            <span>Filtrar por campanha</span>
+            <input
+              type="text"
+              placeholder="Digite parte do nome da campanha"
+              value=${campaignFilter}
+              onInput=${(e) => onCampaignFilter?.(e.target.value)}
+            />
+          </label>
         </div>
         ${error
           ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>`
@@ -2575,6 +2588,7 @@ function App() {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState({});
+  const [editCampaignFilter, setEditCampaignFilter] = useState("");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -4299,6 +4313,14 @@ function App() {
     return { spendBrl };
   }, [filteredMeta]);
 
+  const filteredEditAds = useMemo(() => {
+    const term = editCampaignFilter.trim().toLowerCase();
+    if (!term) return editAds;
+    return (editAds || []).filter((row) =>
+      (row.campaign_name || "").toLowerCase().includes(term)
+    );
+  }, [editAds, editCampaignFilter]);
+
   const isMultiDay = useMemo(() => {
     const startRaw = appliedFilters?.startDate || filters.startDate;
     const endRaw = appliedFilters?.endDate || filters.endDate;
@@ -4693,13 +4715,15 @@ function App() {
         : activeTab === "editar"
         ? html`
             <${EditarView}
-              ads=${editAds}
+              ads=${filteredEditAds}
               loading=${editLoading}
               error=${editError}
               onLoad=${handleLoadEditar}
               onUpdateField=${updateEditAdField}
               onSave=${handleSaveEditAd}
               saving=${editSaving}
+              campaignFilter=${editCampaignFilter}
+              onCampaignFilter=${setEditCampaignFilter}
             />
           `
         : activeTab === "cpa"

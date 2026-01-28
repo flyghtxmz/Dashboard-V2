@@ -49,17 +49,53 @@ export async function onRequest({ request, env }) {
     )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,campaign_id,campaign_name,creative{url_tags,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
+    const adsetIds = Array.from(
+      new Set((ads || []).map((ad) => ad.adset_id).filter(Boolean))
+    );
+    const campaignIds = Array.from(
+      new Set((ads || []).map((ad) => ad.campaign_id).filter(Boolean))
+    );
+    const nameMap = new Map();
+    const chunkSize = 50;
+    for (let i = 0; i < adsetIds.length; i += chunkSize) {
+      const chunk = adsetIds.slice(i, i + chunkSize);
+      const res = await fetch(
+        `${API_BASE}/?ids=${chunk.join(",")}&fields=name&access_token=${token}`
+      );
+      const json = await safeJson(res);
+      if (json && typeof json === "object") {
+        Object.entries(json).forEach(([id, value]) => {
+          if (value?.name) nameMap.set(id, value.name);
+        });
+      }
+    }
+    for (let i = 0; i < campaignIds.length; i += chunkSize) {
+      const chunk = campaignIds.slice(i, i + chunkSize);
+      const res = await fetch(
+        `${API_BASE}/?ids=${chunk.join(",")}&fields=name&access_token=${token}`
+      );
+      const json = await safeJson(res);
+      if (json && typeof json === "object") {
+        Object.entries(json).forEach(([id, value]) => {
+          if (value?.name) nameMap.set(id, value.name);
+        });
+      }
+    }
+
     const rows = (ads || []).map((ad) => {
       const spec = ad?.creative?.object_story_spec || {};
+      const adsetName = ad.adset_name || nameMap.get(ad.adset_id) || "";
+      const campaignName =
+        ad.campaign_name || nameMap.get(ad.campaign_id) || "";
       return {
         id: ad.id,
         name: ad.name,
         status: ad.status,
         effective_status: ad.effective_status,
         adset_id: ad.adset_id,
-        adset_name: ad.adset_name,
+        adset_name: adsetName,
         campaign_id: ad.campaign_id,
-        campaign_name: ad.campaign_name,
+        campaign_name: campaignName,
         url_tags: ad?.creative?.url_tags || "",
         url: extractUrl(spec),
       };
