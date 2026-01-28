@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 45;
+const APP_VERSION_BUILD = 46;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1477,6 +1477,7 @@ function EditarView({
                 <th>Conjunto</th>
                 <th>Anúncio</th>
                 <th>URL</th>
+                <th>Destino (URL)</th>
                 <th>Parâmetros de URL</th>
                 <th>Status URL</th>
                 <th>Atualizado</th>
@@ -1488,7 +1489,7 @@ function EditarView({
             </thead>
             <tbody>
               ${ads.length === 0
-                ? html`<tr><td colSpan="11" className="muted">Sem dados.</td></tr>`
+                ? html`<tr><td colSpan="12" className="muted">Sem dados.</td></tr>`
                 : ads.map((row, idx) => {
                     const busy = saving && saving[row.id];
                     const verifyingRow = verifying && verifying[row.id];
@@ -1523,6 +1524,15 @@ function EditarView({
                             onInput=${(e) =>
                               onUpdateField(row.id, { url: e.target.value })}
                           />
+                        </td>
+                        <td>
+                          ${row.destination_url
+                            ? html`<a href=${row.destination_url} target="_blank" rel="noopener noreferrer">
+                                ${row.destination_url}
+                              </a>`
+                            : row.object_story_id
+                            ? html`<span className="muted small">Post existente</span>`
+                            : html`<span className="muted small">Sem destino</span>`}
                         </td>
                         <td>
                           <input
@@ -3277,12 +3287,20 @@ function App() {
       const url = extractUrlFromSpec(spec) || row.url;
       const urlTags = data?.creative?.url_tags ?? row.url_tags ?? "";
       const storyId = data?.creative?.object_story_id || row.object_story_id || "";
+      const destination =
+        data?.creative?.link_url ||
+        data?.creative?.object_url ||
+        extractUrlFromSpec(spec) ||
+        row.destination_url ||
+        row.url ||
+        "";
       updateEditAdField(row.id, {
         status: data.status || row.status,
         effective_status: data.effective_status || row.effective_status,
         url,
         url_tags: urlTags,
         object_story_id: storyId,
+        destination_url: destination,
         verified_time: new Date().toISOString(),
       });
     } catch (err) {

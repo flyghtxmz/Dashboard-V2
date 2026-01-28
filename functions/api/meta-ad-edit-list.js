@@ -46,7 +46,7 @@ export async function onRequest({ request, env }) {
   try {
   const adsUrl = `${API_BASE}/${encodeURIComponent(
       account_id
-    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,campaign_id,campaign_name,updated_time,creative{url_tags,object_story_id,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
+    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,campaign_id,campaign_name,updated_time,creative{url_tags,object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
     const adsetIds = Array.from(
@@ -87,6 +87,10 @@ export async function onRequest({ request, env }) {
       const adsetName = ad.adset_name || nameMap.get(ad.adset_id) || "";
       const campaignName =
         ad.campaign_name || nameMap.get(ad.campaign_id) || "";
+      const destination =
+        ad?.creative?.link_url ||
+        ad?.creative?.object_url ||
+        extractUrl(spec);
       return {
         id: ad.id,
         ad_id: ad.id,
@@ -100,6 +104,7 @@ export async function onRequest({ request, env }) {
         url_tags: ad?.creative?.url_tags || "",
         url: extractUrl(spec),
         object_story_id: ad?.creative?.object_story_id || "",
+        destination_url: destination || "",
         updated_time: ad.updated_time || "",
       };
     });

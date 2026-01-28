@@ -22,7 +22,7 @@ export async function onRequest({ request, env }) {
   const q = new URLSearchParams();
   q.set(
     "fields",
-    "id,name,status,effective_status,adset_id,campaign_id,creative{object_story_spec,object_story_id,url_tags}"
+    "id,name,status,effective_status,adset_id,campaign_id,creative{object_story_spec,object_story_id,url_tags,link_url,object_url}"
   );
   q.set("access_token", token);
 
