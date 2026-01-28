@@ -1,0 +1,75 @@
+import { jsonResponse, getQuery, getMetaToken, safeJson } from "../_utils.js";
+
+const API_BASE = "https://graph.facebook.com/v24.0";
+
+async function fetchAll(url) {
+  const results = [];
+  let next = url;
+  while (next) {
+    const res = await fetch(next);
+    const json = await safeJson(res);
+    if (!res.ok) {
+      const err = new Error("Erro Meta");
+      err.details = json;
+      throw err;
+    }
+    results.push(...(json.data || []));
+    next = json?.paging?.next || null;
+  }
+  return results;
+}
+
+function extractUrl(spec) {
+  if (!spec || typeof spec !== "object") return "";
+  if (spec.link_data?.link) return spec.link_data.link;
+  const linkFromVideo = spec.video_data?.call_to_action?.value?.link;
+  if (linkFromVideo) return linkFromVideo;
+  return "";
+}
+
+export async function onRequest({ request, env }) {
+  const token = getMetaToken(env);
+  if (!token) {
+    return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
+  }
+
+  if (request.method !== "GET") {
+    return jsonResponse(405, { error: "Method not allowed" });
+  }
+
+  const params = getQuery(request);
+  const account_id = params.get("account_id");
+  if (!account_id) {
+    return jsonResponse(400, { error: "Parametros obrigatorios: account_id" });
+  }
+
+  try {
+    const adsUrl = `${API_BASE}/${encodeURIComponent(
+      account_id
+    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,campaign_id,campaign_name,creative{url_tags,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
+    const ads = await fetchAll(adsUrl);
+
+    const rows = (ads || []).map((ad) => {
+      const spec = ad?.creative?.object_story_spec || {};
+      return {
+        id: ad.id,
+        name: ad.name,
+        status: ad.status,
+        effective_status: ad.effective_status,
+        adset_id: ad.adset_id,
+        adset_name: ad.adset_name,
+        campaign_id: ad.campaign_id,
+        campaign_name: ad.campaign_name,
+        url_tags: ad?.creative?.url_tags || "",
+        url: extractUrl(spec),
+      };
+    });
+
+    return jsonResponse(200, { code: "success", data: rows });
+  } catch (error) {
+    return jsonResponse(500, {
+      error: "Erro ao consultar Meta",
+      details: error.details || error.message,
+    });
+  }
+}

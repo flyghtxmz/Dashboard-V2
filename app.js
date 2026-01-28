@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 30;
+const APP_VERSION_BUILD = 31;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1413,6 +1413,99 @@ function DuplicarView({
   `;
 }
 
+function EditarView({
+  ads,
+  loading,
+  error,
+  onLoad,
+  onUpdateField,
+  onSave,
+  saving,
+}) {
+  return html`
+    <main className="dup-grid">
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Editar</span>
+            <h2 className="section-title">URLs e parâmetros</h2>
+          </div>
+          <div className="chip-group">
+            <button className="ghost" onClick=${onLoad} disabled=${loading}>
+              ${loading ? "Carregando..." : "Carregar anúncios"}
+            </button>
+            <span className="chip neutral">${ads.length} anúncios</span>
+          </div>
+        </div>
+        ${error
+          ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>`
+          : null}
+        <div className="table-wrapper scroll-x" style=${{ marginTop: "12px" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Campanha</th>
+                <th>Conjunto</th>
+                <th>Anúncio</th>
+                <th>URL</th>
+                <th>Parâmetros de URL</th>
+                <th>Status</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ads.length === 0
+                ? html`<tr><td colSpan="7" className="muted">Sem dados.</td></tr>`
+                : ads.map((row, idx) => {
+                    const busy = saving && saving[row.id];
+                    return html`
+                      <tr key=${row.id || idx}>
+                        <td>${row.campaign_name || "-"}</td>
+                        <td>${row.adset_name || "-"}</td>
+                        <td>${row.name || "-"}</td>
+                        <td>
+                          <input
+                            type="text"
+                            value=${row.url || ""}
+                            placeholder="https://..."
+                            onInput=${(e) =>
+                              onUpdateField(row.id, { url: e.target.value })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            value=${row.url_tags || ""}
+                            placeholder="utm_source=..."
+                            onInput=${(e) =>
+                              onUpdateField(row.id, { url_tags: e.target.value })}
+                          />
+                        </td>
+                        <td>${formatStatusLabel(row.status || row.effective_status)}</td>
+                        <td>
+                          <button
+                            className="ghost small"
+                            disabled=${busy || !row.url}
+                            onClick=${() => onSave(row)}
+                          >
+                            ${busy ? "Salvando..." : "Salvar"}
+                          </button>
+                        </td>
+                      </tr>
+                    `;
+                  })}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted small">
+          Editar URL e parâmetros cria um novo criativo e atualiza o anúncio.
+          Se algum anúncio não tiver link, ele não será atualizado.
+        </p>
+      </section>
+    </main>
+  `;
+}
+
 function MetaJoinTable({
   rows,
   adsetFilter,
@@ -2478,6 +2571,10 @@ function App() {
   const [controleLoading, setControleLoading] = useState(false);
   const [controleResult, setControleResult] = useState(null);
   const [controleError, setControleError] = useState("");
+  const [editAds, setEditAds] = useState([]);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editSaving, setEditSaving] = useState({});
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -3011,6 +3108,71 @@ function App() {
       });
     } catch (err) {
       pushLog("duplicar-delete", err);
+    }
+  };
+
+  const handleLoadEditar = async () => {
+    if (!filters.metaAccountId.trim()) {
+      setEditError("Informe o ID da conta de anúncios (Meta).");
+      return;
+    }
+    setEditLoading(true);
+    setEditError("");
+    try {
+      const res = await fetchJson(
+        `${API_BASE}/meta-ad-edit-list?${new URLSearchParams({
+          account_id: filters.metaAccountId.trim(),
+        }).toString()}`,
+        {
+          cacheTtlMs: 5 * 60 * 1000,
+          cacheKey: `meta-edit-list:${filters.metaAccountId.trim()}`,
+          force: true,
+        }
+      );
+      setEditAds(res.data || []);
+    } catch (err) {
+      setEditError(formatError(err));
+      pushLog("meta-edit-list", err);
+      setEditAds([]);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const updateEditAdField = (adId, patch) => {
+    if (!adId) return;
+    setEditAds((prev) =>
+      (prev || []).map((row) =>
+        row.id === adId ? { ...row, ...patch } : row
+      )
+    );
+  };
+
+  const handleSaveEditAd = async (row) => {
+    if (!row?.id) return;
+    setEditSaving((prev) => ({ ...prev, [row.id]: true }));
+    try {
+      const res = await fetchJson(`${API_BASE}/meta-ad-url-update`, {
+        method: "POST",
+        body: JSON.stringify({
+          ad_id: row.id,
+          account_id: filters.metaAccountId.trim(),
+          url: row.url || "",
+          url_tags: row.url_tags || "",
+        }),
+      });
+      if (res?.data?.url_tags !== undefined) {
+        updateEditAdField(row.id, {
+          url_tags: res.data.url_tags,
+        });
+      }
+      pushLog("meta-edit-save", {
+        message: `URL atualizada: ${row.name || row.id}`,
+      });
+    } catch (err) {
+      pushLog("meta-edit-save", err);
+    } finally {
+      setEditSaving((prev) => ({ ...prev, [row.id]: false }));
     }
   };
 
@@ -4421,6 +4583,12 @@ function App() {
           Duplicar
         </button>
         <button
+          className=${`tab ${activeTab === "editar" ? "active" : ""}`}
+          onClick=${() => setActiveTab("editar")}
+        >
+          Editar
+        </button>
+        <button
           className=${`tab ${activeTab === "cpa" ? "active" : ""}`}
           onClick=${() => setActiveTab("cpa")}
         >
@@ -4520,6 +4688,18 @@ function App() {
               selectedAdsets=${selectedAdsets}
               onToggleAdset=${toggleSelectAdset}
               onDeleteAdsets=${handleDeleteAdsets}
+            />
+          `
+        : activeTab === "editar"
+        ? html`
+            <${EditarView}
+              ads=${editAds}
+              loading=${editLoading}
+              error=${editError}
+              onLoad=${handleLoadEditar}
+              onUpdateField=${updateEditAdField}
+              onSave=${handleSaveEditAd}
+              saving=${editSaving}
             />
           `
         : activeTab === "cpa"
