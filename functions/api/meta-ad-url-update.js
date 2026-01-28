@@ -122,7 +122,7 @@ export async function onRequest({ request, env }) {
     const creativeRes = await fetch(
       `${API_BASE}/${encodeURIComponent(
         ad_id
-      )}?fields=creative{object_story_spec,url_tags,name,object_type,asset_feed_spec,image_hash,video_id,instagram_actor_id,call_to_action_type,link_url,object_url}&access_token=${token}`
+      )}?fields=creative{object_story_spec,object_story_id,effective_object_story_id,url_tags,name,object_type,asset_feed_spec,image_hash,video_id,instagram_actor_id,call_to_action_type,link_url,object_url}&access_token=${token}`
     );
     const creativeJson = await safeJson(creativeRes);
     if (!creativeRes.ok) {
@@ -144,13 +144,23 @@ export async function onRequest({ request, env }) {
 
     const accountId = account_id_raw.toString().replace(/^act_+/i, "");
     const tagsFromUrl = buildUrlTagsFromUrl(url);
-    const createPayload = {
-      name: `URL Update - ${ad_id}`,
-      object_story_spec: clean,
-      url_tags: url_tags || tagsFromUrl,
-      object_type: creative.object_type,
-      access_token: token,
-    };
+    const storyId =
+      creative.object_story_id || creative.effective_object_story_id || "";
+    const useStoryId = !!storyId;
+    const createPayload = useStoryId
+      ? {
+          name: `URL Update - ${ad_id}`,
+          object_story_id: storyId,
+          url_tags: url_tags || tagsFromUrl,
+          access_token: token,
+        }
+      : {
+          name: `URL Update - ${ad_id}`,
+          object_story_spec: clean,
+          url_tags: url_tags || tagsFromUrl,
+          object_type: creative.object_type,
+          access_token: token,
+        };
     Object.keys(createPayload).forEach((key) => {
       if (
         createPayload[key] === undefined ||
@@ -169,7 +179,7 @@ export async function onRequest({ request, env }) {
       }
     );
     const createJson = await safeJson(createRes);
-    if (!createRes.ok) {
+    if (!createRes.ok && !useStoryId) {
       const retrySpec = deepClone(clean);
       if (retrySpec.video_data?.video_id && retrySpec.link_data) {
         delete retrySpec.link_data;
@@ -208,6 +218,11 @@ export async function onRequest({ request, env }) {
           name: `URL Retry2 - ${ad_id}`,
           object_story_spec: minimalSpec,
           url_tags: url_tags || tagsFromUrl,
+          degrees_of_freedom_spec: {
+            creative_features_spec: {
+              standard_enhancements: { enroll_status: "OPT_OUT" },
+            },
+          },
           access_token: token,
         };
         const thirdRes = await fetch(
@@ -231,7 +246,7 @@ export async function onRequest({ request, env }) {
             details: thirdJson,
             stage: "create-creative",
             attempts: [
-              { type: "default", payload: scrub(createPayload), error: createJson },
+              { type: useStoryId ? "story-id" : "default", payload: scrub(createPayload), error: createJson },
               { type: "retry", payload: scrub(retryPayload), error: retryJson },
               { type: "minimal", payload: scrub(minimalPayload), error: thirdJson },
             ],
@@ -241,6 +256,16 @@ export async function onRequest({ request, env }) {
       } else {
         createJson.id = retryJson.id;
       }
+    }
+    if (!createRes.ok && useStoryId) {
+      return jsonResponse(createRes.status, {
+        error: "Erro Meta",
+        details: createJson,
+        stage: "create-creative",
+        attempts: [
+          { type: "story-id", payload: { name: createPayload.name, object_story_id: createPayload.object_story_id, url_tags: createPayload.url_tags }, error: createJson },
+        ],
+      });
     }
 
     const creativeId = createJson.id;
