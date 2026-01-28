@@ -28,6 +28,9 @@ function cleanSpec(spec) {
       delete clean.video_data.image_url;
     }
   }
+  if (clean.video_data?.video_id && clean.link_data) {
+    delete clean.link_data;
+  }
   return clean;
 }
 
@@ -35,6 +38,14 @@ function applyUrl(spec, url) {
   let applied = false;
   if (spec.link_data) {
     spec.link_data.link = url;
+    if (Array.isArray(spec.link_data.child_attachments)) {
+      spec.link_data.child_attachments = spec.link_data.child_attachments.map(
+        (child) => ({
+          ...child,
+          link: child.link || url,
+        })
+      );
+    }
     applied = true;
   }
   if (spec.video_data?.call_to_action?.value) {
@@ -109,11 +120,31 @@ export async function onRequest({ request, env }) {
     );
     const createJson = await safeJson(createRes);
     if (!createRes.ok) {
-      return jsonResponse(createRes.status, {
-        error: "Erro Meta",
-        details: createJson,
-        stage: "create-creative",
-      });
+      const retrySpec = deepClone(clean);
+      if (retrySpec.video_data?.video_id && retrySpec.link_data) {
+        delete retrySpec.link_data;
+      }
+      const retryRes = await fetch(
+        `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: `URL Retry - ${ad_id}`,
+            object_story_spec: retrySpec,
+            access_token: token,
+          }),
+        }
+      );
+      const retryJson = await safeJson(retryRes);
+      if (!retryRes.ok) {
+        return jsonResponse(retryRes.status, {
+          error: "Erro Meta",
+          details: retryJson,
+          stage: "create-creative",
+        });
+      }
+      createJson.id = retryJson.id;
     }
 
     const creativeId = createJson.id;
