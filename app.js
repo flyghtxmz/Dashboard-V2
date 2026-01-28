@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 49;
+const APP_VERSION_BUILD = 50;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1626,7 +1626,7 @@ function EditarView({
                             disabled=${busy || !row.url}
                             onClick=${() => onSave(row)}
                           >
-                            ${busy ? "Salvando..." : "Salvar"}
+                            ${busy ? "Duplicando..." : "Duplicar com URL"}
                           </button>
                           <button
                             className="ghost small"
@@ -1643,8 +1643,8 @@ function EditarView({
           </table>
         </div>
         <p className="muted small">
-          Editar URL e parâmetros cria um novo criativo e atualiza o anúncio.
-          Se algum anúncio não tiver link, ele não será atualizado.
+          "Duplicar com URL" cria um novo anúncio com a URL/UTM informada (via /copies),
+          mantendo o criativo original sem virar "Post existente".
         </p>
       </section>
     </main>
@@ -3323,28 +3323,24 @@ function App() {
     if (!row?.id) return;
     setEditSaving((prev) => ({ ...prev, [row.id]: true }));
     try {
-      const res = await fetchJson(`${API_BASE}/meta-ad-url-update`, {
+      const res = await fetchJson(`${API_BASE}/meta-ad-copy-url`, {
         method: "POST",
         body: JSON.stringify({
           ad_id: row.id,
-          account_id: filters.metaAccountId.trim(),
-          url: row.url || "",
+          adset_id: row.adset_id,
+          link_url: row.url || "",
           url_tags: row.url_tags || "",
+          name: row.name,
+          status_option: "PAUSED",
         }),
       });
-      if (res?.data) {
+      if (res?.data?.ad_ids?.length) {
         updateEditAdField(row.id, {
-          url_tags: res.data.url_tags ?? row.url_tags,
-          url: res.data.url ?? row.url,
-          destination_url: res.data.url ?? row.destination_url,
           updated_time: new Date().toISOString(),
         });
-        const cache = loadEditDestinationCache();
-        cache[row.id] = res.data.url ?? row.destination_url ?? row.url ?? "";
-        saveEditDestinationCache(cache);
       }
       pushLog("meta-edit-save", {
-        message: `URL atualizada: ${row.name || row.id}`,
+        message: `Anuncio duplicado: ${row.name || row.id}`,
       });
     } catch (err) {
       pushLog("meta-edit-save", err);
