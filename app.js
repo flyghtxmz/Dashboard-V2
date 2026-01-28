@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 47;
+const APP_VERSION_BUILD = 48;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -3351,6 +3351,29 @@ function App() {
     return "";
   };
 
+  const resolvePostDestination = async (storyId) => {
+    if (!storyId) return "";
+    try {
+      const res = await fetchJson(
+        `${API_BASE}/meta-post-destination?${new URLSearchParams({
+          object_story_id: storyId,
+        }).toString()}`,
+        {
+          cacheTtlMs: 10 * 60 * 1000,
+          cacheKey: `post-dest:${storyId}`,
+        }
+      );
+      return (
+        res?.data?.link ||
+        res?.data?.attachment_url ||
+        res?.data?.permalink_url ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  };
+
   const handleVerifyEditAd = async (row) => {
     if (!row?.id) return;
     setEditVerifying((prev) => ({ ...prev, [row.id]: true }));
@@ -3365,13 +3388,16 @@ function App() {
       const url = extractUrlFromSpec(spec) || row.url;
       const urlTags = data?.creative?.url_tags ?? row.url_tags ?? "";
       const storyId = data?.creative?.object_story_id || row.object_story_id || "";
-      const destination =
+      let destination =
         data?.creative?.link_url ||
         data?.creative?.object_url ||
         extractUrlFromSpec(spec) ||
         row.destination_url ||
         row.url ||
         "";
+      if (!destination && storyId) {
+        destination = await resolvePostDestination(storyId);
+      }
       updateEditAdField(row.id, {
         status: data.status || row.status,
         effective_status: data.effective_status || row.effective_status,
@@ -3381,9 +3407,9 @@ function App() {
         destination_url: destination,
         verified_time: new Date().toISOString(),
       });
-      const cache = loadEditDestinationCache();
-      cache[row.id] = destination || "";
-      saveEditDestinationCache(cache);
+        const cache = loadEditDestinationCache();
+        cache[row.id] = destination || "";
+        saveEditDestinationCache(cache);
     } catch (err) {
       pushLog("meta-edit-verify", err);
     } finally {
