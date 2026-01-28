@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 48;
+const APP_VERSION_BUILD = 49;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1442,6 +1442,7 @@ function EditarView({
   onRenameAd,
   onRenameAdset,
   editRenaming,
+  onResolveDestination,
 }) {
   return html`
     <main className="dup-grid">
@@ -1541,7 +1542,16 @@ function EditarView({
                                 ${row.destination_url}
                               </a>`
                             : row.object_story_id
-                            ? html`<span className="muted small">Post existente</span>`
+                            ? html`<div className="inline-actions">
+                                <span className="muted small">Post existente</span>
+                                <button
+                                  className="ghost small"
+                                  disabled=${verifyingRow}
+                                  onClick=${() => onResolveDestination?.(row)}
+                                >
+                                  ${verifyingRow ? "..." : "Resolver"}
+                                </button>
+                              </div>`
                             : html`<span className="muted small">Sem destino</span>`}
                         </td>
                         <td>
@@ -3374,6 +3384,23 @@ function App() {
     }
   };
 
+  const handleResolveDestination = async (row) => {
+    if (!row?.object_story_id) return;
+    setEditVerifying((prev) => ({ ...prev, [row.id]: true }));
+    try {
+      const destination = await resolvePostDestination(row.object_story_id);
+      updateEditAdField(row.id, {
+        destination_url: destination || row.destination_url || "",
+        verified_time: new Date().toISOString(),
+      });
+      const cache = loadEditDestinationCache();
+      cache[row.id] = destination || row.destination_url || "";
+      saveEditDestinationCache(cache);
+    } finally {
+      setEditVerifying((prev) => ({ ...prev, [row.id]: false }));
+    }
+  };
+
   const handleVerifyEditAd = async (row) => {
     if (!row?.id) return;
     setEditVerifying((prev) => ({ ...prev, [row.id]: true }));
@@ -5027,6 +5054,7 @@ function App() {
               onRenameAdset=${(id, name, key) =>
                 handleRenameObject(id, name, key)}
               editRenaming=${editRenaming}
+              onResolveDestination=${handleResolveDestination}
             />
           `
         : activeTab === "cpa"
