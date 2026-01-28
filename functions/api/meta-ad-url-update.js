@@ -136,13 +136,6 @@ export async function onRequest({ request, env }) {
       object_story_spec: clean,
       url_tags: url_tags || tagsFromUrl,
       object_type: creative.object_type,
-      asset_feed_spec: creative.asset_feed_spec,
-      image_hash: creative.image_hash,
-      video_id: creative.video_id,
-      instagram_actor_id: creative.instagram_actor_id,
-      call_to_action_type: creative.call_to_action_type,
-      link_url: creative.link_url,
-      object_url: creative.object_url,
       access_token: token,
     };
     Object.keys(createPayload).forEach((key) => {
@@ -168,32 +161,48 @@ export async function onRequest({ request, env }) {
       if (retrySpec.video_data?.video_id && retrySpec.link_data) {
         delete retrySpec.link_data;
       }
+      const retryPayload = {
+        name: `URL Retry - ${ad_id}`,
+        object_story_spec: retrySpec,
+        url_tags: url_tags || tagsFromUrl,
+        access_token: token,
+      };
       const retryRes = await fetch(
         `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: `URL Retry - ${ad_id}`,
-            object_story_spec: retrySpec,
-            url_tags: url_tags || tagsFromUrl,
-            access_token: token,
-          }),
+          body: JSON.stringify(retryPayload),
         }
       );
       const retryJson = await safeJson(retryRes);
       if (!retryRes.ok) {
+        const minimalSpec = deepClone(retrySpec);
+        if (minimalSpec.link_data) {
+          delete minimalSpec.link_data.message;
+          delete minimalSpec.link_data.caption;
+          delete minimalSpec.link_data.description;
+          delete minimalSpec.link_data.call_to_action;
+          delete minimalSpec.link_data.child_attachments;
+        }
+        if (minimalSpec.video_data) {
+          delete minimalSpec.video_data.message;
+          delete minimalSpec.video_data.call_to_action;
+          delete minimalSpec.video_data.title;
+          delete minimalSpec.video_data.link_description;
+        }
+        const minimalPayload = {
+          name: `URL Retry2 - ${ad_id}`,
+          object_story_spec: minimalSpec,
+          url_tags: url_tags || tagsFromUrl,
+          access_token: token,
+        };
         const thirdRes = await fetch(
           `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: `URL Retry2 - ${ad_id}`,
-              object_story_spec: retrySpec,
-              url_tags: url_tags || tagsFromUrl,
-              access_token: token,
-            }),
+            body: JSON.stringify(minimalPayload),
           }
         );
         const thirdJson = await safeJson(thirdRes);
@@ -202,6 +211,11 @@ export async function onRequest({ request, env }) {
             error: "Erro Meta",
             details: thirdJson,
             stage: "create-creative",
+            attempts: [
+              { type: "default", payload: createPayload, error: createJson },
+              { type: "retry", payload: retryPayload, error: retryJson },
+              { type: "minimal", payload: minimalPayload, error: thirdJson },
+            ],
           });
         }
         createJson.id = thirdJson.id;
