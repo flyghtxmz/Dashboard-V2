@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 44;
+const APP_VERSION_BUILD = 45;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1492,15 +1492,21 @@ function EditarView({
                 : ads.map((row, idx) => {
                     const busy = saving && saving[row.id];
                     const verifyingRow = verifying && verifying[row.id];
-                    const urlHasUtm = /\butm_source=/i.test(row.url || "");
+                    const urlHasUtm =
+                      /\butm_source=/i.test(row.url || "") ||
+                      /\butm_source=/i.test(row.url_tags || "");
                     const statusUrl = row.url
                       ? urlHasUtm
                         ? "OK"
                         : "Sem UTM"
+                      : row.object_story_id
+                      ? "Post existente"
                       : "Sem URL";
                     const statusTone =
                       statusUrl === "OK"
                         ? "good"
+                        : statusUrl === "Post existente"
+                        ? "neutral"
                         : statusUrl === "Sem UTM"
                         ? "warn"
                         : "off";
@@ -3269,10 +3275,14 @@ function App() {
       const data = res?.data || {};
       const spec = data?.creative?.object_story_spec || {};
       const url = extractUrlFromSpec(spec) || row.url;
+      const urlTags = data?.creative?.url_tags ?? row.url_tags ?? "";
+      const storyId = data?.creative?.object_story_id || row.object_story_id || "";
       updateEditAdField(row.id, {
         status: data.status || row.status,
         effective_status: data.effective_status || row.effective_status,
         url,
+        url_tags: urlTags,
+        object_story_id: storyId,
         verified_time: new Date().toISOString(),
       });
     } catch (err) {
