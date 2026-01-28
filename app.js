@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 46;
+const APP_VERSION_BUILD = 47;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1439,6 +1439,9 @@ function EditarView({
   onCleanParams,
   onVerify,
   verifying,
+  onRenameAd,
+  onRenameAdset,
+  editRenaming,
 }) {
   return html`
     <main className="dup-grid">
@@ -1483,16 +1486,23 @@ function EditarView({
                 <th>Atualizado</th>
                 <th>Verificado</th>
                 <th>Status</th>
+                <th>Renomear anúncio</th>
+                <th>Renomear conjunto</th>
                 <th>Limpar Parâmetro e Melhorar URL</th>
                 <th>Ação</th>
               </tr>
             </thead>
             <tbody>
               ${ads.length === 0
-                ? html`<tr><td colSpan="12" className="muted">Sem dados.</td></tr>`
+                ? html`<tr><td colSpan="14" className="muted">Sem dados.</td></tr>`
                 : ads.map((row, idx) => {
                     const busy = saving && saving[row.id];
                     const verifyingRow = verifying && verifying[row.id];
+                    const renameAdKey = `ad:${row.id}`;
+                    const renameAdsetKey = row.adset_id ? `adset:${row.adset_id}` : "";
+                    const renamingAd = editRenaming && editRenaming[renameAdKey];
+                    const renamingAdset =
+                      renameAdsetKey && editRenaming && editRenaming[renameAdsetKey];
                     const urlHasUtm =
                       /\butm_source=/i.test(row.url || "") ||
                       /\butm_source=/i.test(row.url_tags || "");
@@ -1551,6 +1561,46 @@ function EditarView({
                         <td>${formatDateTime(row.updated_time)}</td>
                         <td>${formatDateTime(row.verified_time)}</td>
                         <td>${formatStatusLabel(row.status || row.effective_status)}</td>
+                        <td>
+                          <div className="inline-actions">
+                            <input
+                              type="text"
+                              value=${row.name || ""}
+                              onInput=${(e) =>
+                                onUpdateField(row.id, { name: e.target.value })}
+                            />
+                            <button
+                              className="ghost small"
+                              disabled=${renamingAd || !row.name}
+                              onClick=${() =>
+                                onRenameAd?.(row.id, row.name, renameAdKey)}
+                            >
+                              ${renamingAd ? "..." : "Salvar"}
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="inline-actions">
+                            <input
+                              type="text"
+                              value=${row.adset_name || ""}
+                              onInput=${(e) =>
+                                onUpdateField(row.id, { adset_name: e.target.value })}
+                            />
+                            <button
+                              className="ghost small"
+                              disabled=${renamingAdset || !row.adset_id}
+                              onClick=${() =>
+                                onRenameAdset?.(
+                                  row.adset_id,
+                                  row.adset_name,
+                                  renameAdsetKey
+                                )}
+                            >
+                              ${renamingAdset ? "..." : "Salvar"}
+                            </button>
+                          </div>
+                        </td>
                         <td>
                           <button
                             className="ghost small"
@@ -2661,6 +2711,7 @@ function App() {
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState({});
   const [editVerifying, setEditVerifying] = useState({});
+  const [editRenaming, setEditRenaming] = useState({});
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
@@ -3198,6 +3249,23 @@ function App() {
     }
   };
 
+  const loadEditDestinationCache = () => {
+    try {
+      const raw = localStorage.getItem("__cd_edit_dest__");
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  };
+
+  const saveEditDestinationCache = (map) => {
+    try {
+      localStorage.setItem("__cd_edit_dest__", JSON.stringify(map));
+    } catch (e) {
+      // ignore
+    }
+  };
+
   const handleLoadEditar = async () => {
     if (!filters.metaAccountId.trim()) {
       setEditError("Informe o ID da conta de anúncios (Meta).");
@@ -3216,7 +3284,13 @@ function App() {
           force: true,
         }
       );
-      setEditAds(res.data || []);
+      const cache = loadEditDestinationCache();
+      const rows = (res.data || []).map((row) => {
+        if (row.destination_url) return row;
+        const cached = cache[row.id];
+        return cached ? { ...row, destination_url: cached } : row;
+      });
+      setEditAds(rows);
     } catch (err) {
       setEditError(formatError(err));
       pushLog("meta-edit-list", err);
@@ -3252,8 +3326,12 @@ function App() {
         updateEditAdField(row.id, {
           url_tags: res.data.url_tags ?? row.url_tags,
           url: res.data.url ?? row.url,
+          destination_url: res.data.url ?? row.destination_url,
           updated_time: new Date().toISOString(),
         });
+        const cache = loadEditDestinationCache();
+        cache[row.id] = res.data.url ?? row.destination_url ?? row.url ?? "";
+        saveEditDestinationCache(cache);
       }
       pushLog("meta-edit-save", {
         message: `URL atualizada: ${row.name || row.id}`,
@@ -3303,10 +3381,48 @@ function App() {
         destination_url: destination,
         verified_time: new Date().toISOString(),
       });
+      const cache = loadEditDestinationCache();
+      cache[row.id] = destination || "";
+      saveEditDestinationCache(cache);
     } catch (err) {
       pushLog("meta-edit-verify", err);
     } finally {
       setEditVerifying((prev) => ({ ...prev, [row.id]: false }));
+    }
+  };
+
+  const handleRenameObject = async (objectId, name, key) => {
+    if (!objectId || !name) return;
+    setEditRenaming((prev) => ({ ...prev, [key]: true }));
+    try {
+      await fetchJson(`${API_BASE}/meta-rename`, {
+        method: "POST",
+        body: JSON.stringify({ object_id: objectId, name }),
+      });
+      if (key.startsWith("adset:")) {
+        updateEditAdField(objectId, {});
+        setEditAds((prev) =>
+          (prev || []).map((row) =>
+            row.adset_id === objectId ? { ...row, adset_name: name } : row
+          )
+        );
+      }
+      if (key.startsWith("ad:")) {
+        setEditAds((prev) =>
+          (prev || []).map((row) =>
+            row.id === objectId ? { ...row, name } : row
+          )
+        );
+      }
+      pushLog("meta-rename", { message: `Renomeado: ${name}` });
+    } catch (err) {
+      pushLog("meta-rename", err);
+    } finally {
+      setEditRenaming((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
     }
   };
 
@@ -4880,6 +4996,11 @@ function App() {
               onCleanParams=${handleCleanParams}
               onVerify=${handleVerifyEditAd}
               verifying=${editVerifying}
+              onRenameAd=${(id, name, key) =>
+                handleRenameObject(id, name, key)}
+              onRenameAdset=${(id, name, key) =>
+                handleRenameObject(id, name, key)}
+              editRenaming=${editRenaming}
             />
           `
         : activeTab === "cpa"
