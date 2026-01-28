@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 50;
+const APP_VERSION_BUILD = 51;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -366,11 +366,9 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
 
 function MetaTokenView({
   info,
-  refresh,
   loading,
   error,
   onCheck,
-  onRefresh,
 }) {
   const expiresAt =
     info?.expires_at && Number(info.expires_at) > 0
@@ -381,9 +379,6 @@ function MetaTokenView({
       ? Math.ceil((expiresAt.getTime() - Date.now()) / 86400000)
       : null;
   const scopes = Array.isArray(info?.scopes) ? info.scopes.join(", ") : "-";
-  const tokenText = refresh?.access_token || "";
-  const refreshExpiresAt =
-    refresh?.expires_at ? new Date(refresh.expires_at * 1000) : null;
 
   return html`
     <main className="grid">
@@ -396,9 +391,6 @@ function MetaTokenView({
           <div className="chip-group">
             <button className="ghost" onClick=${onCheck} disabled=${loading}>
               ${loading ? "Verificando..." : "Verificar token"}
-            </button>
-            <button className="primary" onClick=${onRefresh} disabled=${loading}>
-              ${loading ? "Renovando..." : "Renovar token"}
             </button>
           </div>
         </div>
@@ -445,43 +437,6 @@ function MetaTokenView({
           </div>
         </div>
 
-        <div className="token-note">
-          <p className="muted small">
-            Para renovar via API, configure <strong>META_APP_ID</strong> e
-            <strong> META_APP_SECRET</strong> no Cloudflare. O novo token nao eh
-            salvo automaticamente.
-          </p>
-        </div>
-
-        ${refresh
-          ? html`
-              <div className="token-output">
-                <div className="token-output-head">
-                  <div>
-                    <strong>Novo token gerado</strong>
-                    ${refreshExpiresAt
-                      ? html`<div className="muted small">
-                          Expira em ${refreshExpiresAt.toLocaleString("pt-BR")}
-                        </div>`
-                      : null}
-                  </div>
-                  <button
-                    className="ghost small"
-                    onClick=${() =>
-                      tokenText &&
-                      navigator.clipboard?.writeText(tokenText).catch(() => {})}
-                  >
-                    Copiar
-                  </button>
-                </div>
-                <textarea readonly value=${tokenText}></textarea>
-                <div className="muted small">
-                  Cole este token em <strong>META_ACCESS_TOKEN</strong> no
-                  Cloudflare.
-                </div>
-              </div>
-            `
-          : null}
       </section>
     </main>
   `;
@@ -2696,7 +2651,6 @@ function App() {
   const [publishing, setPublishing] = useState(false);
   const [selectedAdsets, setSelectedAdsets] = useState({});
   const [tokenInfo, setTokenInfo] = useState(null);
-  const [tokenRefresh, setTokenRefresh] = useState(null);
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState("");
   const [cpaFilter, setCpaFilter] = useState("");
@@ -3522,21 +3476,6 @@ function App() {
     }
   };
 
-  const handleTokenRefresh = async () => {
-    setTokenLoading(true);
-    setTokenError("");
-    try {
-      const res = await fetchJson(`${API_BASE}/meta-token-refresh`, {
-        method: "POST",
-      });
-      setTokenRefresh(res);
-    } catch (err) {
-      setTokenError(formatError(err));
-      pushLog("meta-token", err);
-    } finally {
-      setTokenLoading(false);
-    }
-  };
 
   const setCopyCount = (adsetId, value) => {
     setCopyCounts((prev) => ({ ...prev, [adsetId]: value }));
@@ -5099,11 +5038,9 @@ function App() {
         ? html`
             <${MetaTokenView}
               info=${tokenInfo}
-              refresh=${tokenRefresh}
               loading=${tokenLoading}
               error=${tokenError}
               onCheck=${handleTokenCheck}
-              onRefresh=${handleTokenRefresh}
             />
           `
         : html`
