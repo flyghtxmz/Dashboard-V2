@@ -56,13 +56,13 @@ export async function onRequest({ request, env }) {
 
   const body = await readJson(request);
   const ad_id = body.ad_id;
-  const account_id = body.account_id;
+  const account_id_raw = body.account_id;
   const url = body.url;
   const url_tags = body.url_tags ?? "";
 
   const missing = [];
   if (!ad_id) missing.push("ad_id");
-  if (!account_id) missing.push("account_id");
+  if (!account_id_raw) missing.push("account_id");
   if (!url) missing.push("url");
   if (missing.length) {
     return jsonResponse(400, {
@@ -93,8 +93,9 @@ export async function onRequest({ request, env }) {
       });
     }
 
+    const accountId = account_id_raw.toString().replace(/^act_+/i, "");
     const createRes = await fetch(
-      `${API_BASE}/act_${encodeURIComponent(account_id)}/adcreatives`,
+      `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
