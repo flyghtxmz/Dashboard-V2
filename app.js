@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 51;
+const APP_VERSION_BUILD = 52;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -2676,6 +2676,9 @@ function App() {
   const [editSaving, setEditSaving] = useState({});
   const [editVerifying, setEditVerifying] = useState({});
   const [editRenaming, setEditRenaming] = useState({});
+  const [pagesLoading, setPagesLoading] = useState(false);
+  const [pagesError, setPagesError] = useState("");
+  const [pagesList, setPagesList] = useState([]);
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
@@ -3271,6 +3274,25 @@ function App() {
         row.id === adId ? { ...row, ...patch } : row
       )
     );
+  };
+
+  const handleLoadPages = async () => {
+    setPagesLoading(true);
+    setPagesError("");
+    try {
+      const res = await fetchJson(`${API_BASE}/meta-pages`, {
+        cacheTtlMs: 5 * 60 * 1000,
+        cacheKey: "meta-pages",
+        force: true,
+      });
+      setPagesList(res.data || []);
+    } catch (err) {
+      setPagesError(formatError(err));
+      pushLog("meta-pages", err);
+      setPagesList([]);
+    } finally {
+      setPagesLoading(false);
+    }
   };
 
   const handleSaveEditAd = async (row) => {
@@ -4903,6 +4925,12 @@ function App() {
         >
           Token Meta
         </button>
+        <button
+          className=${`tab ${activeTab === "pages" ? "active" : ""}`}
+          onClick=${() => setActiveTab("pages")}
+        >
+          Páginas
+        </button>
       </div>
 
       ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
@@ -5042,6 +5070,52 @@ function App() {
               error=${tokenError}
               onCheck=${handleTokenCheck}
             />
+          `
+        : activeTab === "pages"
+        ? html`
+            <main className="grid">
+              <section className="card wide">
+                <div className="card-head">
+                  <div>
+                    <span className="eyebrow">Meta</span>
+                    <h2 className="section-title">Páginas gerenciadas</h2>
+                  </div>
+                  <div className="chip-group">
+                    <button className="ghost" onClick=${handleLoadPages} disabled=${pagesLoading}>
+                      ${pagesLoading ? "Carregando..." : "Carregar páginas"}
+                    </button>
+                    <span className="chip neutral">${pagesList.length} páginas</span>
+                  </div>
+                </div>
+                ${pagesError
+                  ? html`<div className="status error"><strong>Erro:</strong> ${pagesError}</div>`
+                  : null}
+                <div className="table-wrapper scroll-x">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Nome</th>
+                        <th>Categoria</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${pagesList.length === 0
+                        ? html`<tr><td colSpan="3" className="muted">Sem páginas carregadas.</td></tr>`
+                        : pagesList.map(
+                            (page) => html`
+                              <tr key=${page.id}>
+                                <td>${page.id}</td>
+                                <td>${page.name}</td>
+                                <td>${page.category || "-"}</td>
+                              </tr>
+                            `
+                          )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </main>
           `
         : html`
             <main className="grid">
