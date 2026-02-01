@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 53;
+const APP_VERSION_BUILD = 55;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1897,9 +1897,9 @@ function MetaJoinGroupedTable({ rows }) {
           fallbackImps: 0,
           fallbackRevenueUsd: 0,
           fallbackRevenueBrl: 0,
-          joinadsMaxImps: 0,
-          joinadsMaxUsd: 0,
-          joinadsMaxBrl: 0,
+          joinadsPickImps: null,
+          joinadsPickUsd: null,
+          joinadsPickBrl: null,
         });
       }
       const item = map.get(key);
@@ -1911,9 +1911,11 @@ function MetaJoinGroupedTable({ rows }) {
       const joinBrl = toNumber(row.revenue_client_brl_value);
       if (isAdLevel) {
         item.hasAdLevel = true;
-        item.joinadsMaxImps = Math.max(item.joinadsMaxImps, joinImps);
-        item.joinadsMaxUsd = Math.max(item.joinadsMaxUsd, joinUsd);
-        item.joinadsMaxBrl = Math.max(item.joinadsMaxBrl, joinBrl);
+        if (item.joinadsPickImps == null && joinImps) {
+          item.joinadsPickImps = joinImps;
+          item.joinadsPickUsd = joinUsd;
+          item.joinadsPickBrl = joinBrl;
+        }
       } else if (!item.hasAdLevel) {
         item.fallbackImps = Math.max(item.fallbackImps, joinImps);
         item.fallbackRevenueUsd = Math.max(item.fallbackRevenueUsd, joinUsd);
@@ -1923,9 +1925,9 @@ function MetaJoinGroupedTable({ rows }) {
   }, new Map());
   const grouped = Array.from(groupedRows.values()).map((item) => {
     if (item.hasAdLevel) {
-      item.impressions += item.joinadsMaxImps;
-      item.revenue_usd += item.joinadsMaxUsd;
-      item.revenue_brl += item.joinadsMaxBrl;
+      item.impressions += item.joinadsPickImps || 0;
+      item.revenue_usd += item.joinadsPickUsd || 0;
+      item.revenue_brl += item.joinadsPickBrl || 0;
     } else {
       item.impressions += item.fallbackImps;
       item.revenue_usd += item.fallbackRevenueUsd;
@@ -2512,7 +2514,25 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
   (joinadsRows || []).forEach((row) => {
     const key = normalizeKey(row.custom_value);
     if (!key) return;
-    joinadsByTerm.set(key, row);
+    const entry = joinadsByTerm.get(key) || {
+      impressions: 0,
+      clicks: 0,
+      revenue_client: 0,
+      revenue: 0,
+      ecpm_client: null,
+      ecpm: null,
+    };
+    entry.impressions += toNumber(row.impressions);
+    entry.clicks += toNumber(row.clicks);
+    entry.revenue_client += toNumber(row.revenue_client);
+    entry.revenue += toNumber(row.revenue);
+    if (entry.ecpm_client == null && row.ecpm_client != null) {
+      entry.ecpm_client = toNumber(row.ecpm_client);
+    }
+    if (entry.ecpm == null && row.ecpm != null) {
+      entry.ecpm = toNumber(row.ecpm);
+    }
+    joinadsByTerm.set(key, entry);
   });
 
   const groupedRows = rows.reduce((map, row) => {
@@ -2539,7 +2559,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
       const termKey = normalizeKey(item.adset_name);
       const join = joinadsByTerm.get(termKey);
       if (join) {
-        const usd = toNumber(join.revenue);
+        const usd = toNumber(join.revenue_client || join.revenue);
         item.impressions = toNumber(join.impressions);
         item.revenue_usd = usd;
         item.revenue_brl = brlRate ? usd * brlRate : null;
