@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 52;
+const APP_VERSION_BUILD = 53;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -1879,7 +1879,7 @@ function MetaJoinGroupedTable({ rows }) {
   };
 
   const groupedRows = rows.reduce((map, row) => {
-    const key = `${row.ad_name || ""}|||${row.adset_name || ""}|||${
+    const key = `${row.ad_id || ""}|||${row.ad_name || ""}|||${row.adset_name || ""}|||${
       row.objective || ""
     }`;
       if (!map.has(key)) {
