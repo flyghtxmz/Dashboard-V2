@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 56;
+const APP_VERSION_BUILD = 57;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -440,6 +440,16 @@ function MetaTokenView({
       </section>
     </main>
   `;
+}
+
+function getHostname(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    return url.hostname.replace(/^www\./i, "").toLowerCase();
+  } catch (e) {
+    return "";
+  }
 }
 
 function EarningsTable({ rows }) {
@@ -2699,6 +2709,7 @@ function App() {
   const [pagesLoading, setPagesLoading] = useState(false);
   const [pagesError, setPagesError] = useState("");
   const [pagesList, setPagesList] = useState([]);
+  const [adDestMap, setAdDestMap] = useState({});
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
@@ -2908,10 +2919,24 @@ function App() {
         pushLog("meta-utmmedium", err);
       }
 
-      const [topRes, earningsRes, earningsAllRes] = await Promise.all([
+      const editListPromise = fetchJson(
+        `${API_BASE}/meta-ad-edit-list?${new URLSearchParams({
+          account_id: filters.metaAccountId.trim(),
+        }).toString()}`,
+        {
+          cacheTtlMs: 5 * 60 * 1000,
+          cacheKey: `meta-edit-list:${filters.metaAccountId.trim()}`,
+        }
+      ).catch((err) => {
+        pushLog("meta-edit-list-load", err);
+        return { data: [] };
+      });
+
+      const [topRes, earningsRes, earningsAllRes, editListRes] = await Promise.all([
         topPromise,
         earningsPromise,
         earningsAllPromise,
+        editListPromise,
       ]);
 
       // key-value para coletar UTMs usadas
@@ -2972,7 +2997,14 @@ function App() {
             cacheKey: `meta-insights:${metaParams.toString()}`,
           }
         );
-        setMetaRows(metaRes.data || []);
+      setMetaRows(metaRes.data || []);
+      const destMap = {};
+      (editListRes?.data || []).forEach((row) => {
+        if (row?.id) {
+          destMap[row.id] = row.destination_url || row.url || "";
+        }
+      });
+      setAdDestMap(destMap);
       } catch (err) {
         pushLog("meta", err);
         setMetaRows([]);
@@ -4348,6 +4380,7 @@ function App() {
       return {
         ...row,
         date,
+        destination_url: adDestMap[row.ad_id] || row.destination_url || "",
         joinads_matched: hasJoinads,
         cost_per_result: currencyBRL.format(cost),
         spend_brl: currencyBRL.format(spend),
@@ -4378,16 +4411,24 @@ function App() {
     brlRate,
     superKey,
     appliedFilters,
+    adDestMap,
   ]);
 
   const filteredMeta = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
-    const base = mergedMeta.filter((row) => row.joinads_matched);
+    const domainKey = normalizeKey(appliedFilters?.domain || filters.domain || "");
+    const base = mergedMeta.filter((row) => {
+      if (!row.joinads_matched) return false;
+      if (!domainKey) return true;
+      const host = getHostname(row.destination_url);
+      if (!host) return true;
+      return normalizeKey(host) === domainKey;
+    });
     if (!term) return base;
     return base.filter((row) =>
       (row.adset_name || "").toLowerCase().includes(term)
     );
-  }, [mergedMeta, filters.adsetFilter]);
+  }, [mergedMeta, filters.adsetFilter, appliedFilters, filters.domain]);
 
   const dupNameMap = useMemo(() => {
     const map = new Map();
