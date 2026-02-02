@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 55;
+const APP_VERSION_BUILD = 56;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const CPA_MIN_ACTIVE = 2;
 
@@ -4254,6 +4254,7 @@ function App() {
         .filter(Boolean)
     );
     const hasTermData = termSet.size > 0;
+    const hasContentData = contentSet.size > 0;
 
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
@@ -4274,11 +4275,13 @@ function App() {
 
       const matchedByContent = contentSet.has(nameKey) || contentSet.has(adIdKey);
       const matchedByTerm = termSet.has(adsetKey);
-      const hasJoinads = hasTermData
-        ? matchedByTerm
-        : matchedByContent ||
+      const hasJoinads = hasContentData
+        ? matchedByContent ||
           Object.keys(fromCustom).length > 0 ||
-          Object.keys(fromKv).length > 0;
+          Object.keys(fromKv).length > 0
+        : hasTermData
+        ? matchedByTerm
+        : false;
 
       const impressionsJoin = toNumber(
         fromKv.impressions ?? fromCustom.impressions ?? null
