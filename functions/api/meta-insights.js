@@ -98,7 +98,7 @@ export async function onRequest({ request, env }) {
       const chunk = adsetIds.slice(i, i + chunkSize);
       try {
         const budgetRes = await fetch(
-          `${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal&access_token=${token}`
+          `${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints&access_token=${token}`
         );
         const budgetJson = await safeJson(budgetRes);
         if (budgetJson && typeof budgetJson === "object") {
@@ -111,6 +111,7 @@ export async function onRequest({ request, env }) {
                 value.bid_amount ||
                 value.bid_strategy ||
                 value.optimization_goal ||
+                value.bid_constraints ||
                 value.status ||
                 value.effective_status)
             ) {
@@ -121,6 +122,7 @@ export async function onRequest({ request, env }) {
                 adset_bid_amount: value.bid_amount,
                 adset_bid_strategy: value.bid_strategy,
                 adset_optimization_goal: value.optimization_goal,
+                adset_bid_constraints: value.bid_constraints,
                 adset_status: value.status,
                 adset_effective_status: value.effective_status,
               });
@@ -144,6 +146,18 @@ export async function onRequest({ request, env }) {
         enriched.adset_daily_budget = budgetInfo.adset_daily_budget;
         enriched.adset_lifetime_budget = budgetInfo.adset_lifetime_budget;
         enriched.adset_budget_remaining = budgetInfo.adset_budget_remaining;
+        if (budgetInfo.adset_bid_amount) {
+          enriched.adset_bid_amount = budgetInfo.adset_bid_amount;
+        }
+        if (budgetInfo.adset_bid_strategy) {
+          enriched.adset_bid_strategy = budgetInfo.adset_bid_strategy;
+        }
+        if (budgetInfo.adset_optimization_goal) {
+          enriched.adset_optimization_goal = budgetInfo.adset_optimization_goal;
+        }
+        if (budgetInfo.adset_bid_constraints) {
+          enriched.adset_bid_constraints = budgetInfo.adset_bid_constraints;
+        }
         if (budgetInfo.adset_status) {
           enriched.adset_status = budgetInfo.adset_status;
         }

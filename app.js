@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 59;
+const APP_VERSION_BUILD = 60;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -1810,6 +1810,8 @@ function MetaJoinTable({
                               const current =
                                 row.adset_bid_amount_brl != null
                                   ? currencyBRL.format(row.adset_bid_amount_brl)
+                                  : row.adset_bid_strategy
+                                  ? `Definido (${row.adset_bid_strategy})`
                                   : "-";
                               const fallbackValue =
                                 row.adset_bid_amount_brl != null
@@ -4051,10 +4053,15 @@ function App() {
         row.adset_lifetime_budget != null
           ? toNumber(row.adset_lifetime_budget) / 100
           : null;
-      const bidAmountBrl =
+      const rawBid =
         row.adset_bid_amount != null
-          ? toNumber(row.adset_bid_amount) / 100
-          : null;
+          ? row.adset_bid_amount
+          : row.adset_bid_constraints &&
+            (row.adset_bid_constraints.cost_cap ??
+              row.adset_bid_constraints.bid_cap ??
+              row.adset_bid_constraints?.cost_per_result_goal);
+      const bidAmountBrl =
+        rawBid != null ? toNumber(rawBid) / 100 : null;
 
       return {
         ...row,
@@ -4082,6 +4089,7 @@ function App() {
         adset_bid_amount_brl: bidAmountBrl,
         adset_bid_strategy: row.adset_bid_strategy,
         adset_optimization_goal: row.adset_optimization_goal,
+        adset_bid_constraints: row.adset_bid_constraints,
       };
     });
   }, [
