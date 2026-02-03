@@ -98,7 +98,7 @@ export async function onRequest({ request, env }) {
       const chunk = adsetIds.slice(i, i + chunkSize);
       try {
         const budgetRes = await fetch(
-          `${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status&access_token=${token}`
+          `${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal&access_token=${token}`
         );
         const budgetJson = await safeJson(budgetRes);
         if (budgetJson && typeof budgetJson === "object") {
@@ -108,6 +108,9 @@ export async function onRequest({ request, env }) {
               (value.daily_budget ||
                 value.lifetime_budget ||
                 value.budget_remaining ||
+                value.bid_amount ||
+                value.bid_strategy ||
+                value.optimization_goal ||
                 value.status ||
                 value.effective_status)
             ) {
@@ -115,6 +118,9 @@ export async function onRequest({ request, env }) {
                 adset_daily_budget: value.daily_budget,
                 adset_lifetime_budget: value.lifetime_budget,
                 adset_budget_remaining: value.budget_remaining,
+                adset_bid_amount: value.bid_amount,
+                adset_bid_strategy: value.bid_strategy,
+                adset_optimization_goal: value.optimization_goal,
                 adset_status: value.status,
                 adset_effective_status: value.effective_status,
               });

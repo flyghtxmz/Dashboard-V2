@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 58;
+const APP_VERSION_BUILD = 59;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -1623,6 +1623,8 @@ function MetaJoinTable({
   statusLoading,
   onBudgetUpdate,
   budgetLoading,
+  onBidUpdate,
+  bidLoading,
   isMultiDay,
 }) {
   const asText = (value) => {
@@ -1631,12 +1633,23 @@ function MetaJoinTable({
     return String(value);
   };
   const [budgetInputs, setBudgetInputs] = useState({});
+  const [bidInputs, setBidInputs] = useState({});
 
   const setBudget = (adsetId, value) => {
     setBudgetInputs((prev) => ({ ...prev, [adsetId]: value }));
   };
   const getBudget = (adsetId, fallback) => {
     const raw = budgetInputs[adsetId];
+    if (raw === undefined || raw === null || raw === "") {
+      return fallback ?? "";
+    }
+    return raw;
+  };
+  const setBid = (adsetId, value) => {
+    setBidInputs((prev) => ({ ...prev, [adsetId]: value }));
+  };
+  const getBid = (adsetId, fallback) => {
+    const raw = bidInputs[adsetId];
     if (raw === undefined || raw === null || raw === "") {
       return fallback ?? "";
     }
@@ -1690,6 +1703,7 @@ function MetaJoinTable({
               <th>Resultados (Meta)</th>
               <th>Valor gasto</th>
               <th>Orçamento (Meta)</th>
+              <th>Custo alvo (Meta)</th>
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
@@ -1702,7 +1716,7 @@ function MetaJoinTable({
             ${rows.length === 0
               ? html`
                   <tr>
-                    <td colSpan="14" className="muted">Sem dados para o periodo.</td>
+                    <td colSpan="15" className="muted">Sem dados para o periodo.</td>
                   </tr>
                 `
               : rows.map(
@@ -1782,6 +1796,57 @@ function MetaJoinTable({
                                       )}
                                   >
                                     ${budgetLoading && budgetLoading[row.adset_id]
+                                      ? "..."
+                                      : "Salvar"}
+                                  </button>
+                                </div>
+                              </div>`;
+                            })()
+                          : "-"}
+                      </td>
+                      <td>
+                        ${row.adset_id
+                          ? (() => {
+                              const current =
+                                row.adset_bid_amount_brl != null
+                                  ? currencyBRL.format(row.adset_bid_amount_brl)
+                                  : "-";
+                              const fallbackValue =
+                                row.adset_bid_amount_brl != null
+                                  ? row.adset_bid_amount_brl.toFixed(2)
+                                  : "";
+                              return html`<div className="budget-cell">
+                                <div className="budget-meta">
+                                  <span className="muted small">Atual: ${current}</span>
+                                </div>
+                                <div className="budget-actions">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="R$"
+                                    value=${getBid(row.adset_id, fallbackValue)}
+                                    onChange=${(e) =>
+                                      setBid(row.adset_id, e.target.value)}
+                                    onKeyDown=${(e) => {
+                                      if (e.key === "Enter") {
+                                        onBidUpdate?.(
+                                          row.adset_id,
+                                          getBid(row.adset_id, fallbackValue)
+                                        );
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="ghost small"
+                                    disabled=${bidLoading && bidLoading[row.adset_id]}
+                                    onClick=${() =>
+                                      onBidUpdate?.(
+                                        row.adset_id,
+                                        getBid(row.adset_id, fallbackValue)
+                                      )}
+                                  >
+                                    ${bidLoading && bidLoading[row.adset_id]
                                       ? "..."
                                       : "Salvar"}
                                   </button>
@@ -2390,6 +2455,7 @@ function App() {
   const [superTermRows, setSuperTermRows] = useState([]);
   const [adStatusLoading, setAdStatusLoading] = useState({});
   const [budgetLoading, setBudgetLoading] = useState({});
+  const [bidLoading, setBidLoading] = useState({});
   const [appliedFilters, setAppliedFilters] = useState(null);
   const [dupCampaigns, setDupCampaigns] = useState([]);
   const [dupLoading, setDupLoading] = useState(false);
@@ -3453,6 +3519,56 @@ function App() {
     }
   };
 
+  const handleUpdateBid = async (adsetId, bidValue) => {
+    if (!adsetId) return;
+    const raw = String(bidValue ?? "").trim();
+    if (!raw) return;
+    const bidNumber = Number(raw.replace(",", "."));
+    if (!Number.isFinite(bidNumber) || bidNumber <= 0) {
+      pushLog("meta-bid", { message: "Custo alvo invalido" });
+      return;
+    }
+
+    setBidLoading((prev) => ({ ...prev, [adsetId]: true }));
+    try {
+      const res = await fetchJson(`${API_BASE}/meta-adset-bid`, {
+        method: "POST",
+        body: JSON.stringify({
+          adset_id: adsetId,
+          bid_amount_brl: bidNumber,
+        }),
+      });
+      const updated = res?.adset || null;
+      if (updated) {
+        setMetaRows((prev) =>
+          (prev || []).map((row) =>
+            row.adset_id === adsetId
+              ? {
+                  ...row,
+                  adset_bid_amount: updated.bid_amount,
+                  adset_bid_strategy: updated.bid_strategy,
+                  adset_optimization_goal: updated.optimization_goal,
+                }
+              : row
+          )
+        );
+      }
+      pushLog("meta-bid", {
+        message: `Custo alvo atualizado: ${adsetId} -> R$ ${bidNumber.toFixed(
+          2
+        )}`,
+      });
+    } catch (err) {
+      pushLog("meta-bid", err);
+    } finally {
+      setBidLoading((prev) => {
+        const next = { ...prev };
+        delete next[adsetId];
+        return next;
+      });
+    }
+  };
+
   const handlePublishDrafts = async () => {
     if (!drafts.length) return;
     setPublishing(true);
@@ -3935,6 +4051,10 @@ function App() {
         row.adset_lifetime_budget != null
           ? toNumber(row.adset_lifetime_budget) / 100
           : null;
+      const bidAmountBrl =
+        row.adset_bid_amount != null
+          ? toNumber(row.adset_bid_amount) / 100
+          : null;
 
       return {
         ...row,
@@ -3959,6 +4079,9 @@ function App() {
         results_meta: resultsCount,
         adset_daily_budget_brl: dailyBudgetBrl,
         adset_lifetime_budget_brl: lifetimeBudgetBrl,
+        adset_bid_amount_brl: bidAmountBrl,
+        adset_bid_strategy: row.adset_bid_strategy,
+        adset_optimization_goal: row.adset_optimization_goal,
       };
     });
   }, [
@@ -4365,6 +4488,8 @@ function App() {
                   statusLoading=${adStatusLoading}
                   onBudgetUpdate=${handleUpdateBudget}
                   budgetLoading=${budgetLoading}
+                  onBidUpdate=${handleUpdateBid}
+                  bidLoading=${bidLoading}
                   isMultiDay=${isMultiDay}
                 />
               `}
