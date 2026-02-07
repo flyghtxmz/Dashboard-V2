@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 60;
+const APP_VERSION_BUILD = 61;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -1058,8 +1058,9 @@ const normalizeKey = (value) =>
     .toLowerCase();
 
 function buildAdsetGrouped(rows, joinadsRows, brlRate) {
+  const safeJoinadsRows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const joinadsByTerm = new Map();
-  (joinadsRows || []).forEach((row) => {
+  safeJoinadsRows.forEach((row) => {
     const key = normalizeKey(row.custom_value);
     if (!key) return;
     const entry = joinadsByTerm.get(key) || {
@@ -2300,6 +2301,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
 }
 
 function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
+  const safeJoinadsRows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
@@ -2307,7 +2309,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
   };
 
   const joinadsByTerm = new Map();
-  (joinadsRows || []).forEach((row) => {
+  safeJoinadsRows.forEach((row) => {
     const key = normalizeKey(row.custom_value);
     if (!key) return;
     const entry = joinadsByTerm.get(key) || {
@@ -2781,13 +2783,13 @@ function App() {
         setMetaRows([]);
       }
 
-      setSuperFilter(superRes?.data || []);
+      setSuperFilter(Array.isArray(superRes?.data) ? superRes.data : []);
       setSuperKey(superKeyUsed || "utm_content");
-      setSuperTermRows(superTermRes?.data || []);
-      setTopUrls(topRes.data || []);
-      setEarnings(earningsRes.data || []);
-      setEarningsAll(earningsAllRes.data || []);
-      setKeyValueContent(keyValueContentRes.data || []);
+      setSuperTermRows(Array.isArray(superTermRes?.data) ? superTermRes.data : []);
+      setTopUrls(Array.isArray(topRes?.data) ? topRes.data : []);
+      setEarnings(Array.isArray(earningsRes?.data) ? earningsRes.data : []);
+      setEarningsAll(Array.isArray(earningsAllRes?.data) ? earningsAllRes.data : []);
+      setKeyValueContent(Array.isArray(keyValueContentRes?.data) ? keyValueContentRes.data : []);
       const targetDomain = normalizeKey(filters.domain || "");
       const sourceRows =
         (metaSourceRes.data || []).filter((row) => {
@@ -4648,3 +4650,8 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
+
+
+
+
