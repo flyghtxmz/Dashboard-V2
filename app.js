@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 61;
+const APP_VERSION_BUILD = 62;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -81,7 +81,20 @@ async function fetchJson(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const cacheTtl = options.cacheTtlMs || 0;
   const cacheKey = options.cacheKey || path;
-  if (method === "GET" && cacheTtl && !options.force) {
+
+  let isLiveTodayQuery = false;
+  if (method === "GET") {
+    try {
+      const url = new URL(path, window.location.origin);
+      const endDate = url.searchParams.get("end_date");
+      const today = formatDate(new Date());
+      isLiveTodayQuery = endDate === today;
+    } catch (e) {
+      isLiveTodayQuery = false;
+    }
+  }
+
+  if (method === "GET" && cacheTtl && !options.force && !isLiveTodayQuery) {
     try {
       const raw = localStorage.getItem("__cd_cache__");
       const store = raw ? JSON.parse(raw) : {};
@@ -113,7 +126,8 @@ async function fetchJson(path, options = {}) {
     error.data = data;
     throw error;
   }
-  if (method === "GET" && cacheTtl) {
+
+  if (method === "GET" && cacheTtl && !isLiveTodayQuery) {
     try {
       const raw = localStorage.getItem("__cd_cache__");
       const store = raw ? JSON.parse(raw) : {};
@@ -4650,6 +4664,7 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
 
 
 
