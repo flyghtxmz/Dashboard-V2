@@ -7,7 +7,7 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 62;
+const APP_VERSION_BUILD = 63;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -2784,7 +2784,7 @@ function App() {
             cacheKey: `meta-insights:${metaParams.toString()}`,
           }
         );
-      setMetaRows(metaRes.data || []);
+      setMetaRows(Array.isArray(metaRes?.data) ? metaRes.data : []);
       const destMap = {};
       (editListRes?.data || []).forEach((row) => {
         if (row?.id) {
@@ -2837,7 +2837,7 @@ function App() {
           : mediumRows;
       const filteredSource = combinedSource;
 
-      const totalsAll = (earningsRes.data || []).reduce(
+      const totalsAll = (Array.isArray(earningsRes?.data) ? earningsRes.data : []).reduce(
         (acc, row) => {
           acc.impressions += Number(row.impressions || 0);
           acc.clicks += Number(row.clicks || 0);
@@ -4120,11 +4120,16 @@ function App() {
     adDestMap,
   ]);
 
-  const filteredMeta = useMemo(() => {
+  const isTodaySelected = useMemo(() => {
+    const endRaw = appliedFilters?.endDate || filters.endDate;
+    if (!endRaw) return false;
+    return endRaw === formatDate(new Date());
+  }, [appliedFilters, filters.endDate]);
+
+  const metaDomainFiltered = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
     const domainKey = normalizeKey(appliedFilters?.domain || filters.domain || "");
     const base = mergedMeta.filter((row) => {
-      if (!row.joinads_matched) return false;
       if (!domainKey) return true;
       const host = getHostname(row.destination_url);
       if (!host) return true;
@@ -4135,6 +4140,14 @@ function App() {
       (row.adset_name || "").toLowerCase().includes(term)
     );
   }, [mergedMeta, filters.adsetFilter, appliedFilters, filters.domain]);
+
+  const filteredMeta = useMemo(() => {
+    if (isTodaySelected) {
+      // Hoje: mantém linhas Meta mesmo sem match JoinAds (JoinAds pode atrasar).
+      return metaDomainFiltered;
+    }
+    return metaDomainFiltered.filter((row) => row.joinads_matched);
+  }, [metaDomainFiltered, isTodaySelected]);
 
   const dupNameMap = useMemo(() => {
     const map = new Map();
@@ -4187,12 +4200,12 @@ function App() {
 
 
   const metaTotals = useMemo(() => {
-    const spendBrl = (filteredMeta || []).reduce(
+    const spendBrl = (metaDomainFiltered || []).reduce(
       (acc, row) => acc + toNumber(row.spend_value || row.spend),
       0
     );
     return { spendBrl };
-  }, [filteredMeta]);
+  }, [metaDomainFiltered]);
 
   const filteredEditAds = useMemo(() => {
     const term = editCampaignFilter.trim().toLowerCase();
@@ -4664,6 +4677,11 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
+
+
+
+
 
 
 
