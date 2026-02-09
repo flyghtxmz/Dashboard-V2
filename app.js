@@ -9,7 +9,6 @@ const DEFAULT_UTM_TAGS =
 const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
-const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
 const APP_VERSION_BUILD = 67;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
@@ -1088,12 +1087,10 @@ const formatBidStrategy = (value) =>
 const strategyToMode = (strategy) => {
   const normalized = (strategy || "").toUpperCase();
   if (normalized === BID_STRATEGY_WITHOUT_BID) return "without_bid";
-  if (normalized === BID_STRATEGY_COST_CAP) return "cost_cap";
   return "with_bid";
 };
 const modeToStrategy = (mode) => {
   if (mode === "without_bid") return BID_STRATEGY_WITHOUT_BID;
-  if (mode === "cost_cap") return BID_STRATEGY_COST_CAP;
   return BID_STRATEGY_WITH_BID;
 };
 const normalizeKey = (value) =>
@@ -1705,17 +1702,12 @@ function MetaJoinTable({
   const setBidMode = (adsetId, mode) => {
     setBidModes((prev) => ({
       ...prev,
-      [adsetId]:
-        mode === "without_bid"
-          ? "without_bid"
-          : mode === "cost_cap"
-          ? "cost_cap"
-          : "with_bid",
+      [adsetId]: mode === "without_bid" ? "without_bid" : "with_bid",
     }));
   };
   const getBidMode = (adsetId, strategyFallback) => {
     const mode = bidModes[adsetId];
-    if (mode === "with_bid" || mode === "without_bid" || mode === "cost_cap") {
+    if (mode === "with_bid" || mode === "without_bid") {
       return mode;
     }
     return strategyToMode(strategyFallback);
@@ -1878,11 +1870,9 @@ function MetaJoinTable({
                               );
                               const requiresBidValue = currentMode !== "without_bid";
                               const modeLabel =
-                                currentMode === "cost_cap"
-                                  ? "Meta de custo"
-                                  : currentMode === "with_bid"
-                                  ? "Com bid"
-                                  : "Sem bid";
+                                currentMode === "with_bid"
+                                  ? "Com limite"
+                                  : "Sem limite";
                               const currentBid =
                                 requiresBidValue && row.adset_bid_amount_brl != null
                                   ? currencyBRL.format(row.adset_bid_amount_brl)
@@ -1904,9 +1894,8 @@ function MetaJoinTable({
                                     onChange=${(e) =>
                                       setBidMode(row.adset_id, e.target.value)}
                                   >
-                                    <option value="with_bid">Com bid (Limite de lance)</option>
-                                    <option value="without_bid">Sem bid (Menor custo)</option>
-                                    <option value="cost_cap">Meta de custo (Opcional)</option>
+                                    <option value="with_bid">Com limite (limite de lance)</option>
+                                    <option value="without_bid">Sem limite (menor custo)</option>
                                   </select>
                                   <input
                                     type="number"
@@ -3620,8 +3609,7 @@ function App() {
     if (!adsetId) return;
 
     const bidStrategy = modeToStrategy(bidMode);
-    const requiresBidValue =
-      bidStrategy === BID_STRATEGY_WITH_BID || bidStrategy === BID_STRATEGY_COST_CAP;
+    const requiresBidValue = bidStrategy === BID_STRATEGY_WITH_BID;
 
     let bidNumber = null;
     if (requiresBidValue) {
