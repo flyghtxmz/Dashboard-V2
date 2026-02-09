@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
+import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
@@ -132,7 +132,7 @@ async function fetchJson(path, options = {}) {
       data?.error ||
       data?.message ||
       data?.detail ||
-      `Erro na requisiÃ§Ã£o (${res.status})`;
+      `Erro na requisição (${res.status})`;
     const error = new Error(message);
     error.status = res.status;
     error.data = data;
@@ -246,8 +246,8 @@ const statusLabelMap = {
   PAUSED: "Pausado",
   DISABLED: "Desativado",
   ARCHIVED: "Arquivado",
-  DELETED: "ExcluÃ­do",
-  PENDING_REVIEW: "Em revisÃ£o",
+  DELETED: "Excluído",
+  PENDING_REVIEW: "Em revisão",
   IN_PROCESS: "Em processamento",
   WITH_ISSUES: "Com problemas",
   REJECTED: "Reprovado",
@@ -280,7 +280,7 @@ const statusToneMap = {
 };
 
 function formatStatusLabel(status) {
-  if (!status) return "IndisponÃ­vel";
+  if (!status) return "Indisponível";
   return statusLabelMap[status] || status;
 }
 
@@ -302,19 +302,19 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Receita cliente",
       value: currencyUSD.format(totals.revenueClient || 0),
-      helper: "ApÃ³s revshare",
+      helper: "Após revshare",
       tone: "primary",
     },
     {
       label: "Receita cliente (BRL)",
       value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
-      helper: usdToBrl ? "ConversÃ£o USD->BRL" : "Aguardando cotaÃ§Ã£o",
+      helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotação",
       tone: "primary",
     },
     {
       label: "Valor gasto (Meta)",
       value: currencyBRL.format(metaSpendBrl || 0),
-      helper: "Gasto total do perÃ­odo",
+      helper: "Gasto total do período",
     },
     {
       label: "ROI (BRL)",
@@ -341,7 +341,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Cliques",
       value: number.format(totals.clicks || 0),
-      helper: "InteraÃ§Ãµes",
+      helper: "Interações",
     },
     {
       label: "CTR",
@@ -361,7 +361,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Active view",
       value: `${(totals.activeView || 0).toFixed(1)}%`,
-      helper: "Visibilidade mÃ­dia",
+      helper: "Visibilidade mídia",
     },
   ];
 
@@ -370,7 +370,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Performance</span>
-          <h2 className="section-title">VisÃ£o geral</h2>
+          <h2 className="section-title">Visão geral</h2>
         </div>
         <span className="chip neutral">JoinAds</span>
       </div>
@@ -483,7 +483,7 @@ function EarningsTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Earnings</span>
-          <h2 className="section-title">RelatÃ³rio de ganhos</h2>
+          <h2 className="section-title">Relatório de ganhos</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -556,7 +556,7 @@ function Filters({
     let start = new Date(end);
 
     if (preset === "today") {
-      // mantÃ©m hoje
+      // mantém hoje
     } else if (preset === "yesterday") {
       end.setDate(end.getDate() - 1);
       start = new Date(end);
@@ -580,7 +580,7 @@ function Filters({
       <div className="card-head">
         <div>
           <span className="eyebrow">Filtros</span>
-          <h2 className="section-title">Janela e segmentaÃ§Ã£o</h2>
+          <h2 className="section-title">Janela e segmentação</h2>
         </div>
         <button className="ghost" onClick=${onSubmit} disabled=${loading}>
           ${loading ? "Carregando..." : "Carregar dados"}
@@ -588,7 +588,7 @@ function Filters({
       </div>
       <div className="filters">
         <label className="field">
-          <span>InÃ­cio</span>
+          <span>Início</span>
           <input
             type="date"
             value=${filters.startDate}
@@ -647,7 +647,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>Tipo de relatÃ³rio</span>
+          <span>Tipo de relatório</span>
           <select
             value=${filters.reportType}
             onChange=${(e) =>
@@ -683,10 +683,10 @@ function Filters({
           Ontem
         </button>
         <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
-          Ãšltimos 7 dias
+          Últimos 7 dias
         </button>
         <button className="ghost" onClick=${() => setPreset("last15")} disabled=${loading}>
-          Ãšltimos 15 dias
+          Últimos 15 dias
         </button>
       </div>
     </section>
@@ -723,7 +723,7 @@ function LogsCard({ logs, onClear }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Logs</span>
-          <h2 className="section-title">Ãšltimas mensagens</h2>
+          <h2 className="section-title">Últimas mensagens</h2>
         </div>
         <button className="ghost" onClick=${onClear} disabled=${logs.length === 0}>
           Limpar
@@ -740,7 +740,7 @@ function LogsCard({ logs, onClear }) {
                       <span className="pill neutral">${entry.source || "app"}</span>
                       <span className="muted small">
                         ${entry.time.toLocaleString("pt-BR")}
-                        ${entry.status ? ` â€¢ ${entry.status}` : ""}
+                        ${entry.status ? ` • ${entry.status}` : ""}
                       </span>
                     </div>
                     <div className="log-message">${entry.message}</div>
@@ -762,7 +762,7 @@ function TopUrlTable({ rows, totals }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">URLs</span>
-          <h2 className="section-title">Top URLs com ParÃ¢metros</h2>
+          <h2 className="section-title">Top URLs com Parâmetros</h2>
         </div>
         <span className="chip neutral">${rows.length} itens</span>
       </div>
@@ -828,7 +828,7 @@ function ParamTable({ rows }) {
     <section className="card">
       <div className="card-head">
         <div>
-          <span className="eyebrow">ParÃ¢metros</span>
+          <span className="eyebrow">Parâmetros</span>
           <h2 className="section-title">UTMs e query params vistos</h2>
         </div>
         <span className="chip neutral">${rows.length} pares</span>
@@ -842,7 +842,7 @@ function ParamTable({ rows }) {
               <th>Impressoes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
-              <th>OcorrÃªncias</th>
+              <th>Ocorrências</th>
             </tr>
           </thead>
           <tbody>
@@ -850,7 +850,7 @@ function ParamTable({ rows }) {
               ? html`
                   <tr>
                     <td colSpan="3" className="muted">
-                      Nenhum parÃ¢metro encontrado neste intervalo.
+                      Nenhum parâmetro encontrado neste intervalo.
                     </td>
                   </tr>
                 `
@@ -891,7 +891,7 @@ function DiagnosticsJoin({
       <div className="card-head">
         <div>
           <span className="eyebrow">JoinAds</span>
-          <h2 className="section-title">DiagnÃ³stico do token</h2>
+          <h2 className="section-title">Diagnóstico do token</h2>
         </div>
         <div className="chip-group">
           <span className="chip neutral">Dominio: ${domain || "-"}</span>
@@ -970,8 +970,8 @@ function DiagnosticsJoin({
         </table>
       </div>
       <p className="muted small">
-        Se super-filter estiver vazio, a API nÃ£o retornou dados para utm_content/utm_campaign.
-        Confirme UTMs nos anÃºncios e intervalo (&lt;=15 dias).
+        Se super-filter estiver vazio, a API não retornou dados para utm_content/utm_campaign.
+        Confirme UTMs nos anúncios e intervalo (&lt;=15 dias).
       </p>
     </section>
   `;
@@ -989,7 +989,7 @@ function DiagnosticsNoUtmSummary({ row }) {
       </div>
       <div className="metrics-grid">
         <div className="metric-card">
-          <div className="metric-label">ImpressÃµes</div>
+          <div className="metric-label">Impressões</div>
           <div className="metric-value">${number.format(row?.impressions || 0)}</div>
         </div>
         <div className="metric-card">
@@ -1081,7 +1081,7 @@ const bidStrategyMap = {
   LOWEST_COST_WITHOUT_CAP: "Menor custo (sem limite)",
   LOWEST_COST_WITH_BID_CAP: "Limite de lance",
   COST_CAP: "Meta de custo",
-  LOWEST_COST_WITH_MIN_ROAS: "ROAS mÃ­nimo",
+  LOWEST_COST_WITH_MIN_ROAS: "ROAS mínimo",
 };
 const formatBidStrategy = (value) =>
   bidStrategyMap[(value || "").toUpperCase()] || value || "-";
@@ -1189,7 +1189,7 @@ function DuplicarView({
       adset?.daily_budget != null ? currencyBRL.format(adset.daily_budget / 100) : null;
     const life =
       adset?.lifetime_budget != null
-        ? `${currencyBRL.format(adset.lifetime_budget / 100)} (vitalÃ­cio)`
+        ? `${currencyBRL.format(adset.lifetime_budget / 100)} (vitalício)`
         : null;
     return daily || life || "-";
   };
@@ -1249,7 +1249,7 @@ function DuplicarView({
                     <div>
                       <strong>${camp.name}</strong>
                       <div className="muted small">
-                        ID: ${camp.id} â€¢ ${camp.effective_status || camp.status || "-"}
+                        ID: ${camp.id} • ${camp.effective_status || camp.status || "-"}
                       </div>
                     </div>
                   </div>
@@ -1271,8 +1271,8 @@ function DuplicarView({
                                   </label>
                                   <div className="muted small">
                                     ID: ${adset.id}
-                                    â€¢ ${adset.effective_status || adset.status || "-"}
-                                    â€¢ OrÃ§amento: ${budgetLabel(adset)}
+                                    • ${adset.effective_status || adset.status || "-"}
+                                    • Orçamento: ${budgetLabel(adset)}
                                   </div>
                                 </div>
                                 <div className="dup-actions">
@@ -1295,7 +1295,7 @@ function DuplicarView({
                               </div>
                               <details>
                                 <summary>
-                                  AnÃºncios (${(adset.ads || []).length})
+                                  Anúncios (${(adset.ads || []).length})
                                 </summary>
                                 <ul className="dup-ads">
                                   ${(adset.ads || []).map(
@@ -1316,7 +1316,7 @@ function DuplicarView({
         <div className="card-head">
           <div>
             <span className="eyebrow">Rascunho</span>
-            <h2 className="section-title">DuplicaÃ§Ãµes pendentes</h2>
+            <h2 className="section-title">Duplicações pendentes</h2>
           </div>
           <button
             className="primary"
@@ -1360,7 +1360,7 @@ function DuplicarView({
                           />
                         </label>
                         <label className="field">
-                          <span>NÃºmero de cÃ³pias</span>
+                          <span>Número de cópias</span>
                           <input
                             type="number"
                             min="1"
@@ -1373,7 +1373,7 @@ function DuplicarView({
                           />
                         </label>
                         <label className="field">
-                          <span>OrÃ§amento diÃ¡rio (R$)</span>
+                          <span>Orçamento diário (R$)</span>
                           <input
                             type="number"
                             min="0"
@@ -1390,9 +1390,9 @@ function DuplicarView({
                         <table>
                           <thead>
                             <tr>
-                              <th>AnÃºncio (origem)</th>
+                              <th>Anúncio (origem)</th>
                               <th>Novo nome</th>
-                              <th>AÃ§Ã£o</th>
+                              <th>Ação</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1460,13 +1460,13 @@ function EditarView({
         <div className="card-head">
           <div>
             <span className="eyebrow">Editar</span>
-            <h2 className="section-title">URLs e parÃ¢metros</h2>
+            <h2 className="section-title">URLs e parâmetros</h2>
           </div>
           <div className="chip-group">
             <button className="ghost" onClick=${onLoad} disabled=${loading}>
-              ${loading ? "Carregando..." : "Carregar anÃºncios"}
+              ${loading ? "Carregando..." : "Carregar anúncios"}
             </button>
-            <span className="chip neutral">${ads.length} anÃºncios</span>
+            <span className="chip neutral">${ads.length} anúncios</span>
           </div>
         </div>
         <div className="filters">
@@ -1489,18 +1489,18 @@ function EditarView({
               <tr>
                 <th>Campanha</th>
                 <th>Conjunto</th>
-                <th>AnÃºncio</th>
+                <th>Anúncio</th>
                 <th>URL</th>
                 <th>Destino (URL)</th>
-                <th>ParÃ¢metros de URL</th>
+                <th>Parâmetros de URL</th>
                 <th>Status URL</th>
                 <th>Atualizado</th>
                 <th>Verificado</th>
                 <th>Status</th>
-                <th>Renomear anÃºncio</th>
+                <th>Renomear anúncio</th>
                 <th>Renomear conjunto</th>
-                <th>Limpar ParÃ¢metro e Melhorar URL</th>
-                <th>AÃ§Ã£o</th>
+                <th>Limpar Parâmetro e Melhorar URL</th>
+                <th>Ação</th>
               </tr>
             </thead>
             <tbody>
@@ -1653,7 +1653,7 @@ function EditarView({
           </table>
         </div>
         <p className="muted small">
-          "Duplicar com URL" cria um novo anÃºncio com a URL/UTM informada (via /copies),
+          "Duplicar com URL" cria um novo anúncio com a URL/UTM informada (via /copies),
           mantendo o criativo original sem virar "Post existente".
         </p>
       </section>
@@ -1767,7 +1767,7 @@ function MetaJoinTable({
               <th>Custo por resultado</th>
               <th>Resultados (Meta)</th>
               <th>Valor gasto</th>
-              <th>OrÃ§amento (Meta)</th>
+              <th>Orçamento (Meta)</th>
               <th>Custo alvo (Meta)</th>
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
@@ -1990,7 +1990,7 @@ function MetaJoinTable({
                                       ? "Ligado"
                                       : "Desligado"}
                                   </button>`
-                                : html`<span className="muted small">IndisponÃ­vel</span>`}
+                                : html`<span className="muted small">Indisponível</span>`}
                             </div>`
                           : "-"}
                       </td>
@@ -2004,8 +2004,8 @@ function MetaJoinTable({
           ? (() => {
               if (!showJoinads) {
                 return html`<div className="muted small" style=${{ marginTop: "8px" }}>
-                  JoinAds por anÃºncio Ã© agregado no perÃ­odo. Em intervalos maiores
-                  que 1 dia, os valores nÃ£o sÃ£o exibidos aqui para evitar distorÃ§Ãµes.
+                  JoinAds por anúncio é agregado no período. Em intervalos maiores
+                  que 1 dia, os valores não são exibidos aqui para evitar distorções.
                   Veja o resumo agrupado para totais corretos.
                 </div>`;
               }
@@ -2110,7 +2110,7 @@ function MetaJoinGroupedTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Meta x JoinAds</span>
-          <h2 className="section-title">Resumo agrupado (por anÃºncio)</h2>
+          <h2 className="section-title">Resumo agrupado (por anúncio)</h2>
         </div>
         <span className="chip neutral">${grouped.length} linhas</span>
       </div>
@@ -2186,13 +2186,13 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
       <section className="card wide">
         <div className="card-head">
           <div>
-            <span className="eyebrow">AtribuiÃ§Ã£o</span>
-            <h2 className="section-title">Sem UTM -> conjunto lÃ­der</h2>
+            <span className="eyebrow">Atribuição</span>
+            <h2 className="section-title">Sem UTM -> conjunto líder</h2>
           </div>
           <span className="chip neutral">Estimativa</span>
         </div>
         <p className="muted small">
-          Sem dados suficientes para atribuir Sem UTM ao conjunto lÃ­der.
+          Sem dados suficientes para atribuir Sem UTM ao conjunto líder.
         </p>
       </section>
     `;
@@ -2247,13 +2247,13 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
       <section className="card wide">
         <div className="card-head">
           <div>
-            <span className="eyebrow">AtribuiÃ§Ã£o</span>
-            <h2 className="section-title">Sem UTM -> conjunto lÃ­der</h2>
+            <span className="eyebrow">Atribuição</span>
+            <h2 className="section-title">Sem UTM -> conjunto líder</h2>
           </div>
           <span className="chip neutral">Estimativa</span>
         </div>
         <p className="muted small">
-          Sem dados de conjuntos (utm_term) para definir lÃ­der.
+          Sem dados de conjuntos (utm_term) para definir líder.
         </p>
       </section>
     `;
@@ -2263,7 +2263,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
   const hasEcpm = list.some((row) => row.ecpm > 0);
   const hasCtr = list.some((row) => row.ctr > 0);
   let leader = list[0];
-  let criterionLabel = "ImpressÃµes";
+  let criterionLabel = "Impressões";
   let criterionValue = number.format(leader?.impressions || 0);
 
   let leaderSpend = 0;
@@ -2295,7 +2295,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
     leader = list.reduce((best, row) =>
       row.impressions > best.impressions ? row : best
     );
-    criterionLabel = "ImpressÃµes";
+    criterionLabel = "Impressões";
     criterionValue = number.format(leader.impressions || 0);
   }
 
@@ -2328,11 +2328,11 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
     <section className="card wide">
       <div className="card-head">
         <div>
-          <span className="eyebrow">AtribuiÃ§Ã£o</span>
-          <h2 className="section-title">Sem UTM -> conjunto lÃ­der</h2>
+          <span className="eyebrow">Atribuição</span>
+          <h2 className="section-title">Sem UTM -> conjunto líder</h2>
         </div>
         <div className="chip-group">
-          <span className="chip neutral">CritÃ©rio: ${criterionLabel}</span>
+          <span className="chip neutral">Critério: ${criterionLabel}</span>
           <span className="chip neutral">${criterionValue}</span>
         </div>
       </div>
@@ -2342,7 +2342,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
             <tr>
               <th>Tipo</th>
               <th>Conjunto</th>
-              <th>ImpressÃµes</th>
+              <th>Impressões</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>eCPM cliente</th>
@@ -2351,7 +2351,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
           </thead>
           <tbody>
             <tr>
-              <td>LÃ­der (original)</td>
+              <td>Líder (original)</td>
               <td>${leader.name}</td>
               <td>${number.format(leaderImps)}</td>
               <td>${number.format(leaderClicks)}</td>
@@ -2371,7 +2371,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
               <td>-</td>
             </tr>
             <tr className="summary-row">
-              <td><strong>Total atribuÃ­do</strong></td>
+              <td><strong>Total atribuído</strong></td>
               <td><strong>${leader.name}</strong></td>
               <td><strong>${number.format(totalImps)}</strong></td>
               <td><strong>${number.format(totalClicks)}</strong></td>
@@ -2383,8 +2383,8 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
         </table>
       </div>
       <p className="muted small">
-        Estimativa: Sem UTM foi atribuÃ­do ao conjunto lÃ­der pelo critÃ©rio de
-        ${criterionLabel}. Use como referÃªncia, nÃ£o como dado oficial.
+        Estimativa: Sem UTM foi atribuído ao conjunto líder pelo critério de
+        ${criterionLabel}. Use como referência, não como dado oficial.
       </p>
     </section>
   `;
@@ -2605,7 +2605,7 @@ function App() {
     }
 
     if (!filters.metaAccountId.trim()) {
-      setError("Informe o ID da conta de anÃºncios (Meta).");
+      setError("Informe o ID da conta de anúncios (Meta).");
       return;
     }
 
@@ -2614,7 +2614,7 @@ function App() {
     const diffMs = end.getTime() - start.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     if (diffDays > 15) {
-      setError("Intervalo mÃ¡ximo permitido Ã© de 15 dias.");
+      setError("Intervalo máximo permitido é de 15 dias.");
       return;
     }
 
@@ -2660,7 +2660,7 @@ function App() {
         pushLog("earnings-all", err);
         return { data: [] };
       });
-      // key-value mantido em utm_campaign para evitar 422 em tokens que nÃ£o aceitam utm_content
+      // key-value mantido em utm_campaign para evitar 422 em tokens que não aceitam utm_content
       const keyValueContentPromise = fetchJson(
         `${API_BASE}/key-value?${new URLSearchParams({
           start_date: filters.startDate,
@@ -2803,7 +2803,7 @@ function App() {
       ]);
 
       // key-value para coletar UTMs usadas
-      // Somente keys aceitas pelo endpoint (evita erro de validaÃ§Ã£o)
+      // Somente keys aceitas pelo endpoint (evita erro de validação)
       const customKeys = ["utm_campaign"];
       const keyValueResults = await Promise.all(
         customKeys.map((ck) =>
@@ -2999,7 +2999,7 @@ function App() {
 
   const handleLoadDuplicar = async (force = false) => {
     if (!filters.metaAccountId.trim()) {
-      setDupError("Informe o ID da conta de anÃºncios (Meta).");
+      setDupError("Informe o ID da conta de anúncios (Meta).");
       return;
     }
     setDupLoading(true);
@@ -3153,7 +3153,7 @@ function App() {
 
   const handleLoadEditar = async () => {
     if (!filters.metaAccountId.trim()) {
-      setEditError("Informe o ID da conta de anÃºncios (Meta).");
+      setEditError("Informe o ID da conta de anúncios (Meta).");
       return;
     }
     setEditLoading(true);
@@ -4238,7 +4238,7 @@ function App() {
 
   const filteredMeta = useMemo(() => {
     if (isTodaySelected) {
-      // Hoje: mantÃ©m linhas Meta mesmo sem match JoinAds (JoinAds pode atrasar).
+      // Hoje: mantém linhas Meta mesmo sem match JoinAds (JoinAds pode atrasar).
       return metaDomainFiltered;
     }
     return metaDomainFiltered.filter((row) => row.joinads_matched);
@@ -4517,13 +4517,13 @@ function App() {
         <div>
           <h1>Dashboard de Publisher</h1>
           <p className="subtitle">
-            Arbitragem de trÃ¡fego com dados em tempo real da JoinAds.
-            <span className="muted small"> â€¢ VersÃ£o ${APP_VERSION}</span>
+            Arbitragem de tráfego com dados em tempo real da JoinAds.
+            <span className="muted small"> • Versão ${APP_VERSION}</span>
           </p>
         </div>
         <div className="actions">
           <div className="muted small">
-            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotaÃ§Ã£o..."}
+            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotação..."}
           </div>
           <button
             className="ghost"
@@ -4561,7 +4561,7 @@ function App() {
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
-          URLs com ParÃ¢metros
+          URLs com Parâmetros
         </button>
         <button
           className=${`tab ${activeTab === "meta" ? "active" : ""}`}
@@ -4573,7 +4573,7 @@ function App() {
           className=${`tab ${activeTab === "diag" ? "active" : ""}`}
           onClick=${() => setActiveTab("diag")}
         >
-          DiagnÃ³stico JoinAds
+          Diagnóstico JoinAds
         </button>
         <button
           className=${`tab ${activeTab === "token" ? "active" : ""}`}
@@ -4585,7 +4585,7 @@ function App() {
           className=${`tab ${activeTab === "pages" ? "active" : ""}`}
           onClick=${() => setActiveTab("pages")}
         >
-          PÃ¡ginas
+          Páginas
         </button>
       </div>
 
@@ -4707,13 +4707,13 @@ function App() {
                 <div className="card-head">
                   <div>
                     <span className="eyebrow">Meta</span>
-                    <h2 className="section-title">PÃ¡ginas gerenciadas</h2>
+                    <h2 className="section-title">Páginas gerenciadas</h2>
                   </div>
                   <div className="chip-group">
                     <button className="ghost" onClick=${handleLoadPages} disabled=${pagesLoading}>
-                      ${pagesLoading ? "Carregando..." : "Carregar pÃ¡ginas"}
+                      ${pagesLoading ? "Carregando..." : "Carregar páginas"}
                     </button>
-                    <span className="chip neutral">${pagesList.length} pÃ¡ginas</span>
+                    <span className="chip neutral">${pagesList.length} páginas</span>
                   </div>
                 </div>
                 ${pagesError
@@ -4730,7 +4730,7 @@ function App() {
                     </thead>
                     <tbody>
                       ${pagesList.length === 0
-                        ? html`<tr><td colSpan="3" className="muted">Sem pÃ¡ginas carregadas.</td></tr>`
+                        ? html`<tr><td colSpan="3" className="muted">Sem páginas carregadas.</td></tr>`
                         : pagesList.map(
                             (page) => html`
                               <tr key=${page.id}>
@@ -4772,6 +4772,7 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
 
 
 
