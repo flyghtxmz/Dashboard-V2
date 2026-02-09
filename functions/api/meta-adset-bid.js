@@ -1,6 +1,7 @@
-import { jsonResponse, readJson, getMetaToken, safeJson } from "../_utils.js";
+﻿import { jsonResponse, readJson, getMetaToken, safeJson } from "../_utils.js";
 
 const API_BASE = "https://graph.facebook.com/v24.0";
+const BID_STRATEGY_DEFAULT = "LOWEST_COST_WITH_BID_CAP";
 
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
@@ -13,7 +14,7 @@ export async function onRequest({ request, env }) {
   }
 
   const body = await readJson(request);
-  const { adset_id, bid_amount_brl } = body || {};
+  const { adset_id, bid_amount_brl, bid_strategy } = body || {};
   if (!adset_id || bid_amount_brl === undefined || bid_amount_brl === null) {
     return jsonResponse(400, {
       error: "Parametros obrigatorios: adset_id, bid_amount_brl",
@@ -21,6 +22,7 @@ export async function onRequest({ request, env }) {
   }
 
   const bidNumber = Number(String(bid_amount_brl).replace(",", "."));
+  const bidStrategy = (bid_strategy || BID_STRATEGY_DEFAULT).toUpperCase();
   if (!Number.isFinite(bidNumber) || bidNumber <= 0) {
     return jsonResponse(400, { error: "bid_amount_brl invalido" });
   }
@@ -28,6 +30,7 @@ export async function onRequest({ request, env }) {
   try {
     const params = new URLSearchParams();
     params.set("bid_amount", String(Math.round(bidNumber * 100)));
+    params.set("bid_strategy", bidStrategy);
     params.set("access_token", token);
 
     const response = await fetch(`${API_BASE}/${encodeURIComponent(adset_id)}`, {
@@ -44,7 +47,7 @@ export async function onRequest({ request, env }) {
       const checkRes = await fetch(
         `${API_BASE}/${encodeURIComponent(
           adset_id
-        )}?fields=bid_amount,bid_strategy,optimization_goal&access_token=${token}`
+        )}?fields=bid_amount,bid_strategy,optimization_goal,bid_constraints&access_token=${token}`
       );
       adset = await safeJson(checkRes);
     } catch (e) {

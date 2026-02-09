@@ -7,7 +7,8 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const APP_VERSION_BUILD = 63;
+const BID_STRATEGY_DEFAULT = "LOWEST_COST_WITH_BID_CAP";
+const APP_VERSION_BUILD = 64;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -1065,6 +1066,14 @@ const objectiveMap = {
   LINK_CLICKS: "Cliques no link",
 };
 const formatObjective = (value) => objectiveMap[value] || value || "-";
+const bidStrategyMap = {
+  LOWEST_COST_WITHOUT_CAP: "Menor custo (sem limite)",
+  LOWEST_COST_WITH_BID_CAP: "Limite de lance",
+  COST_CAP: "Meta de custo",
+  LOWEST_COST_WITH_MIN_ROAS: "ROAS mínimo",
+};
+const formatBidStrategy = (value) =>
+  bidStrategyMap[(value || "").toUpperCase()] || value || "-";
 const normalizeKey = (value) =>
   (value ?? "")
     .toString()
@@ -1826,7 +1835,9 @@ function MetaJoinTable({
                                 row.adset_bid_amount_brl != null
                                   ? currencyBRL.format(row.adset_bid_amount_brl)
                                   : row.adset_bid_strategy
-                                  ? `Definido (${row.adset_bid_strategy})`
+                                  ? `Definido (${formatBidStrategy(
+                                      row.adset_bid_strategy
+                                    )})`
                                   : "-";
                               const fallbackValue =
                                 row.adset_bid_amount_brl != null
@@ -3554,6 +3565,7 @@ function App() {
         body: JSON.stringify({
           adset_id: adsetId,
           bid_amount_brl: bidNumber,
+          bid_strategy: BID_STRATEGY_DEFAULT,
         }),
       });
       const updated = res?.adset || null;
@@ -3572,7 +3584,7 @@ function App() {
         );
       }
       pushLog("meta-bid", {
-        message: `Custo alvo atualizado: ${adsetId} -> R$ ${bidNumber.toFixed(
+        message: `Custo alvo atualizado (limite de lance): ${adsetId} -> R$ ${bidNumber.toFixed(
           2
         )}`,
       });
@@ -4677,6 +4689,9 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
+
+
 
 
 
