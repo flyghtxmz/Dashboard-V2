@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
+import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
@@ -7,8 +7,10 @@ const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
   "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
 const DUPLICATE_STATUS = "ACTIVE";
-const BID_STRATEGY_DEFAULT = "LOWEST_COST_WITH_BID_CAP";
-const APP_VERSION_BUILD = 64;
+const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
+const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
+const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
+const APP_VERSION_BUILD = 65;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -79,9 +81,16 @@ function toNumber(value) {
 }
 
 async function fetchJson(path, options = {}) {
-  const method = (options.method || "GET").toUpperCase();
-  const cacheTtl = options.cacheTtlMs || 0;
-  const cacheKey = options.cacheKey || path;
+  const {
+    cacheTtlMs,
+    cacheKey: cacheKeyOverride,
+    force,
+    cacheMode,
+    ...fetchOptions
+  } = options || {};
+  const method = (fetchOptions.method || "GET").toUpperCase();
+  const cacheTtl = cacheTtlMs || 0;
+  const cacheKey = cacheKeyOverride || path;
 
   let isLiveTodayQuery = false;
   if (method === "GET") {
@@ -95,7 +104,7 @@ async function fetchJson(path, options = {}) {
     }
   }
 
-  if (method === "GET" && cacheTtl && !options.force && !isLiveTodayQuery) {
+  if (method === "GET" && cacheTtl && !force && !isLiveTodayQuery) {
     try {
       const raw = localStorage.getItem("__cd_cache__");
       const store = raw ? JSON.parse(raw) : {};
@@ -109,10 +118,11 @@ async function fetchJson(path, options = {}) {
   }
 
   const res = await fetch(path, {
-    ...options,
+    ...fetchOptions,
+    cache: cacheMode || "no-store",
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
   });
   const data = await res.json().catch(() => ({}));
@@ -1074,6 +1084,12 @@ const bidStrategyMap = {
 };
 const formatBidStrategy = (value) =>
   bidStrategyMap[(value || "").toUpperCase()] || value || "-";
+const strategyToMode = (strategy) =>
+  (strategy || "").toUpperCase() === BID_STRATEGY_WITHOUT_BID
+    ? "without_bid"
+    : "with_bid";
+const modeToStrategy = (mode) =>
+  mode === "without_bid" ? BID_STRATEGY_WITHOUT_BID : BID_STRATEGY_WITH_BID;
 const normalizeKey = (value) =>
   (value ?? "")
     .toString()
@@ -1658,6 +1674,7 @@ function MetaJoinTable({
   };
   const [budgetInputs, setBudgetInputs] = useState({});
   const [bidInputs, setBidInputs] = useState({});
+  const [bidModes, setBidModes] = useState({});
 
   const setBudget = (adsetId, value) => {
     setBudgetInputs((prev) => ({ ...prev, [adsetId]: value }));
@@ -1678,6 +1695,19 @@ function MetaJoinTable({
       return fallback ?? "";
     }
     return raw;
+  };
+  const setBidMode = (adsetId, mode) => {
+    setBidModes((prev) => ({
+      ...prev,
+      [adsetId]: mode === "without_bid" ? "without_bid" : "with_bid",
+    }));
+  };
+  const getBidMode = (adsetId, strategyFallback) => {
+    const mode = bidModes[adsetId];
+    if (mode === "with_bid" || mode === "without_bid") {
+      return mode;
+    }
+    return strategyToMode(strategyFallback);
   };
 
   const showJoinads = !isMultiDay;
@@ -1778,19 +1808,19 @@ function MetaJoinTable({
                       <td>
                         ${row.adset_id
                           ? (() => {
-                              const current =
+                              const currentBudget =
                                 row.adset_daily_budget_brl != null
                                   ? currencyBRL.format(row.adset_daily_budget_brl)
                                   : row.adset_lifetime_budget_brl != null
                                   ? `${currencyBRL.format(row.adset_lifetime_budget_brl)} (vitalicio)`
                                   : "-";
-                              const fallbackValue =
+                              const fallbackBudgetValue =
                                 row.adset_daily_budget_brl != null
                                   ? row.adset_daily_budget_brl.toFixed(2)
                                   : "";
                               return html`<div className="budget-cell">
                                 <div className="budget-meta">
-                                  <span className="muted small">Atual: ${current}</span>
+                                  <span className="muted small">Atual: ${currentBudget}</span>
                                 </div>
                                 <div className="budget-actions">
                                   <input
@@ -1798,14 +1828,14 @@ function MetaJoinTable({
                                     min="0"
                                     step="0.01"
                                     placeholder="R$"
-                                    value=${getBudget(row.adset_id, fallbackValue)}
+                                    value=${getBudget(row.adset_id, fallbackBudgetValue)}
                                     onChange=${(e) =>
                                       setBudget(row.adset_id, e.target.value)}
                                     onKeyDown=${(e) => {
                                       if (e.key === "Enter") {
                                         onBudgetUpdate?.(
                                           row.adset_id,
-                                          getBudget(row.adset_id, fallbackValue)
+                                          getBudget(row.adset_id, fallbackBudgetValue)
                                         );
                                       }
                                     }}
@@ -1816,7 +1846,7 @@ function MetaJoinTable({
                                     onClick=${() =>
                                       onBudgetUpdate?.(
                                         row.adset_id,
-                                        getBudget(row.adset_id, fallbackValue)
+                                        getBudget(row.adset_id, fallbackBudgetValue)
                                       )}
                                   >
                                     ${budgetLoading && budgetLoading[row.adset_id]
@@ -1831,36 +1861,51 @@ function MetaJoinTable({
                       <td>
                         ${row.adset_id
                           ? (() => {
-                              const current =
-                                row.adset_bid_amount_brl != null
+                              const currentMode = getBidMode(
+                                row.adset_id,
+                                row.adset_bid_strategy
+                              );
+                              const usingBid = currentMode === "with_bid";
+                              const modeLabel = usingBid ? "Com bid" : "Sem bid";
+                              const currentBid =
+                                usingBid && row.adset_bid_amount_brl != null
                                   ? currencyBRL.format(row.adset_bid_amount_brl)
-                                  : row.adset_bid_strategy
-                                  ? `Definido (${formatBidStrategy(
-                                      row.adset_bid_strategy
-                                    )})`
-                                  : "-";
-                              const fallbackValue =
+                                  : `Definido (${formatBidStrategy(
+                                      modeToStrategy(currentMode)
+                                    )})`;
+                              const fallbackBidValue =
                                 row.adset_bid_amount_brl != null
                                   ? row.adset_bid_amount_brl.toFixed(2)
                                   : "";
                               return html`<div className="budget-cell">
                                 <div className="budget-meta">
-                                  <span className="muted small">Atual: ${current}</span>
+                                  <span className="muted small">Atual: ${currentBid}</span>
+                                  <span className="muted small">Status: ${modeLabel}</span>
                                 </div>
                                 <div className="budget-actions">
+                                  <select
+                                    value=${currentMode}
+                                    onChange=${(e) =>
+                                      setBidMode(row.adset_id, e.target.value)}
+                                  >
+                                    <option value="with_bid">Com bid (Limite de lance)</option>
+                                    <option value="without_bid">Sem bid (Menor custo)</option>
+                                  </select>
                                   <input
                                     type="number"
                                     min="0"
                                     step="0.01"
                                     placeholder="R$"
-                                    value=${getBid(row.adset_id, fallbackValue)}
+                                    disabled=${!usingBid}
+                                    value=${getBid(row.adset_id, fallbackBidValue)}
                                     onChange=${(e) =>
                                       setBid(row.adset_id, e.target.value)}
                                     onKeyDown=${(e) => {
-                                      if (e.key === "Enter") {
+                                      if (usingBid && e.key === "Enter") {
                                         onBidUpdate?.(
                                           row.adset_id,
-                                          getBid(row.adset_id, fallbackValue)
+                                          getBid(row.adset_id, fallbackBidValue),
+                                          currentMode
                                         );
                                       }
                                     }}
@@ -1871,7 +1916,10 @@ function MetaJoinTable({
                                     onClick=${() =>
                                       onBidUpdate?.(
                                         row.adset_id,
-                                        getBid(row.adset_id, fallbackValue)
+                                        usingBid
+                                          ? getBid(row.adset_id, fallbackBidValue)
+                                          : "",
+                                        currentMode
                                       )}
                                   >
                                     ${bidLoading && bidLoading[row.adset_id]
@@ -2788,6 +2836,9 @@ function App() {
           end_date: filters.endDate,
           include_assets: filters.includeAssets ? "1" : "0",
         });
+        if (filters.endDate === formatDate(new Date())) {
+          metaParams.set("_ts", String(Date.now()));
+        }
         const metaRes = await fetchJson(
           `${API_BASE}/meta-insights?${metaParams.toString()}`,
           {
@@ -3548,25 +3599,39 @@ function App() {
     }
   };
 
-  const handleUpdateBid = async (adsetId, bidValue) => {
+  const handleUpdateBid = async (adsetId, bidValue, bidMode = "with_bid") => {
     if (!adsetId) return;
-    const raw = String(bidValue ?? "").trim();
-    if (!raw) return;
-    const bidNumber = Number(raw.replace(",", "."));
-    if (!Number.isFinite(bidNumber) || bidNumber <= 0) {
-      pushLog("meta-bid", { message: "Custo alvo invalido" });
-      return;
+
+    const bidStrategy = modeToStrategy(bidMode);
+    const usingBid = bidStrategy === BID_STRATEGY_WITH_BID;
+
+    let bidNumber = null;
+    if (usingBid) {
+      const raw = String(bidValue ?? "").trim();
+      if (!raw) {
+        pushLog("meta-bid", { message: "Informe o valor para limite de lance." });
+        return;
+      }
+      bidNumber = Number(raw.replace(",", "."));
+      if (!Number.isFinite(bidNumber) || bidNumber <= 0) {
+        pushLog("meta-bid", { message: "Custo alvo invalido" });
+        return;
+      }
     }
 
     setBidLoading((prev) => ({ ...prev, [adsetId]: true }));
     try {
+      const payload = {
+        adset_id: adsetId,
+        bid_strategy: bidStrategy,
+      };
+      if (usingBid) {
+        payload.bid_amount_brl = bidNumber;
+      }
+
       const res = await fetchJson(`${API_BASE}/meta-adset-bid`, {
         method: "POST",
-        body: JSON.stringify({
-          adset_id: adsetId,
-          bid_amount_brl: bidNumber,
-          bid_strategy: BID_STRATEGY_DEFAULT,
-        }),
+        body: JSON.stringify(payload),
       });
       const updated = res?.adset || null;
       if (updated) {
@@ -3575,18 +3640,19 @@ function App() {
             row.adset_id === adsetId
               ? {
                   ...row,
-                  adset_bid_amount: updated.bid_amount,
+                  adset_bid_amount: updated.bid_amount ?? null,
                   adset_bid_strategy: updated.bid_strategy,
                   adset_optimization_goal: updated.optimization_goal,
+                  adset_bid_constraints: updated.bid_constraints,
                 }
               : row
           )
         );
       }
       pushLog("meta-bid", {
-        message: `Custo alvo atualizado (limite de lance): ${adsetId} -> R$ ${bidNumber.toFixed(
-          2
-        )}`,
+        message: usingBid
+          ? `Custo alvo atualizado (limite de lance): ${adsetId} -> R$ ${bidNumber.toFixed(2)}`
+          : `Estrategia atualizada (sem bid): ${adsetId}`,
       });
     } catch (err) {
       pushLog("meta-bid", err);
@@ -3598,7 +3664,6 @@ function App() {
       });
     }
   };
-
   const handlePublishDrafts = async () => {
     if (!drafts.length) return;
     setPublishing(true);
@@ -4689,17 +4754,3 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
