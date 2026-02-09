@@ -1,4 +1,4 @@
-import { jsonResponse, getQuery, getMetaToken, safeJson } from "../_utils.js";
+﻿import { jsonResponse, getQuery, getMetaToken, safeJson } from "../_utils.js";
 
 const API_BASE = "https://graph.facebook.com/v24.0";
 
@@ -108,7 +108,7 @@ export async function onRequest({ request, env }) {
               (value.daily_budget ||
                 value.lifetime_budget ||
                 value.budget_remaining ||
-                value.bid_amount ||
+                value.bid_amount !== undefined ||
                 value.bid_strategy ||
                 value.optimization_goal ||
                 value.bid_constraints ||
@@ -146,7 +146,7 @@ export async function onRequest({ request, env }) {
         enriched.adset_daily_budget = budgetInfo.adset_daily_budget;
         enriched.adset_lifetime_budget = budgetInfo.adset_lifetime_budget;
         enriched.adset_budget_remaining = budgetInfo.adset_budget_remaining;
-        if (budgetInfo.adset_bid_amount) {
+        if (budgetInfo.adset_bid_amount !== undefined) {
           enriched.adset_bid_amount = budgetInfo.adset_bid_amount;
         }
         if (budgetInfo.adset_bid_strategy) {
@@ -232,3 +232,4 @@ export async function onRequest({ request, env }) {
     });
   }
 }
+

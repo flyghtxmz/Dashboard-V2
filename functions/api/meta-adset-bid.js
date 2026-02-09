@@ -3,6 +3,7 @@
 const API_BASE = "https://graph.facebook.com/v24.0";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
+const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
 
 export async function onRequest({ request, env }) {
@@ -24,19 +25,24 @@ export async function onRequest({ request, env }) {
   const bidStrategy = (bid_strategy || BID_STRATEGY_DEFAULT).toUpperCase();
   if (
     bidStrategy !== BID_STRATEGY_WITH_BID &&
-    bidStrategy !== BID_STRATEGY_WITHOUT_BID
+    bidStrategy !== BID_STRATEGY_WITHOUT_BID &&
+    bidStrategy !== BID_STRATEGY_COST_CAP
   ) {
     return jsonResponse(400, {
-      error: "bid_strategy invalida. Use LOWEST_COST_WITH_BID_CAP ou LOWEST_COST_WITHOUT_CAP",
+      error:
+        "bid_strategy invalida. Use LOWEST_COST_WITH_BID_CAP, LOWEST_COST_WITHOUT_CAP ou COST_CAP",
     });
   }
 
+  const requiresAmount =
+    bidStrategy === BID_STRATEGY_WITH_BID || bidStrategy === BID_STRATEGY_COST_CAP;
+
   let bidNumber = null;
-  if (bidStrategy === BID_STRATEGY_WITH_BID) {
+  if (requiresAmount) {
     bidNumber = Number(String(bid_amount_brl).replace(",", "."));
     if (!Number.isFinite(bidNumber) || bidNumber <= 0) {
       return jsonResponse(400, {
-        error: "bid_amount_brl invalido para estrategia com bid",
+        error: "bid_amount_brl invalido para estrategia com valor de custo",
       });
     }
   }
@@ -44,7 +50,7 @@ export async function onRequest({ request, env }) {
   try {
     const params = new URLSearchParams();
     params.set("bid_strategy", bidStrategy);
-    if (bidStrategy === BID_STRATEGY_WITH_BID) {
+    if (requiresAmount) {
       params.set("bid_amount", String(Math.round(bidNumber * 100)));
     }
     params.set("access_token", token);

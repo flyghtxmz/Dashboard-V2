@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
+﻿import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
@@ -9,8 +9,9 @@ const DEFAULT_UTM_TAGS =
 const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
+const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 65;
+const APP_VERSION_BUILD = 66;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -131,7 +132,7 @@ async function fetchJson(path, options = {}) {
       data?.error ||
       data?.message ||
       data?.detail ||
-      `Erro na requisição (${res.status})`;
+      `Erro na requisiÃ§Ã£o (${res.status})`;
     const error = new Error(message);
     error.status = res.status;
     error.data = data;
@@ -245,8 +246,8 @@ const statusLabelMap = {
   PAUSED: "Pausado",
   DISABLED: "Desativado",
   ARCHIVED: "Arquivado",
-  DELETED: "Excluído",
-  PENDING_REVIEW: "Em revisão",
+  DELETED: "ExcluÃ­do",
+  PENDING_REVIEW: "Em revisÃ£o",
   IN_PROCESS: "Em processamento",
   WITH_ISSUES: "Com problemas",
   REJECTED: "Reprovado",
@@ -279,7 +280,7 @@ const statusToneMap = {
 };
 
 function formatStatusLabel(status) {
-  if (!status) return "Indisponível";
+  if (!status) return "IndisponÃ­vel";
   return statusLabelMap[status] || status;
 }
 
@@ -301,19 +302,19 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Receita cliente",
       value: currencyUSD.format(totals.revenueClient || 0),
-      helper: "Após revshare",
+      helper: "ApÃ³s revshare",
       tone: "primary",
     },
     {
       label: "Receita cliente (BRL)",
       value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
-      helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotação",
+      helper: usdToBrl ? "ConversÃ£o USD->BRL" : "Aguardando cotaÃ§Ã£o",
       tone: "primary",
     },
     {
       label: "Valor gasto (Meta)",
       value: currencyBRL.format(metaSpendBrl || 0),
-      helper: "Gasto total do período",
+      helper: "Gasto total do perÃ­odo",
     },
     {
       label: "ROI (BRL)",
@@ -340,7 +341,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Cliques",
       value: number.format(totals.clicks || 0),
-      helper: "Interações",
+      helper: "InteraÃ§Ãµes",
     },
     {
       label: "CTR",
@@ -360,7 +361,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Active view",
       value: `${(totals.activeView || 0).toFixed(1)}%`,
-      helper: "Visibilidade mídia",
+      helper: "Visibilidade mÃ­dia",
     },
   ];
 
@@ -369,7 +370,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Performance</span>
-          <h2 className="section-title">Visão geral</h2>
+          <h2 className="section-title">VisÃ£o geral</h2>
         </div>
         <span className="chip neutral">JoinAds</span>
       </div>
@@ -482,7 +483,7 @@ function EarningsTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Earnings</span>
-          <h2 className="section-title">Relatório de ganhos</h2>
+          <h2 className="section-title">RelatÃ³rio de ganhos</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -555,7 +556,7 @@ function Filters({
     let start = new Date(end);
 
     if (preset === "today") {
-      // mantém hoje
+      // mantÃ©m hoje
     } else if (preset === "yesterday") {
       end.setDate(end.getDate() - 1);
       start = new Date(end);
@@ -579,7 +580,7 @@ function Filters({
       <div className="card-head">
         <div>
           <span className="eyebrow">Filtros</span>
-          <h2 className="section-title">Janela e segmentação</h2>
+          <h2 className="section-title">Janela e segmentaÃ§Ã£o</h2>
         </div>
         <button className="ghost" onClick=${onSubmit} disabled=${loading}>
           ${loading ? "Carregando..." : "Carregar dados"}
@@ -587,7 +588,7 @@ function Filters({
       </div>
       <div className="filters">
         <label className="field">
-          <span>Início</span>
+          <span>InÃ­cio</span>
           <input
             type="date"
             value=${filters.startDate}
@@ -646,7 +647,7 @@ function Filters({
           />
         </label>
         <label className="field">
-          <span>Tipo de relatório</span>
+          <span>Tipo de relatÃ³rio</span>
           <select
             value=${filters.reportType}
             onChange=${(e) =>
@@ -682,10 +683,10 @@ function Filters({
           Ontem
         </button>
         <button className="ghost" onClick=${() => setPreset("last7")} disabled=${loading}>
-          Últimos 7 dias
+          Ãšltimos 7 dias
         </button>
         <button className="ghost" onClick=${() => setPreset("last15")} disabled=${loading}>
-          Últimos 15 dias
+          Ãšltimos 15 dias
         </button>
       </div>
     </section>
@@ -722,7 +723,7 @@ function LogsCard({ logs, onClear }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Logs</span>
-          <h2 className="section-title">Últimas mensagens</h2>
+          <h2 className="section-title">Ãšltimas mensagens</h2>
         </div>
         <button className="ghost" onClick=${onClear} disabled=${logs.length === 0}>
           Limpar
@@ -739,7 +740,7 @@ function LogsCard({ logs, onClear }) {
                       <span className="pill neutral">${entry.source || "app"}</span>
                       <span className="muted small">
                         ${entry.time.toLocaleString("pt-BR")}
-                        ${entry.status ? ` • ${entry.status}` : ""}
+                        ${entry.status ? ` â€¢ ${entry.status}` : ""}
                       </span>
                     </div>
                     <div className="log-message">${entry.message}</div>
@@ -761,7 +762,7 @@ function TopUrlTable({ rows, totals }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">URLs</span>
-          <h2 className="section-title">Top URLs com Parâmetros</h2>
+          <h2 className="section-title">Top URLs com ParÃ¢metros</h2>
         </div>
         <span className="chip neutral">${rows.length} itens</span>
       </div>
@@ -827,7 +828,7 @@ function ParamTable({ rows }) {
     <section className="card">
       <div className="card-head">
         <div>
-          <span className="eyebrow">Parâmetros</span>
+          <span className="eyebrow">ParÃ¢metros</span>
           <h2 className="section-title">UTMs e query params vistos</h2>
         </div>
         <span className="chip neutral">${rows.length} pares</span>
@@ -841,7 +842,7 @@ function ParamTable({ rows }) {
               <th>Impressoes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
-              <th>Ocorrências</th>
+              <th>OcorrÃªncias</th>
             </tr>
           </thead>
           <tbody>
@@ -849,7 +850,7 @@ function ParamTable({ rows }) {
               ? html`
                   <tr>
                     <td colSpan="3" className="muted">
-                      Nenhum parâmetro encontrado neste intervalo.
+                      Nenhum parÃ¢metro encontrado neste intervalo.
                     </td>
                   </tr>
                 `
@@ -890,7 +891,7 @@ function DiagnosticsJoin({
       <div className="card-head">
         <div>
           <span className="eyebrow">JoinAds</span>
-          <h2 className="section-title">Diagnóstico do token</h2>
+          <h2 className="section-title">DiagnÃ³stico do token</h2>
         </div>
         <div className="chip-group">
           <span className="chip neutral">Dominio: ${domain || "-"}</span>
@@ -969,8 +970,8 @@ function DiagnosticsJoin({
         </table>
       </div>
       <p className="muted small">
-        Se super-filter estiver vazio, a API não retornou dados para utm_content/utm_campaign.
-        Confirme UTMs nos anúncios e intervalo (&lt;=15 dias).
+        Se super-filter estiver vazio, a API nÃ£o retornou dados para utm_content/utm_campaign.
+        Confirme UTMs nos anÃºncios e intervalo (&lt;=15 dias).
       </p>
     </section>
   `;
@@ -988,7 +989,7 @@ function DiagnosticsNoUtmSummary({ row }) {
       </div>
       <div className="metrics-grid">
         <div className="metric-card">
-          <div className="metric-label">Impressões</div>
+          <div className="metric-label">ImpressÃµes</div>
           <div className="metric-value">${number.format(row?.impressions || 0)}</div>
         </div>
         <div className="metric-card">
@@ -1080,16 +1081,21 @@ const bidStrategyMap = {
   LOWEST_COST_WITHOUT_CAP: "Menor custo (sem limite)",
   LOWEST_COST_WITH_BID_CAP: "Limite de lance",
   COST_CAP: "Meta de custo",
-  LOWEST_COST_WITH_MIN_ROAS: "ROAS mínimo",
+  LOWEST_COST_WITH_MIN_ROAS: "ROAS mÃ­nimo",
 };
 const formatBidStrategy = (value) =>
   bidStrategyMap[(value || "").toUpperCase()] || value || "-";
-const strategyToMode = (strategy) =>
-  (strategy || "").toUpperCase() === BID_STRATEGY_WITHOUT_BID
-    ? "without_bid"
-    : "with_bid";
-const modeToStrategy = (mode) =>
-  mode === "without_bid" ? BID_STRATEGY_WITHOUT_BID : BID_STRATEGY_WITH_BID;
+const strategyToMode = (strategy) => {
+  const normalized = (strategy || "").toUpperCase();
+  if (normalized === BID_STRATEGY_WITHOUT_BID) return "without_bid";
+  if (normalized === BID_STRATEGY_COST_CAP) return "cost_cap";
+  return "with_bid";
+};
+const modeToStrategy = (mode) => {
+  if (mode === "without_bid") return BID_STRATEGY_WITHOUT_BID;
+  if (mode === "cost_cap") return BID_STRATEGY_COST_CAP;
+  return BID_STRATEGY_WITH_BID;
+};
 const normalizeKey = (value) =>
   (value ?? "")
     .toString()
@@ -1183,7 +1189,7 @@ function DuplicarView({
       adset?.daily_budget != null ? currencyBRL.format(adset.daily_budget / 100) : null;
     const life =
       adset?.lifetime_budget != null
-        ? `${currencyBRL.format(adset.lifetime_budget / 100)} (vitalício)`
+        ? `${currencyBRL.format(adset.lifetime_budget / 100)} (vitalÃ­cio)`
         : null;
     return daily || life || "-";
   };
@@ -1243,7 +1249,7 @@ function DuplicarView({
                     <div>
                       <strong>${camp.name}</strong>
                       <div className="muted small">
-                        ID: ${camp.id} • ${camp.effective_status || camp.status || "-"}
+                        ID: ${camp.id} â€¢ ${camp.effective_status || camp.status || "-"}
                       </div>
                     </div>
                   </div>
@@ -1265,8 +1271,8 @@ function DuplicarView({
                                   </label>
                                   <div className="muted small">
                                     ID: ${adset.id}
-                                    • ${adset.effective_status || adset.status || "-"}
-                                    • Orçamento: ${budgetLabel(adset)}
+                                    â€¢ ${adset.effective_status || adset.status || "-"}
+                                    â€¢ OrÃ§amento: ${budgetLabel(adset)}
                                   </div>
                                 </div>
                                 <div className="dup-actions">
@@ -1289,7 +1295,7 @@ function DuplicarView({
                               </div>
                               <details>
                                 <summary>
-                                  Anúncios (${(adset.ads || []).length})
+                                  AnÃºncios (${(adset.ads || []).length})
                                 </summary>
                                 <ul className="dup-ads">
                                   ${(adset.ads || []).map(
@@ -1310,7 +1316,7 @@ function DuplicarView({
         <div className="card-head">
           <div>
             <span className="eyebrow">Rascunho</span>
-            <h2 className="section-title">Duplicações pendentes</h2>
+            <h2 className="section-title">DuplicaÃ§Ãµes pendentes</h2>
           </div>
           <button
             className="primary"
@@ -1354,7 +1360,7 @@ function DuplicarView({
                           />
                         </label>
                         <label className="field">
-                          <span>Número de cópias</span>
+                          <span>NÃºmero de cÃ³pias</span>
                           <input
                             type="number"
                             min="1"
@@ -1367,7 +1373,7 @@ function DuplicarView({
                           />
                         </label>
                         <label className="field">
-                          <span>Orçamento diário (R$)</span>
+                          <span>OrÃ§amento diÃ¡rio (R$)</span>
                           <input
                             type="number"
                             min="0"
@@ -1384,9 +1390,9 @@ function DuplicarView({
                         <table>
                           <thead>
                             <tr>
-                              <th>Anúncio (origem)</th>
+                              <th>AnÃºncio (origem)</th>
                               <th>Novo nome</th>
-                              <th>Ação</th>
+                              <th>AÃ§Ã£o</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1454,13 +1460,13 @@ function EditarView({
         <div className="card-head">
           <div>
             <span className="eyebrow">Editar</span>
-            <h2 className="section-title">URLs e parâmetros</h2>
+            <h2 className="section-title">URLs e parÃ¢metros</h2>
           </div>
           <div className="chip-group">
             <button className="ghost" onClick=${onLoad} disabled=${loading}>
-              ${loading ? "Carregando..." : "Carregar anúncios"}
+              ${loading ? "Carregando..." : "Carregar anÃºncios"}
             </button>
-            <span className="chip neutral">${ads.length} anúncios</span>
+            <span className="chip neutral">${ads.length} anÃºncios</span>
           </div>
         </div>
         <div className="filters">
@@ -1483,18 +1489,18 @@ function EditarView({
               <tr>
                 <th>Campanha</th>
                 <th>Conjunto</th>
-                <th>Anúncio</th>
+                <th>AnÃºncio</th>
                 <th>URL</th>
                 <th>Destino (URL)</th>
-                <th>Parâmetros de URL</th>
+                <th>ParÃ¢metros de URL</th>
                 <th>Status URL</th>
                 <th>Atualizado</th>
                 <th>Verificado</th>
                 <th>Status</th>
-                <th>Renomear anúncio</th>
+                <th>Renomear anÃºncio</th>
                 <th>Renomear conjunto</th>
-                <th>Limpar Parâmetro e Melhorar URL</th>
-                <th>Ação</th>
+                <th>Limpar ParÃ¢metro e Melhorar URL</th>
+                <th>AÃ§Ã£o</th>
               </tr>
             </thead>
             <tbody>
@@ -1647,7 +1653,7 @@ function EditarView({
           </table>
         </div>
         <p className="muted small">
-          "Duplicar com URL" cria um novo anúncio com a URL/UTM informada (via /copies),
+          "Duplicar com URL" cria um novo anÃºncio com a URL/UTM informada (via /copies),
           mantendo o criativo original sem virar "Post existente".
         </p>
       </section>
@@ -1699,12 +1705,17 @@ function MetaJoinTable({
   const setBidMode = (adsetId, mode) => {
     setBidModes((prev) => ({
       ...prev,
-      [adsetId]: mode === "without_bid" ? "without_bid" : "with_bid",
+      [adsetId]:
+        mode === "without_bid"
+          ? "without_bid"
+          : mode === "cost_cap"
+          ? "cost_cap"
+          : "with_bid",
     }));
   };
   const getBidMode = (adsetId, strategyFallback) => {
     const mode = bidModes[adsetId];
-    if (mode === "with_bid" || mode === "without_bid") {
+    if (mode === "with_bid" || mode === "without_bid" || mode === "cost_cap") {
       return mode;
     }
     return strategyToMode(strategyFallback);
@@ -1756,7 +1767,7 @@ function MetaJoinTable({
               <th>Custo por resultado</th>
               <th>Resultados (Meta)</th>
               <th>Valor gasto</th>
-              <th>Orçamento (Meta)</th>
+              <th>OrÃ§amento (Meta)</th>
               <th>Custo alvo (Meta)</th>
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
@@ -1865,10 +1876,15 @@ function MetaJoinTable({
                                 row.adset_id,
                                 row.adset_bid_strategy
                               );
-                              const usingBid = currentMode === "with_bid";
-                              const modeLabel = usingBid ? "Com bid" : "Sem bid";
+                              const requiresBidValue = currentMode !== "without_bid";
+                              const modeLabel =
+                                currentMode === "cost_cap"
+                                  ? "Meta de custo"
+                                  : currentMode === "with_bid"
+                                  ? "Com bid"
+                                  : "Sem bid";
                               const currentBid =
-                                usingBid && row.adset_bid_amount_brl != null
+                                requiresBidValue && row.adset_bid_amount_brl != null
                                   ? currencyBRL.format(row.adset_bid_amount_brl)
                                   : `Definido (${formatBidStrategy(
                                       modeToStrategy(currentMode)
@@ -1890,18 +1906,19 @@ function MetaJoinTable({
                                   >
                                     <option value="with_bid">Com bid (Limite de lance)</option>
                                     <option value="without_bid">Sem bid (Menor custo)</option>
+                                    <option value="cost_cap">Meta de custo (Opcional)</option>
                                   </select>
                                   <input
                                     type="number"
                                     min="0"
                                     step="0.01"
                                     placeholder="R$"
-                                    disabled=${!usingBid}
+                                    disabled=${!requiresBidValue}
                                     value=${getBid(row.adset_id, fallbackBidValue)}
                                     onChange=${(e) =>
                                       setBid(row.adset_id, e.target.value)}
                                     onKeyDown=${(e) => {
-                                      if (usingBid && e.key === "Enter") {
+                                      if (requiresBidValue && e.key === "Enter") {
                                         onBidUpdate?.(
                                           row.adset_id,
                                           getBid(row.adset_id, fallbackBidValue),
@@ -1916,7 +1933,7 @@ function MetaJoinTable({
                                     onClick=${() =>
                                       onBidUpdate?.(
                                         row.adset_id,
-                                        usingBid
+                                        requiresBidValue
                                           ? getBid(row.adset_id, fallbackBidValue)
                                           : "",
                                         currentMode
@@ -1973,7 +1990,7 @@ function MetaJoinTable({
                                       ? "Ligado"
                                       : "Desligado"}
                                   </button>`
-                                : html`<span className="muted small">Indisponível</span>`}
+                                : html`<span className="muted small">IndisponÃ­vel</span>`}
                             </div>`
                           : "-"}
                       </td>
@@ -1987,8 +2004,8 @@ function MetaJoinTable({
           ? (() => {
               if (!showJoinads) {
                 return html`<div className="muted small" style=${{ marginTop: "8px" }}>
-                  JoinAds por anúncio é agregado no período. Em intervalos maiores
-                  que 1 dia, os valores não são exibidos aqui para evitar distorções.
+                  JoinAds por anÃºncio Ã© agregado no perÃ­odo. Em intervalos maiores
+                  que 1 dia, os valores nÃ£o sÃ£o exibidos aqui para evitar distorÃ§Ãµes.
                   Veja o resumo agrupado para totais corretos.
                 </div>`;
               }
@@ -2093,7 +2110,7 @@ function MetaJoinGroupedTable({ rows }) {
       <div className="card-head">
         <div>
           <span className="eyebrow">Meta x JoinAds</span>
-          <h2 className="section-title">Resumo agrupado (por anúncio)</h2>
+          <h2 className="section-title">Resumo agrupado (por anÃºncio)</h2>
         </div>
         <span className="chip neutral">${grouped.length} linhas</span>
       </div>
@@ -2169,13 +2186,13 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
       <section className="card wide">
         <div className="card-head">
           <div>
-            <span className="eyebrow">Atribuição</span>
-            <h2 className="section-title">Sem UTM -> conjunto líder</h2>
+            <span className="eyebrow">AtribuiÃ§Ã£o</span>
+            <h2 className="section-title">Sem UTM -> conjunto lÃ­der</h2>
           </div>
           <span className="chip neutral">Estimativa</span>
         </div>
         <p className="muted small">
-          Sem dados suficientes para atribuir Sem UTM ao conjunto líder.
+          Sem dados suficientes para atribuir Sem UTM ao conjunto lÃ­der.
         </p>
       </section>
     `;
@@ -2230,13 +2247,13 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
       <section className="card wide">
         <div className="card-head">
           <div>
-            <span className="eyebrow">Atribuição</span>
-            <h2 className="section-title">Sem UTM -> conjunto líder</h2>
+            <span className="eyebrow">AtribuiÃ§Ã£o</span>
+            <h2 className="section-title">Sem UTM -> conjunto lÃ­der</h2>
           </div>
           <span className="chip neutral">Estimativa</span>
         </div>
         <p className="muted small">
-          Sem dados de conjuntos (utm_term) para definir líder.
+          Sem dados de conjuntos (utm_term) para definir lÃ­der.
         </p>
       </section>
     `;
@@ -2246,7 +2263,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
   const hasEcpm = list.some((row) => row.ecpm > 0);
   const hasCtr = list.some((row) => row.ctr > 0);
   let leader = list[0];
-  let criterionLabel = "Impressões";
+  let criterionLabel = "ImpressÃµes";
   let criterionValue = number.format(leader?.impressions || 0);
 
   let leaderSpend = 0;
@@ -2278,7 +2295,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
     leader = list.reduce((best, row) =>
       row.impressions > best.impressions ? row : best
     );
-    criterionLabel = "Impressões";
+    criterionLabel = "ImpressÃµes";
     criterionValue = number.format(leader.impressions || 0);
   }
 
@@ -2311,11 +2328,11 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
     <section className="card wide">
       <div className="card-head">
         <div>
-          <span className="eyebrow">Atribuição</span>
-          <h2 className="section-title">Sem UTM -> conjunto líder</h2>
+          <span className="eyebrow">AtribuiÃ§Ã£o</span>
+          <h2 className="section-title">Sem UTM -> conjunto lÃ­der</h2>
         </div>
         <div className="chip-group">
-          <span className="chip neutral">Critério: ${criterionLabel}</span>
+          <span className="chip neutral">CritÃ©rio: ${criterionLabel}</span>
           <span className="chip neutral">${criterionValue}</span>
         </div>
       </div>
@@ -2325,7 +2342,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
             <tr>
               <th>Tipo</th>
               <th>Conjunto</th>
-              <th>Impressões</th>
+              <th>ImpressÃµes</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
               <th>eCPM cliente</th>
@@ -2334,7 +2351,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
           </thead>
           <tbody>
             <tr>
-              <td>Líder (original)</td>
+              <td>LÃ­der (original)</td>
               <td>${leader.name}</td>
               <td>${number.format(leaderImps)}</td>
               <td>${number.format(leaderClicks)}</td>
@@ -2354,7 +2371,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
               <td>-</td>
             </tr>
             <tr className="summary-row">
-              <td><strong>Total atribuído</strong></td>
+              <td><strong>Total atribuÃ­do</strong></td>
               <td><strong>${leader.name}</strong></td>
               <td><strong>${number.format(totalImps)}</strong></td>
               <td><strong>${number.format(totalClicks)}</strong></td>
@@ -2366,8 +2383,8 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
         </table>
       </div>
       <p className="muted small">
-        Estimativa: Sem UTM foi atribuído ao conjunto líder pelo critério de
-        ${criterionLabel}. Use como referência, não como dado oficial.
+        Estimativa: Sem UTM foi atribuÃ­do ao conjunto lÃ­der pelo critÃ©rio de
+        ${criterionLabel}. Use como referÃªncia, nÃ£o como dado oficial.
       </p>
     </section>
   `;
@@ -2588,7 +2605,7 @@ function App() {
     }
 
     if (!filters.metaAccountId.trim()) {
-      setError("Informe o ID da conta de anúncios (Meta).");
+      setError("Informe o ID da conta de anÃºncios (Meta).");
       return;
     }
 
@@ -2597,7 +2614,7 @@ function App() {
     const diffMs = end.getTime() - start.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     if (diffDays > 15) {
-      setError("Intervalo máximo permitido é de 15 dias.");
+      setError("Intervalo mÃ¡ximo permitido Ã© de 15 dias.");
       return;
     }
 
@@ -2643,7 +2660,7 @@ function App() {
         pushLog("earnings-all", err);
         return { data: [] };
       });
-      // key-value mantido em utm_campaign para evitar 422 em tokens que não aceitam utm_content
+      // key-value mantido em utm_campaign para evitar 422 em tokens que nÃ£o aceitam utm_content
       const keyValueContentPromise = fetchJson(
         `${API_BASE}/key-value?${new URLSearchParams({
           start_date: filters.startDate,
@@ -2786,7 +2803,7 @@ function App() {
       ]);
 
       // key-value para coletar UTMs usadas
-      // Somente keys aceitas pelo endpoint (evita erro de validação)
+      // Somente keys aceitas pelo endpoint (evita erro de validaÃ§Ã£o)
       const customKeys = ["utm_campaign"];
       const keyValueResults = await Promise.all(
         customKeys.map((ck) =>
@@ -2982,7 +2999,7 @@ function App() {
 
   const handleLoadDuplicar = async (force = false) => {
     if (!filters.metaAccountId.trim()) {
-      setDupError("Informe o ID da conta de anúncios (Meta).");
+      setDupError("Informe o ID da conta de anÃºncios (Meta).");
       return;
     }
     setDupLoading(true);
@@ -3136,7 +3153,7 @@ function App() {
 
   const handleLoadEditar = async () => {
     if (!filters.metaAccountId.trim()) {
-      setEditError("Informe o ID da conta de anúncios (Meta).");
+      setEditError("Informe o ID da conta de anÃºncios (Meta).");
       return;
     }
     setEditLoading(true);
@@ -3603,13 +3620,14 @@ function App() {
     if (!adsetId) return;
 
     const bidStrategy = modeToStrategy(bidMode);
-    const usingBid = bidStrategy === BID_STRATEGY_WITH_BID;
+    const requiresBidValue =
+      bidStrategy === BID_STRATEGY_WITH_BID || bidStrategy === BID_STRATEGY_COST_CAP;
 
     let bidNumber = null;
-    if (usingBid) {
+    if (requiresBidValue) {
       const raw = String(bidValue ?? "").trim();
       if (!raw) {
-        pushLog("meta-bid", { message: "Informe o valor para limite de lance." });
+        pushLog("meta-bid", { message: "Informe o valor de custo para a estrategia selecionada." });
         return;
       }
       bidNumber = Number(raw.replace(",", "."));
@@ -3625,7 +3643,7 @@ function App() {
         adset_id: adsetId,
         bid_strategy: bidStrategy,
       };
-      if (usingBid) {
+      if (requiresBidValue) {
         payload.bid_amount_brl = bidNumber;
       }
 
@@ -3650,8 +3668,8 @@ function App() {
         );
       }
       pushLog("meta-bid", {
-        message: usingBid
-          ? `Custo alvo atualizado (limite de lance): ${adsetId} -> R$ ${bidNumber.toFixed(2)}`
+        message: requiresBidValue
+          ? `Custo atualizado (${formatBidStrategy(bidStrategy)}): ${adsetId} -> R$ ${bidNumber.toFixed(2)}`
           : `Estrategia atualizada (sem bid): ${adsetId}`,
       });
     } catch (err) {
@@ -4220,7 +4238,7 @@ function App() {
 
   const filteredMeta = useMemo(() => {
     if (isTodaySelected) {
-      // Hoje: mantém linhas Meta mesmo sem match JoinAds (JoinAds pode atrasar).
+      // Hoje: mantÃ©m linhas Meta mesmo sem match JoinAds (JoinAds pode atrasar).
       return metaDomainFiltered;
     }
     return metaDomainFiltered.filter((row) => row.joinads_matched);
@@ -4499,13 +4517,13 @@ function App() {
         <div>
           <h1>Dashboard de Publisher</h1>
           <p className="subtitle">
-            Arbitragem de tráfego com dados em tempo real da JoinAds.
-            <span className="muted small"> • Versão ${APP_VERSION}</span>
+            Arbitragem de trÃ¡fego com dados em tempo real da JoinAds.
+            <span className="muted small"> â€¢ VersÃ£o ${APP_VERSION}</span>
           </p>
         </div>
         <div className="actions">
           <div className="muted small">
-            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotação..."}
+            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotaÃ§Ã£o..."}
           </div>
           <button
             className="ghost"
@@ -4543,7 +4561,7 @@ function App() {
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
-          URLs com Parâmetros
+          URLs com ParÃ¢metros
         </button>
         <button
           className=${`tab ${activeTab === "meta" ? "active" : ""}`}
@@ -4555,7 +4573,7 @@ function App() {
           className=${`tab ${activeTab === "diag" ? "active" : ""}`}
           onClick=${() => setActiveTab("diag")}
         >
-          Diagnóstico JoinAds
+          DiagnÃ³stico JoinAds
         </button>
         <button
           className=${`tab ${activeTab === "token" ? "active" : ""}`}
@@ -4567,7 +4585,7 @@ function App() {
           className=${`tab ${activeTab === "pages" ? "active" : ""}`}
           onClick=${() => setActiveTab("pages")}
         >
-          Páginas
+          PÃ¡ginas
         </button>
       </div>
 
@@ -4689,13 +4707,13 @@ function App() {
                 <div className="card-head">
                   <div>
                     <span className="eyebrow">Meta</span>
-                    <h2 className="section-title">Páginas gerenciadas</h2>
+                    <h2 className="section-title">PÃ¡ginas gerenciadas</h2>
                   </div>
                   <div className="chip-group">
                     <button className="ghost" onClick=${handleLoadPages} disabled=${pagesLoading}>
-                      ${pagesLoading ? "Carregando..." : "Carregar páginas"}
+                      ${pagesLoading ? "Carregando..." : "Carregar pÃ¡ginas"}
                     </button>
-                    <span className="chip neutral">${pagesList.length} páginas</span>
+                    <span className="chip neutral">${pagesList.length} pÃ¡ginas</span>
                   </div>
                 </div>
                 ${pagesError
@@ -4712,7 +4730,7 @@ function App() {
                     </thead>
                     <tbody>
                       ${pagesList.length === 0
-                        ? html`<tr><td colSpan="3" className="muted">Sem páginas carregadas.</td></tr>`
+                        ? html`<tr><td colSpan="3" className="muted">Sem pÃ¡ginas carregadas.</td></tr>`
                         : pagesList.map(
                             (page) => html`
                               <tr key=${page.id}>
@@ -4754,3 +4772,14 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
+
+
+
+
+
+
+
+
+
+
+
