@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 66;
+const APP_VERSION_BUILD = 67;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -4524,6 +4524,9 @@ function App() {
         <div className="actions">
           <div className="muted small">
             ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotação..."}
+          </div>
+          <div className="muted small">
+            Ultima atualizacao: ${formatDateTime(lastRefreshed)}
           </div>
           <button
             className="ghost"
