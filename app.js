@@ -4510,11 +4510,9 @@ function App() {
           </p>
         </div>
         <div className="actions">
-          <div className="muted small">
-            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotação..."}
-          </div>
-          <div className="muted small">
-            Ultima atualizacao: ${formatDateTime(lastRefreshed)}
+          <div className="topbar-meta">
+            <span>${usdBrl ? `USD: R$ ${usdBrl.toFixed(2)}` : "Cotação..."}</span>
+            <span>${formatDateTime(lastRefreshed) !== "-" ? `Atualiz.: ${formatDateTime(lastRefreshed)}` : ""}</span>
           </div>
           <button
             className="ghost"
@@ -4524,7 +4522,7 @@ function App() {
             ${loading ? "Atualizando..." : "Atualizar"}
           </button>
           <button className="primary" disabled>
-            Exportar CSV (breve)
+            Exportar CSV
           </button>
         </div>
       </header>
