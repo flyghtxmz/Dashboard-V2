@@ -2617,63 +2617,58 @@ const EMPTY_PLACEMENTS = {
 // ── Country Picker ─────────────────────────────────────────────────────────
 
 const COUNTRY_LIST = [
-  // LatAm (topo)
-  { code: "BR", name: "Brasil", region: "latam" },
-  { code: "MX", name: "México", region: "latam" },
-  { code: "AR", name: "Argentina", region: "latam" },
-  { code: "CO", name: "Colômbia", region: "latam" },
-  { code: "CL", name: "Chile", region: "latam" },
-  { code: "PE", name: "Peru", region: "latam" },
-  { code: "EC", name: "Equador", region: "latam" },
-  { code: "UY", name: "Uruguai", region: "latam" },
-  { code: "PY", name: "Paraguai", region: "latam" },
-  { code: "BO", name: "Bolívia", region: "latam" },
-  { code: "VE", name: "Venezuela", region: "latam" },
-  { code: "CU", name: "Cuba", region: "latam" },
-  { code: "DO", name: "Rep. Dominicana", region: "latam" },
-  { code: "GT", name: "Guatemala", region: "latam" },
-  { code: "HN", name: "Honduras", region: "latam" },
-  { code: "SV", name: "El Salvador", region: "latam" },
-  { code: "NI", name: "Nicarágua", region: "latam" },
-  { code: "CR", name: "Costa Rica", region: "latam" },
-  { code: "PA", name: "Panamá", region: "latam" },
-  // Ibérico / Europa
-  { code: "PT", name: "Portugal", region: "europe" },
-  { code: "ES", name: "Espanha", region: "europe" },
-  { code: "GB", name: "Reino Unido", region: "europe" },
-  { code: "FR", name: "França", region: "europe" },
-  { code: "DE", name: "Alemanha", region: "europe" },
-  { code: "IT", name: "Itália", region: "europe" },
-  { code: "NL", name: "Países Baixos", region: "europe" },
-  { code: "BE", name: "Bélgica", region: "europe" },
-  { code: "SE", name: "Suécia", region: "europe" },
-  { code: "NO", name: "Noruega", region: "europe" },
-  { code: "CH", name: "Suíça", region: "europe" },
-  { code: "PL", name: "Polônia", region: "europe" },
-  { code: "RO", name: "Romênia", region: "europe" },
-  { code: "GR", name: "Grécia", region: "europe" },
-  { code: "AT", name: "Áustria", region: "europe" },
-  // América do Norte
-  { code: "US", name: "Estados Unidos", region: "north-america" },
-  { code: "CA", name: "Canadá", region: "north-america" },
-  // Ásia / Oceania
-  { code: "AU", name: "Austrália", region: "asia-oceania" },
-  { code: "NZ", name: "Nova Zelândia", region: "asia-oceania" },
-  { code: "JP", name: "Japão", region: "asia-oceania" },
-  { code: "IN", name: "Índia", region: "asia-oceania" },
-  { code: "PH", name: "Filipinas", region: "asia-oceania" },
-  { code: "ID", name: "Indonésia", region: "asia-oceania" },
-  { code: "TH", name: "Tailândia", region: "asia-oceania" },
-  { code: "SG", name: "Singapura", region: "asia-oceania" },
-  { code: "MY", name: "Malásia", region: "asia-oceania" },
-  // África / Oriente Médio
-  { code: "NG", name: "Nigéria", region: "africa-me" },
-  { code: "ZA", name: "África do Sul", region: "africa-me" },
-  { code: "EG", name: "Egito", region: "africa-me" },
-  { code: "MA", name: "Marrocos", region: "africa-me" },
-  { code: "AE", name: "Emirados Árabes", region: "africa-me" },
-  { code: "SA", name: "Arábia Saudita", region: "africa-me" },
-  { code: "IL", name: "Israel", region: "africa-me" },
+  { code: "BR", name: "Brasil",           region: "latam",         lat: -14.24,  lng: -51.93 },
+  { code: "MX", name: "México",           region: "latam",         lat:  23.63,  lng: -102.55 },
+  { code: "AR", name: "Argentina",        region: "latam",         lat: -38.42,  lng: -63.62 },
+  { code: "CO", name: "Colômbia",         region: "latam",         lat:   4.57,  lng: -74.30 },
+  { code: "CL", name: "Chile",            region: "latam",         lat: -35.68,  lng: -71.54 },
+  { code: "PE", name: "Peru",             region: "latam",         lat:  -9.19,  lng: -75.02 },
+  { code: "EC", name: "Equador",          region: "latam",         lat:  -1.83,  lng: -78.18 },
+  { code: "UY", name: "Uruguai",          region: "latam",         lat: -32.52,  lng: -55.77 },
+  { code: "PY", name: "Paraguai",         region: "latam",         lat: -23.44,  lng: -58.44 },
+  { code: "BO", name: "Bolívia",          region: "latam",         lat: -16.29,  lng: -63.59 },
+  { code: "VE", name: "Venezuela",        region: "latam",         lat:   6.42,  lng: -66.59 },
+  { code: "CU", name: "Cuba",             region: "latam",         lat:  21.52,  lng: -77.78 },
+  { code: "DO", name: "Rep. Dominicana",  region: "latam",         lat:  18.74,  lng: -70.16 },
+  { code: "GT", name: "Guatemala",        region: "latam",         lat:  15.78,  lng: -90.23 },
+  { code: "HN", name: "Honduras",         region: "latam",         lat:  15.20,  lng: -86.24 },
+  { code: "SV", name: "El Salvador",      region: "latam",         lat:  13.79,  lng: -88.90 },
+  { code: "NI", name: "Nicarágua",        region: "latam",         lat:  12.87,  lng: -85.21 },
+  { code: "CR", name: "Costa Rica",       region: "latam",         lat:   9.75,  lng: -83.75 },
+  { code: "PA", name: "Panamá",           region: "latam",         lat:   8.54,  lng: -80.78 },
+  { code: "PT", name: "Portugal",         region: "europe",        lat:  39.40,  lng:  -8.22 },
+  { code: "ES", name: "Espanha",          region: "europe",        lat:  40.46,  lng:  -3.75 },
+  { code: "GB", name: "Reino Unido",      region: "europe",        lat:  55.38,  lng:  -3.44 },
+  { code: "FR", name: "França",           region: "europe",        lat:  46.23,  lng:   2.21 },
+  { code: "DE", name: "Alemanha",         region: "europe",        lat:  51.17,  lng:  10.45 },
+  { code: "IT", name: "Itália",           region: "europe",        lat:  41.87,  lng:  12.57 },
+  { code: "NL", name: "Países Baixos",    region: "europe",        lat:  52.13,  lng:   5.29 },
+  { code: "BE", name: "Bélgica",          region: "europe",        lat:  50.50,  lng:   4.47 },
+  { code: "SE", name: "Suécia",           region: "europe",        lat:  60.13,  lng:  18.64 },
+  { code: "NO", name: "Noruega",          region: "europe",        lat:  60.47,  lng:   8.47 },
+  { code: "CH", name: "Suíça",            region: "europe",        lat:  46.82,  lng:   8.23 },
+  { code: "PL", name: "Polônia",          region: "europe",        lat:  51.92,  lng:  19.15 },
+  { code: "RO", name: "Romênia",          region: "europe",        lat:  45.94,  lng:  24.97 },
+  { code: "GR", name: "Grécia",           region: "europe",        lat:  39.07,  lng:  21.82 },
+  { code: "AT", name: "Áustria",          region: "europe",        lat:  47.52,  lng:  14.55 },
+  { code: "US", name: "Estados Unidos",   region: "north-america", lat:  37.09,  lng: -95.71 },
+  { code: "CA", name: "Canadá",           region: "north-america", lat:  56.13,  lng: -106.35 },
+  { code: "AU", name: "Austrália",        region: "asia-oceania",  lat: -25.27,  lng: 133.78 },
+  { code: "NZ", name: "Nova Zelândia",    region: "asia-oceania",  lat: -40.90,  lng: 174.89 },
+  { code: "JP", name: "Japão",            region: "asia-oceania",  lat:  36.20,  lng: 138.25 },
+  { code: "IN", name: "Índia",            region: "asia-oceania",  lat:  20.59,  lng:  78.96 },
+  { code: "PH", name: "Filipinas",        region: "asia-oceania",  lat:  12.88,  lng: 121.77 },
+  { code: "ID", name: "Indonésia",        region: "asia-oceania",  lat:  -0.79,  lng: 113.92 },
+  { code: "TH", name: "Tailândia",        region: "asia-oceania",  lat:  15.87,  lng: 100.99 },
+  { code: "SG", name: "Singapura",        region: "asia-oceania",  lat:   1.35,  lng: 103.82 },
+  { code: "MY", name: "Malásia",          region: "asia-oceania",  lat:   4.21,  lng: 101.98 },
+  { code: "NG", name: "Nigéria",          region: "africa-me",     lat:   9.08,  lng:   8.68 },
+  { code: "ZA", name: "África do Sul",    region: "africa-me",     lat: -30.56,  lng:  22.94 },
+  { code: "EG", name: "Egito",            region: "africa-me",     lat:  26.82,  lng:  30.80 },
+  { code: "MA", name: "Marrocos",         region: "africa-me",     lat:  31.79,  lng:  -7.09 },
+  { code: "AE", name: "Emirados Árabes",  region: "africa-me",     lat:  23.42,  lng:  53.85 },
+  { code: "SA", name: "Arábia Saudita",   region: "africa-me",     lat:  23.89,  lng:  45.08 },
+  { code: "IL", name: "Israel",           region: "africa-me",     lat:  31.05,  lng:  34.85 },
 ];
 
 const COUNTRY_REGIONS = {
@@ -2693,168 +2688,155 @@ function flagEmoji(code) {
   ).join("");
 }
 
-const SUGGESTED_CODES = ["BR", "US", "PT", "MX", "AR", "CO", "CL", "PE", "ES", "GB"];
-
-function CountryPicker({ selected, onChange }) {
+function LocationPicker({ selected, onChange }) {
+  const [locType, setLocType] = useState("recent");
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [searchResults, setSearchResults] = useState([]);
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const layersRef = useRef([]);
 
   useEffect(() => {
-    const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    if (!mapContainerRef.current || !window.L) return;
+    const L = window.L;
+    const map = L.map(mapContainerRef.current, {
+      zoomControl: true,
+      attributionControl: false,
+      scrollWheelZoom: false,
+    }).setView([15, 10], 2);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+    }).addTo(map);
+    mapInstanceRef.current = map;
+    return () => { map.remove(); mapInstanceRef.current = null; };
   }, []);
 
-  const toggle = (code) => {
-    if (selected.includes(code)) {
-      onChange(selected.filter((c) => c !== code));
-    } else {
-      onChange([...selected, code]);
-    }
+  useEffect(() => {
+    if (!mapInstanceRef.current || !window.L) return;
+    const L = window.L;
+    const map = mapInstanceRef.current;
+    layersRef.current.forEach((l) => map.removeLayer(l));
+    layersRef.current = [];
+    if (selected.length === 0) { map.setView([15, 10], 2); return; }
+    const pts = [];
+    selected.forEach((code) => {
+      const c = COUNTRY_MAP[code];
+      if (!c || c.lat == null) return;
+      const big = ["BR", "US", "CA", "AU", "RU", "CN", "IN", "AR", "MX"];
+      const radius = big.includes(code) ? 700000 : 220000;
+      const circle = L.circle([c.lat, c.lng], {
+        radius,
+        color: "#1f7a6d", fillColor: "#1f7a6d", fillOpacity: 0.25, weight: 2,
+      }).addTo(map);
+      const dot = L.circleMarker([c.lat, c.lng], {
+        radius: 6, color: "#fff", fillColor: "#198a76", fillOpacity: 1, weight: 2,
+      }).addTo(map);
+      layersRef.current.push(circle, dot);
+      pts.push([c.lat, c.lng]);
+    });
+    if (pts.length === 1) map.setView(pts[0], 5);
+    else if (pts.length > 1) map.fitBounds(pts, { padding: [40, 40], maxZoom: 7 });
+  }, [selected]);
+
+  const doSearch = () => {
+    const q = query.trim().toLowerCase();
+    if (!q) { setSearchResults([]); return; }
+    setSearchResults(
+      COUNTRY_LIST.filter((c) =>
+        c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
+      ).slice(0, 8)
+    );
   };
 
-  const filtered = query.trim().length > 0
-    ? COUNTRY_LIST.filter(
-        (c) =>
-          c.name.toLowerCase().includes(query.toLowerCase()) ||
-          c.code.toLowerCase().includes(query.toLowerCase())
-      )
-    : COUNTRY_LIST;
+  const add = (code) => {
+    if (!selected.includes(code)) onChange([...selected, code]);
+    setQuery(""); setSearchResults([]);
+  };
+  const remove = (code) => onChange(selected.filter((c) => c !== code));
 
-  // Group by region when no query
-  const grouped = query.trim()
-    ? null
-    : COUNTRY_LIST.reduce((acc, c) => {
-        if (!acc[c.region]) acc[c.region] = [];
-        acc[c.region].push(c);
-        return acc;
-      }, {});
+  const pinSvg = '<svg width="14" height="18" viewBox="0 0 24 24" fill="#198a76"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>';
 
   return html`
-    <div ref=${ref} style=${{ position: "relative" }}>
-      <div style=${{
-        display: "flex", flexWrap: "wrap", gap: "6px",
-        minHeight: "38px", padding: "6px 10px",
-        border: open ? "1px solid var(--accent)" : "1px solid var(--border)",
-        borderRadius: "10px", background: "#fff", cursor: "text",
-        boxShadow: open ? "0 0 0 3px rgba(87,88,232,0.14)" : "0 1px 2px rgba(20,18,58,0.04)",
-        transition: "border-color 0.15s, box-shadow 0.15s",
-        alignItems: "center",
-      }}
-        onClick=${() => setOpen(true)}
+    <div>
+      <select
+        value=${locType}
+        onChange=${(e) => setLocType(e.target.value)}
+        style=${{ width: "100%", marginBottom: "12px" }}
       >
-        ${selected.map((code) => html`
-          <span key=${code} style=${{
-            display: "inline-flex", alignItems: "center", gap: "4px",
-            padding: "3px 8px 3px 6px", borderRadius: "999px",
-            background: "#eef0ff", border: "1px solid #d0d3f8",
-            fontSize: "0.83rem", fontWeight: 600, color: "var(--ink)",
-            userSelect: "none",
+        <option value="recent">Pessoas que moram ou estiveram recentemente nesta localização</option>
+        <option value="live">Pessoas que moram nesta localização</option>
+        <option value="travel">Pessoas viajando para este local</option>
+      </select>
+
+      <div style=${{ border: "1px solid var(--border)", borderRadius: "10px", overflow: "hidden", marginBottom: "12px", background: "#fff" }}>
+        ${selected.length === 0 ? html`
+          <div style=${{ padding: "12px 14px", color: "var(--muted)", fontSize: "0.88rem" }}>
+            Nenhuma localização adicionada. Use a busca abaixo para adicionar países.
+          </div>
+        ` : selected.map((code) => html`
+          <div key=${code} style=${{
+            display: "flex", alignItems: "center", gap: "10px",
+            padding: "10px 14px", borderBottom: "1px solid var(--border-light)", background: "#fff",
           }}>
-            <span style=${{ fontSize: "1.1rem", lineHeight: 1 }}>${flagEmoji(code)}</span>
-            <span>${COUNTRY_MAP[code]?.name || code}</span>
-            <button
-              onClick=${(e) => { e.stopPropagation(); toggle(code); }}
-              style=${{
-                background: "none", border: "none", cursor: "pointer",
-                padding: "0 0 0 2px", fontSize: "0.75rem", color: "var(--muted)",
-                lineHeight: 1, display: "flex", alignItems: "center",
-              }}
-            >✕</button>
-          </span>
+            <span dangerouslySetInnerHTML=${{ __html: pinSvg }} style=${{ flexShrink: 0, display: "flex" }} />
+            <span style=${{ flex: 1, fontWeight: 500, fontSize: "0.92rem" }}>${COUNTRY_MAP[code]?.name || code}</span>
+            <div style=${{ display: "flex", gap: "6px", alignItems: "center" }}>
+              <span style=${{
+                fontSize: "0.78rem", padding: "3px 10px",
+                border: "1px solid #b2dfdb", borderRadius: "6px",
+                background: "#e8f5e9", color: "#198a76", fontWeight: 600,
+              }}>Incluir ▾</span>
+              <button
+                onClick=${() => remove(code)}
+                style=${{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "1rem", padding: "0 4px", lineHeight: 1 }}
+              >✕</button>
+            </div>
+          </div>
         `)}
+      </div>
+
+      <div style=${{ display: "flex", gap: "8px", marginBottom: "8px", position: "relative" }}>
         <input
           type="text"
           value=${query}
-          onInput=${(e) => { setQuery(e.target.value); setOpen(true); }}
-          onFocus=${() => setOpen(true)}
-          placeholder=${selected.length === 0 ? "Buscar país..." : ""}
-          style=${{
-            border: "none", outline: "none", background: "transparent",
-            font: "inherit", fontSize: "0.9rem", minWidth: "120px",
-            flex: "1", padding: "0 2px",
-          }}
+          onInput=${(e) => { setQuery(e.target.value); doSearch(); }}
+          onKeyDown=${(e) => { if (e.key === "Enter") doSearch(); }}
+          placeholder="Pesquisar localizações"
+          style=${{ flex: 1 }}
         />
+        <button className="ghost" onClick=${doSearch}>Procurar</button>
       </div>
 
-      ${!open && selected.length === 0 ? html`
-        <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
-          <span className="muted small" style=${{ alignSelf: "center" }}>Sugeridos:</span>
-          ${SUGGESTED_CODES.map((code) => html`
-            <button key=${code} className="ghost small"
-              onClick=${() => toggle(code)}
-              style=${{ padding: "3px 9px", fontSize: "0.8rem", gap: "4px" }}
+      ${searchResults.length > 0 ? html`
+        <div style=${{
+          border: "1px solid var(--border)", borderRadius: "8px", background: "#fff",
+          marginBottom: "12px", boxShadow: "0 4px 12px rgba(20,18,58,0.08)", overflow: "hidden",
+        }}>
+          ${searchResults.map((c) => html`
+            <div key=${c.code}
+              onClick=${() => add(c.code)}
+              style=${{
+                display: "flex", alignItems: "center", gap: "10px",
+                padding: "9px 14px", cursor: "pointer", fontSize: "0.9rem",
+                background: selected.includes(c.code) ? "#e8f5e9" : "transparent",
+                borderBottom: "1px solid var(--border-light)",
+              }}
+              onMouseEnter=${(e) => { if (!selected.includes(c.code)) e.currentTarget.style.background = "#f7f8ff"; }}
+              onMouseLeave=${(e) => { e.currentTarget.style.background = selected.includes(c.code) ? "#e8f5e9" : "transparent"; }}
             >
-              <span style=${{ fontSize: "1rem" }}>${flagEmoji(code)}</span>
-              ${COUNTRY_MAP[code]?.name || code}
-            </button>
+              <span dangerouslySetInnerHTML=${{ __html: pinSvg }} style=${{ flexShrink: 0, display: "flex" }} />
+              <span style=${{ flex: 1 }}>${c.name}</span>
+              <span style=${{ fontSize: "0.78rem", color: "var(--muted)" }}>${c.code}</span>
+              ${selected.includes(c.code) ? html`<span style=${{ color: "#198a76", fontWeight: 700 }}>✓</span>` : null}
+            </div>
           `)}
         </div>
       ` : null}
 
-      ${open ? html`
-        <div style=${{
-          position: "absolute", zIndex: 200, top: "calc(100% + 4px)", left: 0, right: 0,
-          background: "#fff", border: "1px solid var(--border)", borderRadius: "12px",
-          boxShadow: "0 8px 24px rgba(20,18,58,0.12)", maxHeight: "280px",
-          overflowY: "auto", overscrollBehavior: "contain",
-        }}>
-          ${filtered.length === 0
-            ? html`<div style=${{ padding: "14px 16px", color: "var(--muted)", fontSize: "0.9rem" }}>Nenhum país encontrado.</div>`
-            : query.trim()
-              ? filtered.map((c) => html`
-                  <div key=${c.code}
-                    onClick=${() => { toggle(c.code); setQuery(""); }}
-                    style=${{
-                      display: "flex", alignItems: "center", gap: "10px",
-                      padding: "9px 14px", cursor: "pointer", fontSize: "0.9rem",
-                      background: selected.includes(c.code) ? "#f0f2ff" : "transparent",
-                      transition: "background 0.1s",
-                    }}
-                    onMouseEnter=${(e) => { if (!selected.includes(c.code)) e.currentTarget.style.background = "#f7f8ff"; }}
-                    onMouseLeave=${(e) => { e.currentTarget.style.background = selected.includes(c.code) ? "#f0f2ff" : "transparent"; }}
-                  >
-                    <span style=${{ fontSize: "1.25rem", lineHeight: 1, flexShrink: 0 }}>${flagEmoji(c.code)}</span>
-                    <span style=${{ flex: 1 }}>${c.name}</span>
-                    <span className="muted small">${c.code}</span>
-                    ${selected.includes(c.code) ? html`<span style=${{ color: "var(--accent)", fontWeight: 700, fontSize: "0.9rem" }}>✓</span>` : null}
-                  </div>
-                `)
-              : Object.entries(grouped).map(([region, countries]) => html`
-                  <div key=${region}>
-                    <div style=${{
-                      padding: "7px 14px 4px",
-                      fontSize: "0.65rem", fontWeight: 700,
-                      textTransform: "uppercase", letterSpacing: "0.08em",
-                      color: "var(--accent)", background: "#fafafe",
-                      borderBottom: "1px solid var(--border-light)",
-                    }}>${COUNTRY_REGIONS[region]}</div>
-                    ${countries.map((c) => html`
-                      <div key=${c.code}
-                        onClick=${() => { toggle(c.code); setQuery(""); }}
-                        style=${{
-                          display: "flex", alignItems: "center", gap: "10px",
-                          padding: "8px 14px", cursor: "pointer", fontSize: "0.9rem",
-                          background: selected.includes(c.code) ? "#f0f2ff" : "transparent",
-                          transition: "background 0.1s",
-                        }}
-                        onMouseEnter=${(e) => { if (!selected.includes(c.code)) e.currentTarget.style.background = "#f7f8ff"; }}
-                        onMouseLeave=${(e) => { e.currentTarget.style.background = selected.includes(c.code) ? "#f0f2ff" : "transparent"; }}
-                      >
-                        <span style=${{ fontSize: "1.25rem", lineHeight: 1, flexShrink: 0 }}>${flagEmoji(c.code)}</span>
-                        <span style=${{ flex: 1 }}>${c.name}</span>
-                        <span className="muted small">${c.code}</span>
-                        ${selected.includes(c.code) ? html`<span style=${{ color: "var(--accent)", fontWeight: 700 }}>✓</span>` : null}
-                      </div>
-                    `)}
-                  </div>
-                `)
-          }
-        </div>
-      ` : null}
+      <div
+        ref=${mapContainerRef}
+        style=${{ height: "220px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--border)" }}
+      />
     </div>
   `;
 }
@@ -3155,7 +3137,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
             <div className="field" style=${{ gridColumn: "1 / -1" }}>
               <label>Locais de segmentação</label>
-              <${CountryPicker} selected=${countries} onChange=${setCountries} />
+              <${LocationPicker} selected=${countries} onChange=${setCountries} />
             </div>
             <div className="field">
               <label>Idade mínima</label>
