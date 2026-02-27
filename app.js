@@ -2859,7 +2859,7 @@ function CountryPicker({ selected, onChange }) {
   `;
 }
 
- accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels }) {
+function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels }) {
   const [step, setStep] = useState(1);
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState(null);
