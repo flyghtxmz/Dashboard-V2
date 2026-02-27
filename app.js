@@ -826,7 +826,7 @@ function TopUrlTable({ rows, totals }) {
 
 function ParamTable({ rows }) {
   return html`
-    <section className="card">
+    <section className="card wide">
       <div className="card-head">
         <div>
           <span className="eyebrow">Parâmetros</span>
