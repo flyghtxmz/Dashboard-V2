@@ -5287,7 +5287,7 @@ function App() {
           `
         : activeTab === "criar"
         ? html`
-            <main className="grid">
+            <main style=${{ maxWidth: "720px", margin: "0 auto" }}>
               <${CriarCampanhaView}
                 accountId=${filters.metaAccountId.trim()}
                 pages=${pagesList}
@@ -5312,7 +5312,6 @@ function App() {
             </main>
           `}
 
-      ${html`<${LogsCard} logs=${logs} onClear=${() => setLogs([])} />`}
     </div>
   `;
 }
