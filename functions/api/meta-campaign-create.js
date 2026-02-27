@@ -55,6 +55,7 @@ export async function onRequest({ request, env }) {
     );
     if (campaign.daily_budget) cp.set("daily_budget", String(campaign.daily_budget));
     if (campaign.lifetime_budget) cp.set("lifetime_budget", String(campaign.lifetime_budget));
+    if (campaign.spending_limit) cp.set("spending_limit", String(campaign.spending_limit));
     if (campaign.bid_strategy) cp.set("bid_strategy", campaign.bid_strategy);
     cp.set("access_token", token);
 
@@ -116,6 +117,19 @@ export async function onRequest({ request, env }) {
     targeting.age_max = Number(adset.age_max) || 65;
     if (adset.genders && adset.genders.length > 0) {
       targeting.genders = adset.genders;
+    }
+
+    // Dispositivos
+    if (Array.isArray(adset.device_platforms) && adset.device_platforms.length > 0) {
+      targeting.device_platforms = adset.device_platforms;
+    }
+
+    // Pixel / promoted_object
+    if (adset.pixel_id) {
+      ap.set("promoted_object", JSON.stringify({
+        pixel_id: adset.pixel_id,
+        custom_event_type: adset.conversion_event || "PURCHASE",
+      }));
     }
 
     // Posicionamentos manuais
@@ -202,22 +216,45 @@ export async function onRequest({ request, env }) {
 
   // ── STEP 3: Criar criativo + anúncio ────────────────────────────────────
   try {
-    const linkData = {
-      link: ad.destination_url,
-      name: ad.headline || "",
-      description: ad.description || "",
-      call_to_action: {
-        type: ad.cta_type || "LEARN_MORE",
-        value: { link: ad.destination_url },
-      },
-    };
-    if (ad.body) linkData.message = ad.body;
-    if (ad.image_url) linkData.picture = ad.image_url;
+    let objectStorySpec;
 
-    const objectStorySpec = {
-      page_id: ad.page_id,
-      link_data: linkData,
-    };
+    if (ad.ad_format === "video" && ad.video_id) {
+      const videoData = {
+        video_id: ad.video_id,
+        message: ad.body || "",
+        title: ad.headline || "",
+        link_description: ad.description || "",
+        call_to_action: {
+          type: ad.cta_type || "LEARN_MORE",
+          value: { link: ad.destination_url },
+        },
+      };
+      if (ad.thumb_url) videoData.image_url = ad.thumb_url;
+      objectStorySpec = {
+        page_id: ad.page_id,
+        video_data: videoData,
+      };
+    } else {
+      const linkData = {
+        link: ad.destination_url,
+        name: ad.headline || "",
+        description: ad.description || "",
+        call_to_action: {
+          type: ad.cta_type || "LEARN_MORE",
+          value: { link: ad.destination_url },
+        },
+      };
+      if (ad.body) linkData.message = ad.body;
+      if (ad.image_url) linkData.picture = ad.image_url;
+      objectStorySpec = {
+        page_id: ad.page_id,
+        link_data: linkData,
+      };
+    }
+
+    if (ad.ig_actor_id) {
+      objectStorySpec.instagram_actor_id = ad.ig_actor_id;
+    }
 
     const cp2 = new URLSearchParams();
     cp2.set("name", `${ad.name || "Criativo"} — criativo`);

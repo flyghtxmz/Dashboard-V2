@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 70;
+const APP_VERSION_BUILD = 71;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -2567,6 +2567,31 @@ const CTA_TYPES = [
   { value: "NO_BUTTON", label: "Sem botão" },
 ];
 
+const CONVERSION_EVENTS = [
+  { value: "PURCHASE", label: "Compra" },
+  { value: "LEAD", label: "Lead" },
+  { value: "COMPLETE_REGISTRATION", label: "Cadastro completo" },
+  { value: "ADD_TO_CART", label: "Adicionar ao carrinho" },
+  { value: "VIEW_CONTENT", label: "Visualizar conteúdo" },
+  { value: "INITIATE_CHECKOUT", label: "Iniciar checkout" },
+  { value: "ADD_PAYMENT_INFO", label: "Dados de pagamento" },
+  { value: "SEARCH", label: "Pesquisa" },
+  { value: "CONTACT", label: "Contato" },
+  { value: "SUBSCRIBE", label: "Assinar" },
+];
+
+const UTM_MACROS = [
+  { label: "{{ad.name}}", tip: "Nome do anúncio" },
+  { label: "{{adset.name}}", tip: "Nome do conjunto" },
+  { label: "{{campaign.name}}", tip: "Nome da campanha" },
+  { label: "{{placement}}", tip: "Posicionamento" },
+  { label: "{{site_source_name}}", tip: "Fonte (fb/ig/etc)" },
+];
+
+const PIXEL_CONVERSION_OBJECTIVES = new Set([
+  "OUTCOME_SALES", "OUTCOME_LEADS",
+]);
+
 const PLACEMENT_LABELS = {
   facebook_feed: "Facebook Feed",
   instagram_feed: "Instagram Feed",
@@ -2624,12 +2649,24 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
   const [skipAd, setSkipAd] = useState(false);
   const [adName, setAdName] = useState("");
   const [pageId, setPageId] = useState("");
+  const [adFormat, setAdFormat] = useState("image"); // "image" | "video"
   const [imageUrl, setImageUrl] = useState("");
+  const [videoId, setVideoId] = useState("");
+  const [thumbUrl, setThumbUrl] = useState("");
+  const [igActorId, setIgActorId] = useState("");
   const [headline, setHeadline] = useState("");
   const [adBody, setAdBody] = useState("");
   const [adDescription, setAdDescription] = useState("");
   const [ctaType, setCtaType] = useState("LEARN_MORE");
   const [destUrl, setDestUrl] = useState("");
+
+  // Campanha avançado
+  const [spendingLimit, setSpendingLimit] = useState("");
+
+  // Conjunto avançado
+  const [pixelId, setPixelId] = useState("");
+  const [conversionEvent, setConversionEvent] = useState("PURCHASE");
+  const [devicePlatforms, setDevicePlatforms] = useState(["mobile", "desktop"]);
 
   const availableGoals = OPTIMIZATION_GOALS_MAP[objective] || OPTIMIZATION_GOALS_MAP["OUTCOME_TRAFFIC"];
 
@@ -2643,12 +2680,15 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
     setStep(1); setResult(null); setFormError("");
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
     setCampStatus("PAUSED"); setCbo(false); setCampBudgetType("daily"); setCampBudget("");
+    setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries("BR"); setAgeMin("18"); setAgeMax("65"); setGender("all");
     setPlacementMode("auto"); setManualPlacements({ ...EMPTY_PLACEMENTS });
     setOptGoal("LINK_CLICKS"); setBidStrategy("LOWEST_COST_WITHOUT_CAP");
     setBidAmount(""); setStartTime(""); setEndTime("");
-    setSkipAd(false); setAdName(""); setPageId(""); setImageUrl("");
+    setPixelId(""); setConversionEvent("PURCHASE"); setDevicePlatforms(["mobile", "desktop"]);
+    setSkipAd(false); setAdName(""); setPageId(""); setAdFormat("image");
+    setImageUrl(""); setVideoId(""); setThumbUrl(""); setIgActorId("");
     setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl("");
   };
 
@@ -2665,6 +2705,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
           special_ad_categories: [specialCat],
           ...(cbo && campBudgetType === "daily" ? { daily_budget: Math.round(Number(campBudget) * 100) } : {}),
           ...(cbo && campBudgetType === "lifetime" ? { lifetime_budget: Math.round(Number(campBudget) * 100) } : {}),
+          ...(spendingLimit ? { spending_limit: Math.round(Number(spendingLimit) * 100) } : {}),
         },
         adset: {
           name: adsetName.trim() || `${campName.trim()} — Conjunto`,
@@ -2678,15 +2719,21 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
           age_min: Number(ageMin),
           age_max: Number(ageMax),
           genders: gender === "male" ? [1] : gender === "female" ? [2] : [],
+          device_platforms: devicePlatforms,
           ...(placementMode === "manual" ? { manual_placements: manualPlacements } : {}),
           ...(startTime ? { start_time: new Date(startTime).toISOString() } : {}),
           ...(endTime ? { end_time: new Date(endTime).toISOString() } : {}),
+          ...(pixelId ? { pixel_id: pixelId.trim(), conversion_event: conversionEvent } : {}),
         },
         ...(!skipAd ? {
           ad: {
             name: adName.trim() || `${campName.trim()} — Anúncio`,
             page_id: pageId,
-            image_url: imageUrl.trim(),
+            ad_format: adFormat,
+            image_url: adFormat === "image" ? imageUrl.trim() : undefined,
+            video_id: adFormat === "video" ? videoId.trim() : undefined,
+            thumb_url: adFormat === "video" ? thumbUrl.trim() : undefined,
+            ig_actor_id: igActorId.trim() || undefined,
             headline: headline.trim(),
             body: adBody.trim(),
             description: adDescription.trim(),
@@ -2711,7 +2758,10 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
 
   const step1Valid = campName.trim() && (!cbo || campBudget);
   const step2Valid = cbo || adsetBudget;
-  const step3Valid = skipAd || (pageId && destUrl.trim() && imageUrl.trim() && headline.trim());
+  const step3Valid = skipAd || (
+    pageId && destUrl.trim() && headline.trim() &&
+    (adFormat === "image" ? imageUrl.trim() : videoId.trim())
+  );
 
   const StepDot = ({ n }) => {
     const current = n === step;
@@ -2807,6 +2857,10 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
                 <option value="PAUSED">Pausado (recomendado)</option>
                 <option value="ACTIVE">Ativo imediatamente</option>
               </select>
+            </div>
+            <div className="field">
+              <label>Limite de gastos da campanha (R$) <span className="muted small">— opcional</span></label>
+              <input type="number" min="1" step="0.01" value=${spendingLimit} onInput=${(e) => setSpendingLimit(e.target.value)} placeholder="Ex: 500.00 (sem limite = vazio)" />
             </div>
           </div>
           <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
@@ -2904,6 +2958,47 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
             </div>
           </div>
 
+          <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
+            <strong style=${{ display: "block", marginBottom: "10px", fontSize: "0.9rem" }}>Dispositivos</strong>
+            <div style=${{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
+              ${["mobile", "desktop"].map((d) => html`
+                <label key=${d} className="checkbox" style=${{ cursor: "pointer" }}>
+                  <input type="checkbox"
+                    checked=${devicePlatforms.includes(d)}
+                    onChange=${(e) => {
+                      if (e.target.checked) setDevicePlatforms((prev) => [...prev, d]);
+                      else setDevicePlatforms((prev) => prev.filter((x) => x !== d));
+                    }}
+                  />
+                  ${d === "mobile" ? "Mobile" : "Desktop"}
+                </label>
+              `)}
+            </div>
+          </div>
+
+          <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
+            <strong style=${{ display: "block", marginBottom: "6px", fontSize: "0.9rem" }}>
+              Pixel de conversão <span className="muted small">— opcional</span>
+            </strong>
+            <p className="muted small" style=${{ margin: "0 0 12px" }}>
+              Necessário para objetivos de Vendas / Cadastros. Informe o ID do pixel instalado no site.
+            </p>
+            <div className="filters">
+              <div className="field">
+                <label>ID do Pixel</label>
+                <input type="text" value=${pixelId} onInput=${(e) => setPixelId(e.target.value)} placeholder="Ex: 1234567890" />
+              </div>
+              ${pixelId ? html`
+                <div className="field">
+                  <label>Evento de conversão</label>
+                  <select value=${conversionEvent} onChange=${(e) => setConversionEvent(e.target.value)}>
+                    ${CONVERSION_EVENTS.map((ev) => html`<option key=${ev.value} value=${ev.value}>${ev.label}</option>`)}
+                  </select>
+                </div>
+              ` : null}
+            </div>
+          </div>
+
           ${!cbo ? html`
             <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
               <strong style=${{ display: "block", marginBottom: "12px", fontSize: "0.9rem" }}>Orçamento do conjunto *</strong>
@@ -2994,17 +3089,43 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
                   </button>
                 ` : null}
               </div>
-              <div className="field" style=${{ gridColumn: "1 / -1" }}>
-                <label>URL da imagem * (.jpg, .png — mín. 1080×1080 recomendado)</label>
-                <input type="url" value=${imageUrl} onInput=${(e) => setImageUrl(e.target.value)} placeholder="https://seusite.com/imagem.jpg" />
+              <div className="field">
+                <label>ID da conta do Instagram <span className="muted small">— opcional</span></label>
+                <input type="text" value=${igActorId} onInput=${(e) => setIgActorId(e.target.value)} placeholder="Ex: 17841400000000000" />
               </div>
-              ${imageUrl ? html`
-                <div style=${{ gridColumn: "1 / -1", padding: "12px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
-                  <p className="muted small" style=${{ margin: "0 0 8px" }}>Pré-visualização:</p>
-                  <img src=${imageUrl} alt="preview" style=${{ maxWidth: "320px", maxHeight: "180px", borderRadius: "8px", objectFit: "contain", display: "block" }}
-                    onError=${(e) => { e.target.style.display = "none"; }} />
+              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <label>Formato do criativo</label>
+                <div style=${{ display: "flex", gap: "12px", marginTop: "4px" }}>
+                  ${["image", "video"].map((fmt) => html`
+                    <label key=${fmt} className="checkbox" style=${{ cursor: "pointer", fontWeight: adFormat === fmt ? 700 : 400 }}>
+                      <input type="radio" name="adFormat" checked=${adFormat === fmt} onChange=${() => setAdFormat(fmt)} />
+                      ${fmt === "image" ? "🖼️ Imagem" : "🎬 Vídeo"}
+                    </label>
+                  `)}
                 </div>
-              ` : null}
+              </div>
+              ${adFormat === "image" ? html`
+                <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                  <label>URL da imagem * (.jpg, .png — mín. 1080×1080 recomendado)</label>
+                  <input type="url" value=${imageUrl} onInput=${(e) => setImageUrl(e.target.value)} placeholder="https://seusite.com/imagem.jpg" />
+                </div>
+                ${imageUrl ? html`
+                  <div style=${{ gridColumn: "1 / -1", padding: "12px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
+                    <p className="muted small" style=${{ margin: "0 0 8px" }}>Pré-visualização:</p>
+                    <img src=${imageUrl} alt="preview" style=${{ maxWidth: "320px", maxHeight: "180px", borderRadius: "8px", objectFit: "contain", display: "block" }}
+                      onError=${(e) => { e.target.style.display = "none"; }} />
+                  </div>
+                ` : null}
+              ` : html`
+                <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                  <label>ID do vídeo no Facebook *</label>
+                  <input type="text" value=${videoId} onInput=${(e) => setVideoId(e.target.value)} placeholder="ID do vídeo (ex: 123456789) — já deve estar na biblioteca de mídia da página" />
+                </div>
+                <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                  <label>URL da thumbnail <span className="muted small">— opcional</span></label>
+                  <input type="url" value=${thumbUrl} onInput=${(e) => setThumbUrl(e.target.value)} placeholder="https://seusite.com/thumb.jpg" />
+                </div>
+              `}
               <div className="field" style=${{ gridColumn: "1 / -1" }}>
                 <label>Título (headline) * — máx. 40 caracteres</label>
                 <input type="text" value=${headline} onInput=${(e) => setHeadline(e.target.value)} placeholder="Ex: Você precisa ler isso!" maxLength="40" />
@@ -3033,6 +3154,16 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
               <div className="field" style=${{ gridColumn: "1 / -1" }}>
                 <label>URL de destino * (inclua UTMs!)</label>
                 <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo?utm_source=fb&utm_medium=cpc&utm_content={{ad.name}}" />
+                <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
+                  <span className="muted small" style=${{ alignSelf: "center" }}>Macros:</span>
+                  ${UTM_MACROS.map((m) => html`
+                    <button key=${m.label} className="ghost small" title=${m.tip}
+                      onClick=${(e) => { e.preventDefault(); setDestUrl((prev) => prev + m.label); }}
+                      style=${{ fontFamily: "monospace", fontSize: "0.75rem" }}>
+                      ${m.label}
+                    </button>
+                  `)}
+                </div>
               </div>
             </div>
           ` : null}
@@ -3061,6 +3192,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
               <p><strong>Status:</strong> ${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</p>
               ${specialCat !== "NONE" ? html`<p><strong>Categoria especial:</strong> ${specialCat}</p>` : null}
               ${cbo ? html`<p><strong>CBO:</strong> R$ ${campBudget} (${campBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
+              ${spendingLimit ? html`<p><strong>Limite de gastos:</strong> R$ ${spendingLimit}</p>` : null}
             </div>
             <div style=${{ padding: "16px", border: "1px solid var(--border)", borderRadius: "14px", background: "#f8f9ff" }}>
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>📦 Conjunto</p>
@@ -3069,17 +3201,21 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
               <p><strong>Países:</strong> ${countries}</p>
               <p><strong>Faixa etária:</strong> ${ageMin}–${ageMax} anos</p>
               <p><strong>Gênero:</strong> ${gender === "all" ? "Todos" : gender === "male" ? "Masculino" : "Feminino"}</p>
+              <p><strong>Dispositivos:</strong> ${devicePlatforms.length ? devicePlatforms.join(", ") : "Todos"}</p>
               <p><strong>Otimização:</strong> ${availableGoals.find((g) => g.value === optGoal)?.label}</p>
               <p><strong>Lance:</strong> ${
                 bidStrategy === "LOWEST_COST_WITHOUT_CAP" ? "Custo mais baixo" :
                 bidStrategy === "LOWEST_COST_WITH_BID_CAP" ? `Limite R$ ${bidAmount}` :
                 `Meta CPA R$ ${bidAmount}`}</p>
               <p><strong>Posicionamentos:</strong> ${placementMode === "auto" ? "Automático" : "Manual"}</p>
+              ${pixelId ? html`<p><strong>Pixel:</strong> ${pixelId} — ${CONVERSION_EVENTS.find((e) => e.value === conversionEvent)?.label}</p>` : null}
             </div>
             <div style=${{ padding: "16px", border: "1px solid var(--border)", borderRadius: "14px", background: "#f8f9ff" }}>
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>📣 Anúncio</p>
               ${skipAd ? html`<p className="muted small">Não incluído — adicionar depois.</p>` : html`
                 <p><strong>Nome:</strong> ${adName || `${campName} — Anúncio`}</p>
+                <p><strong>Formato:</strong> ${adFormat === "image" ? "Imagem" : "Vídeo"}</p>
+                ${igActorId ? html`<p><strong>Conta IG:</strong> ${igActorId}</p>` : null}
                 <p><strong>Título:</strong> ${headline}</p>
                 <p><strong>CTA:</strong> ${CTA_TYPES.find((c) => c.value === ctaType)?.label}</p>
                 <p style=${{ wordBreak: "break-all", fontSize: "0.82rem" }}><strong>URL:</strong> ${destUrl}</p>
