@@ -2614,7 +2614,7 @@ const EMPTY_PLACEMENTS = {
   messenger: false,
 };
 
-function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
+function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels }) {
   const [step, setStep] = useState(1);
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState(null);
@@ -2977,16 +2977,35 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
           </div>
 
           <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
-            <strong style=${{ display: "block", marginBottom: "6px", fontSize: "0.9rem" }}>
-              Pixel de conversão <span className="muted small">— opcional</span>
-            </strong>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <strong style=${{ fontSize: "0.9rem" }}>
+                Pixel de conversão <span className="muted small">— opcional</span>
+              </strong>
+              <button className="ghost small" onClick=${() => onLoadPixels(accountId)} disabled=${pixelsLoading || !accountId}>
+                ${pixelsLoading ? "Carregando..." : pixels.length ? `↺ Recarregar (${pixels.length})` : "Carregar pixels"}
+              </button>
+            </div>
             <p className="muted small" style=${{ margin: "0 0 12px" }}>
-              Necessário para objetivos de Vendas / Cadastros. Informe o ID do pixel instalado no site.
+              Necessário para objetivos de Vendas / Cadastros. Vincula o pixel da conta ao conjunto.
             </p>
             <div className="filters">
               <div className="field">
-                <label>ID do Pixel</label>
-                <input type="text" value=${pixelId} onInput=${(e) => setPixelId(e.target.value)} placeholder="Ex: 1234567890" />
+                <label>Pixel</label>
+                ${pixels.length > 0
+                  ? html`
+                    <select value=${pixelId} onChange=${(e) => setPixelId(e.target.value)}>
+                      <option value="">Nenhum</option>
+                      ${pixels.map((px) => html`
+                        <option key=${px.id} value=${px.id}>
+                          ${px.name || px.id} (${px.id})
+                        </option>
+                      `)}
+                    </select>
+                  `
+                  : html`
+                    <input type="text" value=${pixelId} onInput=${(e) => setPixelId(e.target.value)}
+                      placeholder=${accountId ? "Carregue os pixels acima ou insira o ID manualmente" : "Preencha o Account ID primeiro"} />
+                  `}
               </div>
               ${pixelId ? html`
                 <div className="field">
@@ -3290,6 +3309,8 @@ function App() {
   const [pagesLoading, setPagesLoading] = useState(false);
   const [pagesError, setPagesError] = useState("");
   const [pagesList, setPagesList] = useState([]);
+  const [pixelsLoading, setPixelsLoading] = useState(false);
+  const [pixelsList, setPixelsList] = useState([]);
   const [adDestMap, setAdDestMap] = useState({});
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
 
@@ -3876,6 +3897,24 @@ function App() {
       setPagesList([]);
     } finally {
       setPagesLoading(false);
+    }
+  };
+
+  const handleLoadPixels = async (accountId) => {
+    if (!accountId) return;
+    setPixelsLoading(true);
+    try {
+      const res = await fetchJson(`${API_BASE}/meta-pixels?account_id=${encodeURIComponent(accountId)}`, {
+        cacheTtlMs: 5 * 60 * 1000,
+        cacheKey: `meta-pixels-${accountId}`,
+        force: true,
+      });
+      setPixelsList(res.data || []);
+    } catch (err) {
+      pushLog("meta-pixels", err);
+      setPixelsList([]);
+    } finally {
+      setPixelsLoading(false);
     }
   };
 
@@ -5429,6 +5468,9 @@ function App() {
                 pages=${pagesList}
                 pagesLoading=${pagesLoading}
                 onLoadPages=${handleLoadPages}
+                pixels=${pixelsList}
+                pixelsLoading=${pixelsLoading}
+                onLoadPixels=${handleLoadPixels}
               />
             </main>
           `
