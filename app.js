@@ -3227,7 +3227,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                 bidStrategy === "LOWEST_COST_WITH_BID_CAP" ? `Limite R$ ${bidAmount}` :
                 `Meta CPA R$ ${bidAmount}`}</p>
               <p><strong>Posicionamentos:</strong> ${placementMode === "auto" ? "Automático" : "Manual"}</p>
-              ${pixelId ? html`<p><strong>Pixel:</strong> ${pixelId} — ${CONVERSION_EVENTS.find((e) => e.value === conversionEvent)?.label}</p>` : null}
+              ${pixelId ? html`<p><strong>Pixel:</strong> ${pixels.find((px) => px.id === pixelId)?.name || pixelId} — ${CONVERSION_EVENTS.find((e) => e.value === conversionEvent)?.label}</p>` : null}
             </div>
             <div style=${{ padding: "16px", border: "1px solid var(--border)", borderRadius: "14px", background: "#f8f9ff" }}>
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>📣 Anúncio</p>
