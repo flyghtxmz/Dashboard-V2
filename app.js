@@ -2768,7 +2768,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
   }
 
   return html`
-    <div>
+    <div style=${{ gridColumn: "1 / -1" }}>
       <${StepBar} />
       ${formError ? html`<div className="status error" style=${{ marginBottom: "16px" }}><strong>Erro:</strong> ${formError}</div>` : null}
 
@@ -5287,7 +5287,7 @@ function App() {
           `
         : activeTab === "criar"
         ? html`
-            <main style=${{ maxWidth: "720px", margin: "0 auto" }}>
+            <main className="grid">
               <${CriarCampanhaView}
                 accountId=${filters.metaAccountId.trim()}
                 pages=${pagesList}
