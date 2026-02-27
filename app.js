@@ -2735,7 +2735,6 @@ function CountryPicker({ selected, onChange }) {
 
   return html`
     <div ref=${ref} style=${{ position: "relative" }}>
-      <!-- Chips dos selecionados -->
       <div style=${{
         display: "flex", flexWrap: "wrap", gap: "6px",
         minHeight: "38px", padding: "6px 10px",
@@ -2781,7 +2780,6 @@ function CountryPicker({ selected, onChange }) {
         />
       </div>
 
-      <!-- Sugestões rápidas -->
       ${!open && selected.length === 0 ? html`
         <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
           <span className="muted small" style=${{ alignSelf: "center" }}>Sugeridos:</span>
@@ -2797,7 +2795,6 @@ function CountryPicker({ selected, onChange }) {
         </div>
       ` : null}
 
-      <!-- Dropdown -->
       ${open ? html`
         <div style=${{
           position: "absolute", zIndex: 200, top: "calc(100% + 4px)", left: 0, right: 0,
