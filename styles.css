@@ -346,22 +346,20 @@ button.small {
 }
 .metric-label {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 .metric-value {
-  font-weight: 800;
+  font-weight: 700;
   font-size: 1.45rem;
-  letter-spacing: -0.025em;
-  margin: 8px 0 4px;
+  letter-spacing: -0.02em;
+  margin: 6px 0 4px;
   word-break: break-word;
-  color: var(--ink);
 }
 .metric-helper {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
 }
 
 .token-grid {
