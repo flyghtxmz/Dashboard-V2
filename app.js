@@ -2649,24 +2649,7 @@ function App() {
         pushLog("earnings-all", err);
         return { data: [] };
       });
-      // key-value mantido em utm_campaign para evitar 422 em tokens que não aceitam utm_content
-      const keyValueContentPromise = fetchJson(
-        `${API_BASE}/key-value?${new URLSearchParams({
-          start_date: filters.startDate,
-          end_date: filters.endDate,
-          domain: filters.domain.trim(),
-          report_type: filters.reportType || "Analytical",
-          custom_key: "utm_campaign",
-        }).toString()}`,
-        {
-          cacheTtlMs: 3 * 60 * 1000,
-          cacheKey: `key-value:${filters.domain}:${filters.startDate}:${filters.endDate}:${filters.reportType}`,
-        }
-      ).catch((err) => {
-        pushLog("key-value-content", err);
-        return { data: [] };
-      });
-
+      // super-filter utm_content — sequencial necessário pela lógica de fallback
       let superRes = { data: [] };
       let superKeyUsed = "utm_content";
       try {
@@ -2703,74 +2686,7 @@ function App() {
         }
       }
 
-      let superTermRes = { data: [] };
-      try {
-        superTermRes = await fetchJson(`${API_BASE}/super-filter`, {
-          method: "POST",
-          body: JSON.stringify({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": [filters.domain.trim()],
-            custom_key: "utm_term",
-            group: ["domain", "custom_value"],
-          }),
-        });
-      } catch (err) {
-        pushLog("super-filter-term", err);
-      }
-
-
-      let keyValueContentRes;
-      try {
-        keyValueContentRes = await fetchJson(
-          `${API_BASE}/key-value?${new URLSearchParams({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            domain: filters.domain.trim(),
-            report_type: filters.reportType || "Analytical",
-            custom_key: "utm_campaign",
-          }).toString()}`,
-          {
-            cacheTtlMs: 3 * 60 * 1000,
-            cacheKey: `key-value:${filters.domain}:${filters.startDate}:${filters.endDate}:${filters.reportType}`,
-          }
-        );
-      } catch (err) {
-        pushLog("key-value-content", err);
-        keyValueContentRes = { data: [] };
-      }
-
-      let metaSourceRes = { data: [] };
-      let metaMediumRes = { data: [] };
-      try {
-        metaSourceRes = await fetchJson(`${API_BASE}/super-filter`, {
-          method: "POST",
-          body: JSON.stringify({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": [filters.domain.trim()],
-            custom_key: "utm_source",
-            group: ["domain", "custom_value"],
-          }),
-        });
-      } catch (err) {
-        pushLog("meta-utmsource", err);
-      }
-      try {
-        metaMediumRes = await fetchJson(`${API_BASE}/super-filter`, {
-          method: "POST",
-          body: JSON.stringify({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": [filters.domain.trim()],
-            custom_key: "utm_medium",
-            group: ["domain", "custom_value"],
-          }),
-        });
-      } catch (err) {
-        pushLog("meta-utmmedium", err);
-      }
-
+      // Todas as demais requisições independentes em paralelo (elimina 4 awaits sequenciais)
       const editListPromise = fetchJson(
         `${API_BASE}/meta-ad-edit-list?${new URLSearchParams({
           account_id: filters.metaAccountId.trim(),
@@ -2784,54 +2700,86 @@ function App() {
         return { data: [] };
       });
 
-      const [topRes, earningsRes, earningsAllRes, editListRes] = await Promise.all([
+      const [
+        topRes,
+        earningsRes,
+        earningsAllRes,
+        editListRes,
+        superTermRes,
+        keyValueContentRes,
+        metaSourceRes,
+        metaMediumRes,
+      ] = await Promise.all([
         topPromise,
         earningsPromise,
         earningsAllPromise,
         editListPromise,
+        fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_term",
+            group: ["domain", "custom_value"],
+          }),
+        }).catch((err) => { pushLog("super-filter-term", err); return { data: [] }; }),
+        fetchJson(
+          `${API_BASE}/key-value?${new URLSearchParams({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            domain: filters.domain.trim(),
+            report_type: filters.reportType || "Analytical",
+            custom_key: "utm_campaign",
+          }).toString()}`,
+          {
+            cacheTtlMs: 3 * 60 * 1000,
+            cacheKey: `key-value:${filters.domain}:${filters.startDate}:${filters.endDate}:${filters.reportType}`,
+          }
+        ).catch((err) => { pushLog("key-value-content", err); return { data: [] }; }),
+        fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_source",
+            group: ["domain", "custom_value"],
+          }),
+        }).catch((err) => { pushLog("meta-utmsource", err); return { data: [] }; }),
+        fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_medium",
+            group: ["domain", "custom_value"],
+          }),
+        }).catch((err) => { pushLog("meta-utmmedium", err); return { data: [] }; }),
       ]);
 
-      // key-value para coletar UTMs usadas
-      // Somente keys aceitas pelo endpoint (evita erro de validação)
-      const customKeys = ["utm_campaign"];
-      const keyValueResults = await Promise.all(
-        customKeys.map((ck) =>
-          fetchJson(
-            `${API_BASE}/key-value?${new URLSearchParams({
-              start_date: filters.startDate,
-              end_date: filters.endDate,
-              domain: filters.domain.trim(),
-              report_type: filters.reportType || "Analytical",
-              custom_key: ck,
-            }).toString()}`
-          ).catch((err) => {
-            pushLog("key-value", err);
-            return { data: [] };
-          })
-        )
-      );
+      // Reutiliza keyValueContentRes para paramPairs — elimina 2 fetches duplicados ao mesmo endpoint
       const kvMap = new Map();
-      keyValueResults.forEach((res) => {
-        (res.data || []).forEach((row) => {
-          const key = row.custon_key || row.custom_key || "";
-          const value = row.custon_value || row.custom_value || "";
-          const mapKey = `${key}=${value}`;
-          if (!kvMap.has(mapKey)) {
-            kvMap.set(mapKey, {
-              key,
-              value,
-              impressions: 0,
-              clicks: 0,
-              revenue: 0,
-              count: 0,
-            });
-          }
-          const item = kvMap.get(mapKey);
-          item.impressions += Number(row.impressions || 0);
-          item.clicks += Number(row.clicks || 0);
-          item.revenue += Number(row.earnings_client || row.earnings || 0);
-          item.count += 1;
-        });
+      (keyValueContentRes?.data || []).forEach((row) => {
+        const key = row.custon_key || row.custom_key || "";
+        const value = row.custon_value || row.custom_value || "";
+        const mapKey = `${key}=${value}`;
+        if (!kvMap.has(mapKey)) {
+          kvMap.set(mapKey, {
+            key,
+            value,
+            impressions: 0,
+            clicks: 0,
+            revenue: 0,
+            count: 0,
+          });
+        }
+        const item = kvMap.get(mapKey);
+        item.impressions += Number(row.impressions || 0);
+        item.clicks += Number(row.clicks || 0);
+        item.revenue += Number(row.earnings_client || row.earnings || 0);
+        item.count += 1;
       });
       setParamPairs(Array.from(kvMap.values()));
 

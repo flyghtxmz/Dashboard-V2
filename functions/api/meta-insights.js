@@ -66,73 +66,80 @@ export async function onRequest({ request, env }) {
     const adIds = Array.from(
       new Set(insights.map((row) => row.ad_id).filter(Boolean))
     );
-    const statusMap = new Map();
     const chunkSize = 50;
-    for (let i = 0; i < adIds.length; i += chunkSize) {
-      const chunk = adIds.slice(i, i + chunkSize);
-      try {
-        const statusRes = await fetch(
-          `${API_BASE}/?ids=${chunk.join(",")}&fields=status,effective_status&access_token=${token}`
-        );
-        const statusJson = await safeJson(statusRes);
-        if (statusJson && typeof statusJson === "object") {
-          Object.entries(statusJson).forEach(([id, value]) => {
-            if (value && (value.status || value.effective_status)) {
-              statusMap.set(id, {
-                ad_status: value.status,
-                effective_status: value.effective_status,
-              });
-            }
-          });
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
+
+    // Busca status de ads e orçamento de adsets em paralelo
+    const adChunks = [];
+    for (let i = 0; i < adIds.length; i += chunkSize) adChunks.push(adIds.slice(i, i + chunkSize));
 
     const adsetIds = Array.from(
       new Set(insights.map((row) => row.adset_id).filter(Boolean))
     );
-    const adsetBudgetMap = new Map();
-    for (let i = 0; i < adsetIds.length; i += chunkSize) {
-      const chunk = adsetIds.slice(i, i + chunkSize);
-      try {
-        const budgetRes = await fetch(
-          `${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints&access_token=${token}`
-        );
-        const budgetJson = await safeJson(budgetRes);
-        if (budgetJson && typeof budgetJson === "object") {
-          Object.entries(budgetJson).forEach(([id, value]) => {
-            if (
-              value &&
-              (value.daily_budget ||
-                value.lifetime_budget ||
-                value.budget_remaining ||
-                value.bid_amount !== undefined ||
-                value.bid_strategy ||
-                value.optimization_goal ||
-                value.bid_constraints ||
-                value.status ||
-                value.effective_status)
-            ) {
-              adsetBudgetMap.set(id, {
-                adset_daily_budget: value.daily_budget,
-                adset_lifetime_budget: value.lifetime_budget,
-                adset_budget_remaining: value.budget_remaining,
-                adset_bid_amount: value.bid_amount,
-                adset_bid_strategy: value.bid_strategy,
-                adset_optimization_goal: value.optimization_goal,
-                adset_bid_constraints: value.bid_constraints,
-                adset_status: value.status,
-                adset_effective_status: value.effective_status,
-              });
-            }
-          });
-        }
-      } catch (e) {
-        // ignore
+    const adsetChunks = [];
+    for (let i = 0; i < adsetIds.length; i += chunkSize) adsetChunks.push(adsetIds.slice(i, i + chunkSize));
+
+    const [adStatusResults, adsetBudgetResults] = await Promise.all([
+      Promise.all(
+        adChunks.map((chunk) =>
+          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=status,effective_status&access_token=${token}`)
+            .then(safeJson)
+            .catch(() => ({}))
+        )
+      ),
+      Promise.all(
+        adsetChunks.map((chunk) =>
+          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints&access_token=${token}`)
+            .then(safeJson)
+            .catch(() => ({}))
+        )
+      ),
+    ]);
+
+    const statusMap = new Map();
+    adStatusResults.forEach((statusJson) => {
+      if (statusJson && typeof statusJson === "object") {
+        Object.entries(statusJson).forEach(([id, value]) => {
+          if (value && (value.status || value.effective_status)) {
+            statusMap.set(id, {
+              ad_status: value.status,
+              effective_status: value.effective_status,
+            });
+          }
+        });
       }
-    }
+    });
+
+    const adsetBudgetMap = new Map();
+    adsetBudgetResults.forEach((budgetJson) => {
+      if (budgetJson && typeof budgetJson === "object") {
+        Object.entries(budgetJson).forEach(([id, value]) => {
+          if (
+            value &&
+            (value.daily_budget ||
+              value.lifetime_budget ||
+              value.budget_remaining ||
+              value.bid_amount !== undefined ||
+              value.bid_strategy ||
+              value.optimization_goal ||
+              value.bid_constraints ||
+              value.status ||
+              value.effective_status)
+          ) {
+            adsetBudgetMap.set(id, {
+              adset_daily_budget: value.daily_budget,
+              adset_lifetime_budget: value.lifetime_budget,
+              adset_budget_remaining: value.budget_remaining,
+              adset_bid_amount: value.bid_amount,
+              adset_bid_strategy: value.bid_strategy,
+              adset_optimization_goal: value.optimization_goal,
+              adset_bid_constraints: value.bid_constraints,
+              adset_status: value.status,
+              adset_effective_status: value.effective_status,
+            });
+          }
+        });
+      }
+    });
 
     const baseRows = insights.map((row) => {
       const enriched = { ...row };
