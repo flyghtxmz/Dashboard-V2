@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 68;
+const APP_VERSION_BUILD = 69;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -2510,6 +2510,597 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
     </section>
   `;
 }
+// ── Criar Campanha ────────────────────────────────────────────────────────
+
+const OBJECTIVES = [
+  { value: "OUTCOME_TRAFFIC", label: "Tráfego" },
+  { value: "OUTCOME_SALES", label: "Vendas" },
+  { value: "OUTCOME_LEADS", label: "Cadastros" },
+  { value: "OUTCOME_ENGAGEMENT", label: "Engajamento" },
+  { value: "OUTCOME_AWARENESS", label: "Reconhecimento" },
+  { value: "OUTCOME_APP_PROMOTION", label: "Promoção de app" },
+];
+
+const OPTIMIZATION_GOALS_MAP = {
+  OUTCOME_TRAFFIC: [
+    { value: "LINK_CLICKS", label: "Cliques no link" },
+    { value: "LANDING_PAGE_VIEWS", label: "Visualizações da landing page" },
+    { value: "REACH", label: "Alcance" },
+    { value: "IMPRESSIONS", label: "Impressões" },
+  ],
+  OUTCOME_SALES: [
+    { value: "OFFSITE_CONVERSIONS", label: "Conversões" },
+    { value: "LINK_CLICKS", label: "Cliques no link" },
+    { value: "REACH", label: "Alcance" },
+  ],
+  OUTCOME_LEADS: [
+    { value: "LEAD_GENERATION", label: "Geração de leads" },
+    { value: "LINK_CLICKS", label: "Cliques no link" },
+  ],
+  OUTCOME_ENGAGEMENT: [
+    { value: "POST_ENGAGEMENT", label: "Engajamento com publicação" },
+    { value: "PAGE_LIKES", label: "Curtidas na página" },
+    { value: "LINK_CLICKS", label: "Cliques no link" },
+  ],
+  OUTCOME_AWARENESS: [
+    { value: "REACH", label: "Alcance" },
+    { value: "IMPRESSIONS", label: "Impressões" },
+    { value: "BRAND_AWARENESS", label: "Reconhecimento da marca" },
+  ],
+  OUTCOME_APP_PROMOTION: [
+    { value: "APP_INSTALLS", label: "Instalações do app" },
+    { value: "LINK_CLICKS", label: "Cliques no link" },
+  ],
+};
+
+const CTA_TYPES = [
+  { value: "LEARN_MORE", label: "Saiba mais" },
+  { value: "SHOP_NOW", label: "Comprar agora" },
+  { value: "SIGN_UP", label: "Cadastrar" },
+  { value: "GET_QUOTE", label: "Ver oferta" },
+  { value: "DOWNLOAD", label: "Baixar" },
+  { value: "CONTACT_US", label: "Fale conosco" },
+  { value: "APPLY_NOW", label: "Candidatar-se" },
+  { value: "BOOK_NOW", label: "Agendar" },
+  { value: "SUBSCRIBE", label: "Assinar" },
+  { value: "NO_BUTTON", label: "Sem botão" },
+];
+
+const PLACEMENT_LABELS = {
+  facebook_feed: "Facebook Feed",
+  instagram_feed: "Instagram Feed",
+  facebook_stories: "Facebook Stories",
+  instagram_stories: "Instagram Stories",
+  facebook_reels: "Facebook Reels",
+  instagram_reels: "Instagram Reels",
+  audience_network: "Audience Network",
+  messenger: "Messenger",
+};
+
+const EMPTY_PLACEMENTS = {
+  facebook_feed: true,
+  instagram_feed: true,
+  facebook_stories: false,
+  instagram_stories: false,
+  facebook_reels: false,
+  instagram_reels: false,
+  audience_network: false,
+  messenger: false,
+};
+
+function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages }) {
+  const [step, setStep] = useState(1);
+  const [publishing, setPublishing] = useState(false);
+  const [result, setResult] = useState(null);
+  const [formError, setFormError] = useState("");
+
+  // Campanha
+  const [campName, setCampName] = useState("");
+  const [objective, setObjective] = useState("OUTCOME_TRAFFIC");
+  const [specialCat, setSpecialCat] = useState("NONE");
+  const [campStatus, setCampStatus] = useState("PAUSED");
+  const [cbo, setCbo] = useState(false);
+  const [campBudgetType, setCampBudgetType] = useState("daily");
+  const [campBudget, setCampBudget] = useState("");
+
+  // Conjunto
+  const [adsetName, setAdsetName] = useState("");
+  const [adsetBudgetType, setAdsetBudgetType] = useState("daily");
+  const [adsetBudget, setAdsetBudget] = useState("");
+  const [countries, setCountries] = useState("BR");
+  const [ageMin, setAgeMin] = useState("18");
+  const [ageMax, setAgeMax] = useState("65");
+  const [gender, setGender] = useState("all");
+  const [placementMode, setPlacementMode] = useState("auto");
+  const [manualPlacements, setManualPlacements] = useState({ ...EMPTY_PLACEMENTS });
+  const [optGoal, setOptGoal] = useState("LINK_CLICKS");
+  const [bidStrategy, setBidStrategy] = useState("LOWEST_COST_WITHOUT_CAP");
+  const [bidAmount, setBidAmount] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+
+  // Anúncio
+  const [skipAd, setSkipAd] = useState(false);
+  const [adName, setAdName] = useState("");
+  const [pageId, setPageId] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [headline, setHeadline] = useState("");
+  const [adBody, setAdBody] = useState("");
+  const [adDescription, setAdDescription] = useState("");
+  const [ctaType, setCtaType] = useState("LEARN_MORE");
+  const [destUrl, setDestUrl] = useState("");
+
+  const availableGoals = OPTIMIZATION_GOALS_MAP[objective] || OPTIMIZATION_GOALS_MAP["OUTCOME_TRAFFIC"];
+
+  const handleObjectiveChange = (val) => {
+    setObjective(val);
+    const goals = OPTIMIZATION_GOALS_MAP[val] || [];
+    if (goals.length) setOptGoal(goals[0].value);
+  };
+
+  const resetForm = () => {
+    setStep(1); setResult(null); setFormError("");
+    setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
+    setCampStatus("PAUSED"); setCbo(false); setCampBudgetType("daily"); setCampBudget("");
+    setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
+    setCountries("BR"); setAgeMin("18"); setAgeMax("65"); setGender("all");
+    setPlacementMode("auto"); setManualPlacements({ ...EMPTY_PLACEMENTS });
+    setOptGoal("LINK_CLICKS"); setBidStrategy("LOWEST_COST_WITHOUT_CAP");
+    setBidAmount(""); setStartTime(""); setEndTime("");
+    setSkipAd(false); setAdName(""); setPageId(""); setImageUrl("");
+    setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl("");
+  };
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    setFormError("");
+    try {
+      const payload = {
+        account_id: accountId,
+        campaign: {
+          name: campName.trim(),
+          objective,
+          status: campStatus,
+          special_ad_categories: [specialCat],
+          ...(cbo && campBudgetType === "daily" ? { daily_budget: Math.round(Number(campBudget) * 100) } : {}),
+          ...(cbo && campBudgetType === "lifetime" ? { lifetime_budget: Math.round(Number(campBudget) * 100) } : {}),
+        },
+        adset: {
+          name: adsetName.trim() || `${campName.trim()} — Conjunto`,
+          optimization_goal: optGoal,
+          bid_strategy: bidStrategy,
+          status: campStatus,
+          ...(!cbo && adsetBudgetType === "daily" ? { daily_budget: Math.round(Number(adsetBudget) * 100) } : {}),
+          ...(!cbo && adsetBudgetType === "lifetime" ? { lifetime_budget: Math.round(Number(adsetBudget) * 100) } : {}),
+          ...(bidAmount ? { bid_amount: Math.round(Number(bidAmount) * 100) } : {}),
+          countries,
+          age_min: Number(ageMin),
+          age_max: Number(ageMax),
+          genders: gender === "male" ? [1] : gender === "female" ? [2] : [],
+          ...(placementMode === "manual" ? { manual_placements: manualPlacements } : {}),
+          ...(startTime ? { start_time: new Date(startTime).toISOString() } : {}),
+          ...(endTime ? { end_time: new Date(endTime).toISOString() } : {}),
+        },
+        ...(!skipAd ? {
+          ad: {
+            name: adName.trim() || `${campName.trim()} — Anúncio`,
+            page_id: pageId,
+            image_url: imageUrl.trim(),
+            headline: headline.trim(),
+            body: adBody.trim(),
+            description: adDescription.trim(),
+            cta_type: ctaType,
+            destination_url: destUrl.trim(),
+          },
+        } : {}),
+      };
+
+      const res = await fetchJson("/api/meta-campaign-create", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setResult(res);
+      setStep(5);
+    } catch (err) {
+      setFormError(formatError(err));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const step1Valid = campName.trim() && (!cbo || campBudget);
+  const step2Valid = cbo || adsetBudget;
+  const step3Valid = skipAd || (pageId && destUrl.trim() && imageUrl.trim() && headline.trim());
+
+  const StepDot = ({ n }) => {
+    const current = n === step;
+    const done = n < step;
+    return html`
+      <div style=${{
+        display: "flex", alignItems: "center", gap: "6px",
+        opacity: n > step ? 0.4 : 1,
+      }}>
+        <div style=${{
+          width: "28px", height: "28px", borderRadius: "50%", flexShrink: 0,
+          background: current ? "var(--accent)" : done ? "var(--accent-2)" : "var(--border)",
+          color: current || done ? "#fff" : "var(--muted)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: "0.8rem", fontWeight: "700",
+        }}>${done ? "✓" : n}</div>
+        <span style=${{ fontSize: "0.85rem", fontWeight: current ? 700 : 500, color: current ? "var(--ink)" : "var(--muted)", whiteSpace: "nowrap" }}>
+          ${["", "Campanha", "Conjunto", "Anúncio", "Revisão"][n]}
+        </span>
+      </div>
+    `;
+  };
+
+  const StepBar = () => html`
+    <div style=${{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "24px", flexWrap: "wrap" }}>
+      ${[1, 2, 3, 4].map((n) => html`
+        <${StepDot} key=${n} n=${n} />
+        ${n < 4 ? html`<div style=${{ flex: "1 1 16px", height: "1px", background: "var(--border)", minWidth: "12px" }}></div>` : null}
+      `)}
+    </div>
+  `;
+
+  // ── Tela de sucesso ───────────────────────────────────────────────────────
+  if (step === 5) {
+    const ok = result?.code === "success";
+    return html`
+      <section className="card wide" style=${{ textAlign: "center", padding: "48px 24px" }}>
+        <div style=${{ fontSize: "3rem", marginBottom: "12px" }}>${ok ? "✅" : "⚠️"}</div>
+        <h2 className="section-title" style=${{ marginBottom: "8px" }}>
+          ${ok ? "Campanha criada com sucesso!" : "Criação parcial — verifique abaixo"}
+        </h2>
+        ${result?.error ? html`<p className="muted small" style=${{ margin: "8px 0" }}>${result.error}</p>` : null}
+        <div style=${{ display: "inline-flex", flexDirection: "column", gap: "6px", margin: "20px auto", fontSize: "0.92rem", textAlign: "left" }}>
+          ${result?.campaign_id ? html`<div>🎯 Campanha: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.campaign_id}</code></div>` : null}
+          ${result?.adset_id ? html`<div>📦 Conjunto: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.adset_id}</code></div>` : null}
+          ${result?.ad_id ? html`<div>📣 Anúncio: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.ad_id}</code></div>` : null}
+        </div>
+        <p className="muted small">Tudo criado com status <strong>Pausado</strong>. Revise e ative no Gerenciador de Anúncios quando pronto.</p>
+        <button className="primary" onClick=${resetForm} style=${{ marginTop: "20px" }}>
+          + Criar outra campanha
+        </button>
+      </section>
+    `;
+  }
+
+  return html`
+    <div>
+      <${StepBar} />
+      ${formError ? html`<div className="status error" style=${{ marginBottom: "16px" }}><strong>Erro:</strong> ${formError}</div>` : null}
+
+      ${/* ── Passo 1: Campanha ── */ step === 1 && html`
+        <section className="card wide">
+          <div className="card-head">
+            <div>
+              <span className="eyebrow">Passo 1 de 4</span>
+              <h2 className="section-title">Campanha</h2>
+            </div>
+          </div>
+          <div className="filters">
+            <div className="field">
+              <label>Nome da campanha *</label>
+              <input type="text" value=${campName} onInput=${(e) => setCampName(e.target.value)} placeholder="Ex: Tráfego BR — Artigo Saúde" />
+            </div>
+            <div className="field">
+              <label>Objetivo *</label>
+              <select value=${objective} onChange=${(e) => handleObjectiveChange(e.target.value)}>
+                ${OBJECTIVES.map((o) => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Categoria especial de anúncios</label>
+              <select value=${specialCat} onChange=${(e) => setSpecialCat(e.target.value)}>
+                <option value="NONE">Nenhuma</option>
+                <option value="EMPLOYMENT">Emprego</option>
+                <option value="HOUSING">Habitação</option>
+                <option value="CREDIT">Crédito</option>
+                <option value="ISSUES_ELECTIONS_POLITICS">Política / Eleições</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Status ao criar</label>
+              <select value=${campStatus} onChange=${(e) => setCampStatus(e.target.value)}>
+                <option value="PAUSED">Pausado (recomendado)</option>
+                <option value="ACTIVE">Ativo imediatamente</option>
+              </select>
+            </div>
+          </div>
+          <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
+            <label className="checkbox" style=${{ cursor: "pointer", marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <input type="checkbox" checked=${cbo} onChange=${(e) => setCbo(e.target.checked)} />
+              <strong>CBO — Otimização de orçamento da campanha</strong>
+            </label>
+            <p className="muted small" style=${{ margin: "0 0 0 24px" }}>
+              O Meta distribui automaticamente o orçamento entre os conjuntos conforme performance.
+            </p>
+            ${cbo ? html`
+              <div className="filters" style=${{ marginTop: "14px" }}>
+                <div className="field">
+                  <label>Tipo de orçamento *</label>
+                  <select value=${campBudgetType} onChange=${(e) => setCampBudgetType(e.target.value)}>
+                    <option value="daily">Diário</option>
+                    <option value="lifetime">Vitalício</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Valor (R$) *</label>
+                  <input type="number" min="1" step="0.01" value=${campBudget} onInput=${(e) => setCampBudget(e.target.value)} placeholder="Ex: 100.00" />
+                </div>
+              </div>
+            ` : null}
+          </div>
+          <div style=${{ display: "flex", justifyContent: "flex-end" }}>
+            <button className="primary" disabled=${!step1Valid} onClick=${() => setStep(2)}>
+              Próximo: Conjunto →
+            </button>
+          </div>
+        </section>
+      `}
+
+      ${/* ── Passo 2: Conjunto ── */ step === 2 && html`
+        <section className="card wide">
+          <div className="card-head">
+            <div>
+              <span className="eyebrow">Passo 2 de 4</span>
+              <h2 className="section-title">Conjunto de anúncios</h2>
+            </div>
+          </div>
+          <div className="filters">
+            <div className="field">
+              <label>Nome do conjunto</label>
+              <input type="text" value=${adsetName} onInput=${(e) => setAdsetName(e.target.value)} placeholder="Deixe vazio para gerar automaticamente" />
+            </div>
+            <div className="field">
+              <label>Países (siglas separadas por vírgula)</label>
+              <input type="text" value=${countries} onInput=${(e) => setCountries(e.target.value)} placeholder="BR, US, PT" />
+            </div>
+            <div className="field">
+              <label>Idade mínima</label>
+              <input type="number" min="18" max="65" value=${ageMin} onInput=${(e) => setAgeMin(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Idade máxima</label>
+              <input type="number" min="18" max="65" value=${ageMax} onInput=${(e) => setAgeMax(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Gênero</label>
+              <select value=${gender} onChange=${(e) => setGender(e.target.value)}>
+                <option value="all">Todos</option>
+                <option value="male">Masculino</option>
+                <option value="female">Feminino</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Objetivo de otimização</label>
+              <select value=${optGoal} onChange=${(e) => setOptGoal(e.target.value)}>
+                ${availableGoals.map((g) => html`<option key=${g.value} value=${g.value}>${g.label}</option>`)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Estratégia de lance</label>
+              <select value=${bidStrategy} onChange=${(e) => setBidStrategy(e.target.value)}>
+                <option value="LOWEST_COST_WITHOUT_CAP">Custo mais baixo (sem limite)</option>
+                <option value="LOWEST_COST_WITH_BID_CAP">Limite de lance</option>
+                <option value="COST_CAP">Meta de CPA</option>
+              </select>
+            </div>
+            ${(bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP") ? html`
+              <div className="field">
+                <label>${bidStrategy === "COST_CAP" ? "Meta de CPA (R$)" : "Limite de lance (R$)"}</label>
+                <input type="number" min="0.01" step="0.01" value=${bidAmount} onInput=${(e) => setBidAmount(e.target.value)} placeholder="Ex: 2.50" />
+              </div>
+            ` : null}
+            <div className="field">
+              <label>Data/hora de início (opcional)</label>
+              <input type="datetime-local" value=${startTime} onInput=${(e) => setStartTime(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Data/hora de término (opcional)</label>
+              <input type="datetime-local" value=${endTime} onInput=${(e) => setEndTime(e.target.value)} />
+            </div>
+          </div>
+
+          ${!cbo ? html`
+            <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
+              <strong style=${{ display: "block", marginBottom: "12px", fontSize: "0.9rem" }}>Orçamento do conjunto *</strong>
+              <div className="filters">
+                <div className="field">
+                  <label>Tipo</label>
+                  <select value=${adsetBudgetType} onChange=${(e) => setAdsetBudgetType(e.target.value)}>
+                    <option value="daily">Diário</option>
+                    <option value="lifetime">Vitalício</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Valor (R$) *</label>
+                  <input type="number" min="1" step="0.01" value=${adsetBudget} onInput=${(e) => setAdsetBudget(e.target.value)} placeholder="Ex: 30.00" />
+                </div>
+              </div>
+            </div>
+          ` : null}
+
+          <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
+            <strong style=${{ display: "block", marginBottom: "10px", fontSize: "0.9rem" }}>Posicionamentos</strong>
+            <div style=${{ display: "flex", gap: "20px", marginBottom: "12px", flexWrap: "wrap" }}>
+              <label className="checkbox" style=${{ cursor: "pointer" }}>
+                <input type="radio" name="placement" checked=${placementMode === "auto"} onChange=${() => setPlacementMode("auto")} />
+                Automático (recomendado pelo Meta)
+              </label>
+              <label className="checkbox" style=${{ cursor: "pointer" }}>
+                <input type="radio" name="placement" checked=${placementMode === "manual"} onChange=${() => setPlacementMode("manual")} />
+                Manual
+              </label>
+            </div>
+            ${placementMode === "manual" ? html`
+              <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px" }}>
+                ${Object.entries(PLACEMENT_LABELS).map(([key, label]) => html`
+                  <label key=${key} className="checkbox" style=${{ cursor: "pointer" }}>
+                    <input type="checkbox"
+                      checked=${manualPlacements[key]}
+                      onChange=${(e) => setManualPlacements((prev) => ({ ...prev, [key]: e.target.checked }))}
+                    />
+                    ${label}
+                  </label>
+                `)}
+              </div>
+            ` : null}
+          </div>
+
+          <div style=${{ display: "flex", justifyContent: "space-between" }}>
+            <button onClick=${() => setStep(1)}>← Voltar</button>
+            <button className="primary" disabled=${!step2Valid} onClick=${() => setStep(3)}>
+              Próximo: Anúncio →
+            </button>
+          </div>
+        </section>
+      `}
+
+      ${/* ── Passo 3: Anúncio ── */ step === 3 && html`
+        <section className="card wide">
+          <div className="card-head">
+            <div>
+              <span className="eyebrow">Passo 3 de 4</span>
+              <h2 className="section-title">Anúncio</h2>
+            </div>
+          </div>
+          <div style=${{ padding: "12px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff", marginBottom: "4px" }}>
+            <label className="checkbox" style=${{ cursor: "pointer" }}>
+              <input type="checkbox" checked=${skipAd} onChange=${(e) => setSkipAd(e.target.checked)} />
+              <strong>Pular anúncio agora</strong> — criar somente campanha + conjunto, adicionar anúncio depois no Gerenciador
+            </label>
+          </div>
+          ${!skipAd ? html`
+            <div className="filters">
+              <div className="field">
+                <label>Nome do anúncio</label>
+                <input type="text" value=${adName} onInput=${(e) => setAdName(e.target.value)} placeholder="Ex: Imagem 1 — Versão A" />
+              </div>
+              <div className="field">
+                <label>
+                  Página do Facebook *
+                  ${pagesLoading ? html`<span className="muted small"> carregando...</span>` : null}
+                </label>
+                <select value=${pageId} onChange=${(e) => setPageId(e.target.value)}>
+                  <option value="">Selecione uma página</option>
+                  ${(pages || []).map((p) => html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}
+                </select>
+                ${(!pages || pages.length === 0) && !pagesLoading ? html`
+                  <button className="ghost small" onClick=${onLoadPages} style=${{ marginTop: "6px" }}>
+                    Carregar páginas
+                  </button>
+                ` : null}
+              </div>
+              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <label>URL da imagem * (.jpg, .png — mín. 1080×1080 recomendado)</label>
+                <input type="url" value=${imageUrl} onInput=${(e) => setImageUrl(e.target.value)} placeholder="https://seusite.com/imagem.jpg" />
+              </div>
+              ${imageUrl ? html`
+                <div style=${{ gridColumn: "1 / -1", padding: "12px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
+                  <p className="muted small" style=${{ margin: "0 0 8px" }}>Pré-visualização:</p>
+                  <img src=${imageUrl} alt="preview" style=${{ maxWidth: "320px", maxHeight: "180px", borderRadius: "8px", objectFit: "contain", display: "block" }}
+                    onError=${(e) => { e.target.style.display = "none"; }} />
+                </div>
+              ` : null}
+              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <label>Título (headline) * — máx. 40 caracteres</label>
+                <input type="text" value=${headline} onInput=${(e) => setHeadline(e.target.value)} placeholder="Ex: Você precisa ler isso!" maxLength="40" />
+                <span className="muted small">${headline.length}/40</span>
+              </div>
+              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <label>Texto principal — máx. 125 caracteres</label>
+                <textarea value=${adBody} onInput=${(e) => setAdBody(e.target.value)}
+                  placeholder="Texto que aparece acima do criativo..."
+                  rows="3" maxLength="125"
+                  style=${{ width: "100%", padding: "9px 12px", borderRadius: "10px", border: "1px solid var(--border)", background: "#fbfbff", fontSize: "0.9rem", resize: "vertical", fontFamily: "inherit" }}
+                ></textarea>
+                <span className="muted small">${adBody.length}/125</span>
+              </div>
+              <div className="field">
+                <label>Descrição do link — máx. 30 caracteres</label>
+                <input type="text" value=${adDescription} onInput=${(e) => setAdDescription(e.target.value)} placeholder="Ex: Leia grátis agora" maxLength="30" />
+                <span className="muted small">${adDescription.length}/30</span>
+              </div>
+              <div className="field">
+                <label>Botão (CTA)</label>
+                <select value=${ctaType} onChange=${(e) => setCtaType(e.target.value)}>
+                  ${CTA_TYPES.map((c) => html`<option key=${c.value} value=${c.value}>${c.label}</option>`)}
+                </select>
+              </div>
+              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <label>URL de destino * (inclua UTMs!)</label>
+                <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo?utm_source=fb&utm_medium=cpc&utm_content={{ad.name}}" />
+              </div>
+            </div>
+          ` : null}
+          <div style=${{ display: "flex", justifyContent: "space-between" }}>
+            <button onClick=${() => setStep(2)}>← Voltar</button>
+            <button className="primary" disabled=${!step3Valid} onClick=${() => setStep(4)}>
+              Revisar →
+            </button>
+          </div>
+        </section>
+      `}
+
+      ${/* ── Passo 4: Revisão ── */ step === 4 && html`
+        <section className="card wide">
+          <div className="card-head">
+            <div>
+              <span className="eyebrow">Passo 4 de 4</span>
+              <h2 className="section-title">Revisão final</h2>
+            </div>
+          </div>
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" }}>
+            <div style=${{ padding: "16px", border: "2px solid var(--accent)", borderRadius: "14px", background: "#f3f4ff" }}>
+              <p className="eyebrow" style=${{ marginBottom: "12px" }}>🎯 Campanha</p>
+              <p><strong>Nome:</strong> ${campName}</p>
+              <p><strong>Objetivo:</strong> ${OBJECTIVES.find((o) => o.value === objective)?.label}</p>
+              <p><strong>Status:</strong> ${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</p>
+              ${specialCat !== "NONE" ? html`<p><strong>Categoria especial:</strong> ${specialCat}</p>` : null}
+              ${cbo ? html`<p><strong>CBO:</strong> R$ ${campBudget} (${campBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
+            </div>
+            <div style=${{ padding: "16px", border: "1px solid var(--border)", borderRadius: "14px", background: "#f8f9ff" }}>
+              <p className="eyebrow" style=${{ marginBottom: "12px" }}>📦 Conjunto</p>
+              <p><strong>Nome:</strong> ${adsetName || `${campName} — Conjunto`}</p>
+              ${!cbo ? html`<p><strong>Orçamento:</strong> R$ ${adsetBudget} (${adsetBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
+              <p><strong>Países:</strong> ${countries}</p>
+              <p><strong>Faixa etária:</strong> ${ageMin}–${ageMax} anos</p>
+              <p><strong>Gênero:</strong> ${gender === "all" ? "Todos" : gender === "male" ? "Masculino" : "Feminino"}</p>
+              <p><strong>Otimização:</strong> ${availableGoals.find((g) => g.value === optGoal)?.label}</p>
+              <p><strong>Lance:</strong> ${
+                bidStrategy === "LOWEST_COST_WITHOUT_CAP" ? "Custo mais baixo" :
+                bidStrategy === "LOWEST_COST_WITH_BID_CAP" ? `Limite R$ ${bidAmount}` :
+                `Meta CPA R$ ${bidAmount}`}</p>
+              <p><strong>Posicionamentos:</strong> ${placementMode === "auto" ? "Automático" : "Manual"}</p>
+            </div>
+            <div style=${{ padding: "16px", border: "1px solid var(--border)", borderRadius: "14px", background: "#f8f9ff" }}>
+              <p className="eyebrow" style=${{ marginBottom: "12px" }}>📣 Anúncio</p>
+              ${skipAd ? html`<p className="muted small">Não incluído — adicionar depois.</p>` : html`
+                <p><strong>Nome:</strong> ${adName || `${campName} — Anúncio`}</p>
+                <p><strong>Título:</strong> ${headline}</p>
+                <p><strong>CTA:</strong> ${CTA_TYPES.find((c) => c.value === ctaType)?.label}</p>
+                <p style=${{ wordBreak: "break-all", fontSize: "0.82rem" }}><strong>URL:</strong> ${destUrl}</p>
+              `}
+            </div>
+          </div>
+          <div style=${{ padding: "14px 16px", border: "1px solid #f1c27d", borderRadius: "12px", background: "#fff4e5" }}>
+            <strong>⚠️ Atenção:</strong> tudo será criado com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
+            ${campStatus === "ACTIVE" ? html` <span className="muted small">Isso significa que os anúncios entrarão em veiculação imediatamente após aprovação do Meta.</span>` : null}
+          </div>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button onClick=${() => setStep(3)} disabled=${publishing}>← Voltar</button>
+            <button className="primary" onClick=${handlePublish} disabled=${publishing} style=${{ minWidth: "180px" }}>
+              ${publishing ? "Criando..." : "🚀 Publicar campanha"}
+            </button>
+          </div>
+        </section>
+      `}
+    </div>
+  `;
+}
+
 function App() {
   const [filters, setFilters] = useState({
     ...defaultDates(),
@@ -4527,6 +5118,13 @@ function App() {
         >
           Páginas
         </button>
+        <button
+          className=${`tab ${activeTab === "criar" ? "active" : ""}`}
+          onClick=${() => setActiveTab("criar")}
+          style=${{ background: activeTab === "criar" ? "var(--accent)" : "#e8f5e9", borderColor: activeTab === "criar" ? "transparent" : "#a5d6a7", color: activeTab === "criar" ? "#fff" : "#1b5e20" }}
+        >
+          + Criar campanha
+        </button>
       </div>
 
       ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
@@ -4686,10 +5284,18 @@ function App() {
               </section>
             </main>
           `
-        : html`
+        : activeTab === "criar"
+        ? html`
             <main className="grid">
-              ${html`
-                <${DiagnosticsJoin}
+              <${CriarCampanhaView}
+                accountId=${filters.metaAccountId.trim()}
+                pages=${pagesList}
+                pagesLoading=${pagesLoading}
+                onLoadPages=${handleLoadPages}
+              />
+            </main>
+          `
+        : html`
                   superRows=${Array.isArray(superFilter) ? superFilter : []}
                   kvRows=${Array.isArray(keyValueContent) ? keyValueContent : []}
                   earnings=${earnings}
