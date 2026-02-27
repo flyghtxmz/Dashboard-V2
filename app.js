@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 69;
+const APP_VERSION_BUILD = 70;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -177,7 +177,7 @@ function useTotalsFromEarnings(earnings, fallbackSuper) {
         const imps = Number(row.impressions || 0);
         acc.ecpmWeighted += Number(row.ecpm || 0) * imps;
         acc.ecpmClientWeighted += Number(row.ecpm_client || row.ecpm || 0) * imps;
-        acc.activeView += Number(row.active_view || 0);
+        acc.activeViewWeighted += Number(row.active_view || 0) * imps;
         return acc;
       },
       {
@@ -191,13 +191,14 @@ function useTotalsFromEarnings(earnings, fallbackSuper) {
         ecpmWeighted: 0,
         ecpmClientWeighted: 0,
         activeView: 0,
+        activeViewWeighted: 0,
       }
     );
 
     sum.ctr = sum.impressions ? (sum.clicks / sum.impressions) * 100 : 0;
     sum.ecpm = sum.impressions ? sum.ecpmWeighted / sum.impressions : 0;
     sum.ecpmClient = sum.impressions ? sum.ecpmClientWeighted / sum.impressions : 0;
-    sum.activeView = sum.activeView / source.length;
+    sum.activeView = sum.impressions ? sum.activeViewWeighted / sum.impressions : 0;
 
     return sum;
   }, [earnings, fallbackSuper]);

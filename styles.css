@@ -217,9 +217,9 @@ button.small {
 }
 
 .grid {
-  margin-top: 16px;
+  margin-top: 20px;
   display: grid;
-  gap: var(--gap);
+  gap: 24px;
   /*
    * CORREÇÃO PRINCIPAL: grid fixo de 2 colunas.
    * auto-fit com minmax(320px) criava 3 colunas em telas largas,
@@ -235,12 +235,13 @@ button.small {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  padding: 22px;
+  padding: 28px;
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   min-width: 0;
+  min-height: 140px;
   transition: box-shadow 0.2s ease;
 }
 .card:hover {
@@ -302,12 +303,12 @@ button.small {
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 .metric-card {
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 14px;
+  padding: 18px 16px;
   background: linear-gradient(145deg, #fff 0%, #f8f9ff 100%);
   transition: box-shadow 0.15s, transform 0.15s;
 }
@@ -327,9 +328,9 @@ button.small {
 }
 .metric-value {
   font-weight: 700;
-  font-size: 1.38rem;
+  font-size: 1.45rem;
   letter-spacing: -0.02em;
-  margin: 5px 0 3px;
+  margin: 6px 0 4px;
   word-break: break-word;
 }
 .metric-helper {
@@ -439,13 +440,13 @@ table {
   text-transform: uppercase;
   color: var(--muted);
   font-weight: 700;
-  padding: 10px 14px 9px;
+  padding: 12px 16px 11px;
   white-space: nowrap;
   background: #f6f7fb;
   border-bottom: 1px solid var(--border);
 }
 tbody td {
-  padding: 11px 14px;
+  padding: 13px 16px;
   border-top: 1px solid var(--border);
   vertical-align: middle;
 }
@@ -689,76 +690,216 @@ tbody tr:last-child td {
   }
 }
 
-.totals-row { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 12px; background: #f8f9ff; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 0.95rem; }
+.totals-row {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: #f8f9ff;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  font-size: 0.95rem;
+}
 
 /* Mobile */
 @media (max-width: 600px) {
   body {
-    padding: 16px 14px 40px;
+    font-size: 14px;
+    padding: 14px 12px 48px;
   }
+
+  .layout {
+    width: 100%;
+  }
+
   .topbar {
     flex-direction: column;
     align-items: flex-start;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 14px;
+    padding-bottom: 12px;
     margin-bottom: 0;
-    gap: 10px;
+    gap: 8px;
   }
   .topbar h1 {
-    font-size: 1.45rem;
+    font-size: 1.3rem;
   }
+  .subtitle {
+    font-size: 0.8rem;
+  }
+
   .actions {
     width: 100%;
     justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
   }
+  .actions > button,
+  .actions > div {
+    flex-shrink: 0;
+  }
+  /* Textos informativos (cotação, última atualização) ficam em linha própria */
+  .actions > .muted.small {
+    width: 100%;
+    font-size: 0.78rem;
+  }
+
+  button {
+    padding: 8px 13px;
+    font-size: 0.82rem;
+    border-radius: 10px;
+  }
+  button.small {
+    padding: 5px 9px;
+    font-size: 0.76rem;
+  }
+
   .tabs {
-    margin: 12px 0 6px;
-    gap: 5px;
+    margin: 10px 0 4px;
+    gap: 4px;
+    padding-bottom: 6px;
   }
   .tab {
-    padding: 7px 12px;
-    font-size: 0.82rem;
+    padding: 6px 11px;
+    font-size: 0.79rem;
+    border-radius: 8px;
   }
+
+  .status {
+    margin: 10px 0;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+
   .grid {
-    gap: 14px;
+    gap: 12px;
+    margin-top: 12px;
   }
+
   .card {
-    padding: 15px;
+    padding: 16px;
     border-radius: 14px;
+    gap: 14px;
+    min-height: 0;
   }
+
   .card-head {
     gap: 8px;
     align-items: flex-start;
   }
+  .card-head .chip-group {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .eyebrow {
+    font-size: 0.64rem;
+  }
+  .section-title {
+    font-size: 1rem;
+  }
+
+  .chip {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+  }
+
   .metrics-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 10px;
+  }
+  .metric-card {
+    padding: 13px 12px;
   }
   .metric-value {
-    font-size: 1.18rem;
+    font-size: 1.15rem;
   }
+  .metric-label {
+    font-size: 0.74rem;
+  }
+  .metric-helper {
+    font-size: 0.72rem;
+  }
+
   .filters {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 10px;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
   }
+  .field {
+    font-size: 0.84rem;
+  }
+  .field input,
+  .field select {
+    padding: 8px 10px;
+    font-size: 0.84rem;
+  }
+
   .actions.presets {
-    gap: 7px;
+    gap: 6px;
   }
   .actions.presets button {
-    flex: 1 1 130px;
-    font-size: 0.82rem;
+    flex: 1 1 120px;
+    font-size: 0.8rem;
+    padding: 7px 10px;
   }
-  .table-wrapper table th,
-  tbody td {
-    padding: 8px 10px;
-    font-size: 0.83rem;
-  }
+
   .table-wrapper table th {
+    padding: 8px 10px;
+    font-size: 0.7rem;
     white-space: nowrap;
   }
-  .table-wrapper table td {
-    white-space: normal;
+  tbody td {
+    padding: 9px 10px;
+    font-size: 0.82rem;
     word-break: break-word;
+    white-space: normal;
+  }
+
+  .totals-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+
+  .logs {
+    max-height: 200px;
+  }
+  .log-line {
+    padding: 8px;
+    font-size: 0.83rem;
+  }
+
+  .status-badge {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+  }
+
+  .budget-cell input {
+    width: 76px;
+    font-size: 0.8rem;
+  }
+
+  .dup-grid {
+    gap: 14px;
+  }
+  .dup-campaign {
+    padding: 10px;
+  }
+  .dup-actions input {
+    width: 58px;
+  }
+
+  .draft-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .token-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toggle {
+    padding: 5px 10px;
+    font-size: 0.76rem;
   }
 }
 
