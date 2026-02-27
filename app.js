@@ -5296,6 +5296,9 @@ function App() {
             </main>
           `
         : html`
+            <main className="grid">
+              ${html`
+                <${DiagnosticsJoin}
                   superRows=${Array.isArray(superFilter) ? superFilter : []}
                   kvRows=${Array.isArray(keyValueContent) ? keyValueContent : []}
                   earnings=${earnings}
