@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.2.0";
+import React, { useEffect, useMemo, useRef, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
@@ -2614,7 +2614,255 @@ const EMPTY_PLACEMENTS = {
   messenger: false,
 };
 
-function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels }) {
+// ── Country Picker ─────────────────────────────────────────────────────────
+
+const COUNTRY_LIST = [
+  // LatAm (topo)
+  { code: "BR", name: "Brasil", region: "latam" },
+  { code: "MX", name: "México", region: "latam" },
+  { code: "AR", name: "Argentina", region: "latam" },
+  { code: "CO", name: "Colômbia", region: "latam" },
+  { code: "CL", name: "Chile", region: "latam" },
+  { code: "PE", name: "Peru", region: "latam" },
+  { code: "EC", name: "Equador", region: "latam" },
+  { code: "UY", name: "Uruguai", region: "latam" },
+  { code: "PY", name: "Paraguai", region: "latam" },
+  { code: "BO", name: "Bolívia", region: "latam" },
+  { code: "VE", name: "Venezuela", region: "latam" },
+  { code: "CU", name: "Cuba", region: "latam" },
+  { code: "DO", name: "Rep. Dominicana", region: "latam" },
+  { code: "GT", name: "Guatemala", region: "latam" },
+  { code: "HN", name: "Honduras", region: "latam" },
+  { code: "SV", name: "El Salvador", region: "latam" },
+  { code: "NI", name: "Nicarágua", region: "latam" },
+  { code: "CR", name: "Costa Rica", region: "latam" },
+  { code: "PA", name: "Panamá", region: "latam" },
+  // Ibérico / Europa
+  { code: "PT", name: "Portugal", region: "europe" },
+  { code: "ES", name: "Espanha", region: "europe" },
+  { code: "GB", name: "Reino Unido", region: "europe" },
+  { code: "FR", name: "França", region: "europe" },
+  { code: "DE", name: "Alemanha", region: "europe" },
+  { code: "IT", name: "Itália", region: "europe" },
+  { code: "NL", name: "Países Baixos", region: "europe" },
+  { code: "BE", name: "Bélgica", region: "europe" },
+  { code: "SE", name: "Suécia", region: "europe" },
+  { code: "NO", name: "Noruega", region: "europe" },
+  { code: "CH", name: "Suíça", region: "europe" },
+  { code: "PL", name: "Polônia", region: "europe" },
+  { code: "RO", name: "Romênia", region: "europe" },
+  { code: "GR", name: "Grécia", region: "europe" },
+  { code: "AT", name: "Áustria", region: "europe" },
+  // América do Norte
+  { code: "US", name: "Estados Unidos", region: "north-america" },
+  { code: "CA", name: "Canadá", region: "north-america" },
+  // Ásia / Oceania
+  { code: "AU", name: "Austrália", region: "asia-oceania" },
+  { code: "NZ", name: "Nova Zelândia", region: "asia-oceania" },
+  { code: "JP", name: "Japão", region: "asia-oceania" },
+  { code: "IN", name: "Índia", region: "asia-oceania" },
+  { code: "PH", name: "Filipinas", region: "asia-oceania" },
+  { code: "ID", name: "Indonésia", region: "asia-oceania" },
+  { code: "TH", name: "Tailândia", region: "asia-oceania" },
+  { code: "SG", name: "Singapura", region: "asia-oceania" },
+  { code: "MY", name: "Malásia", region: "asia-oceania" },
+  // África / Oriente Médio
+  { code: "NG", name: "Nigéria", region: "africa-me" },
+  { code: "ZA", name: "África do Sul", region: "africa-me" },
+  { code: "EG", name: "Egito", region: "africa-me" },
+  { code: "MA", name: "Marrocos", region: "africa-me" },
+  { code: "AE", name: "Emirados Árabes", region: "africa-me" },
+  { code: "SA", name: "Arábia Saudita", region: "africa-me" },
+  { code: "IL", name: "Israel", region: "africa-me" },
+];
+
+const COUNTRY_REGIONS = {
+  latam: "América Latina",
+  europe: "Europa",
+  "north-america": "América do Norte",
+  "asia-oceania": "Ásia / Oceania",
+  "africa-me": "África / Oriente Médio",
+};
+
+const COUNTRY_MAP = Object.fromEntries(COUNTRY_LIST.map((c) => [c.code, c]));
+
+function flagEmoji(code) {
+  if (!code || code.length !== 2) return "🌐";
+  return [...code.toUpperCase()].map((c) =>
+    String.fromCodePoint(c.charCodeAt(0) + 127397)
+  ).join("");
+}
+
+const SUGGESTED_CODES = ["BR", "US", "PT", "MX", "AR", "CO", "CL", "PE", "ES", "GB"];
+
+function CountryPicker({ selected, onChange }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggle = (code) => {
+    if (selected.includes(code)) {
+      onChange(selected.filter((c) => c !== code));
+    } else {
+      onChange([...selected, code]);
+    }
+  };
+
+  const filtered = query.trim().length > 0
+    ? COUNTRY_LIST.filter(
+        (c) =>
+          c.name.toLowerCase().includes(query.toLowerCase()) ||
+          c.code.toLowerCase().includes(query.toLowerCase())
+      )
+    : COUNTRY_LIST;
+
+  // Group by region when no query
+  const grouped = query.trim()
+    ? null
+    : COUNTRY_LIST.reduce((acc, c) => {
+        if (!acc[c.region]) acc[c.region] = [];
+        acc[c.region].push(c);
+        return acc;
+      }, {});
+
+  return html`
+    <div ref=${ref} style=${{ position: "relative" }}>
+      <!-- Chips dos selecionados -->
+      <div style=${{
+        display: "flex", flexWrap: "wrap", gap: "6px",
+        minHeight: "38px", padding: "6px 10px",
+        border: open ? "1px solid var(--accent)" : "1px solid var(--border)",
+        borderRadius: "10px", background: "#fff", cursor: "text",
+        boxShadow: open ? "0 0 0 3px rgba(87,88,232,0.14)" : "0 1px 2px rgba(20,18,58,0.04)",
+        transition: "border-color 0.15s, box-shadow 0.15s",
+        alignItems: "center",
+      }}
+        onClick=${() => setOpen(true)}
+      >
+        ${selected.map((code) => html`
+          <span key=${code} style=${{
+            display: "inline-flex", alignItems: "center", gap: "4px",
+            padding: "3px 8px 3px 6px", borderRadius: "999px",
+            background: "#eef0ff", border: "1px solid #d0d3f8",
+            fontSize: "0.83rem", fontWeight: 600, color: "var(--ink)",
+            userSelect: "none",
+          }}>
+            <span style=${{ fontSize: "1.1rem", lineHeight: 1 }}>${flagEmoji(code)}</span>
+            <span>${COUNTRY_MAP[code]?.name || code}</span>
+            <button
+              onClick=${(e) => { e.stopPropagation(); toggle(code); }}
+              style=${{
+                background: "none", border: "none", cursor: "pointer",
+                padding: "0 0 0 2px", fontSize: "0.75rem", color: "var(--muted)",
+                lineHeight: 1, display: "flex", alignItems: "center",
+              }}
+            >✕</button>
+          </span>
+        `)}
+        <input
+          type="text"
+          value=${query}
+          onInput=${(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus=${() => setOpen(true)}
+          placeholder=${selected.length === 0 ? "Buscar país..." : ""}
+          style=${{
+            border: "none", outline: "none", background: "transparent",
+            font: "inherit", fontSize: "0.9rem", minWidth: "120px",
+            flex: "1", padding: "0 2px",
+          }}
+        />
+      </div>
+
+      <!-- Sugestões rápidas -->
+      ${!open && selected.length === 0 ? html`
+        <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+          <span className="muted small" style=${{ alignSelf: "center" }}>Sugeridos:</span>
+          ${SUGGESTED_CODES.map((code) => html`
+            <button key=${code} className="ghost small"
+              onClick=${() => toggle(code)}
+              style=${{ padding: "3px 9px", fontSize: "0.8rem", gap: "4px" }}
+            >
+              <span style=${{ fontSize: "1rem" }}>${flagEmoji(code)}</span>
+              ${COUNTRY_MAP[code]?.name || code}
+            </button>
+          `)}
+        </div>
+      ` : null}
+
+      <!-- Dropdown -->
+      ${open ? html`
+        <div style=${{
+          position: "absolute", zIndex: 200, top: "calc(100% + 4px)", left: 0, right: 0,
+          background: "#fff", border: "1px solid var(--border)", borderRadius: "12px",
+          boxShadow: "0 8px 24px rgba(20,18,58,0.12)", maxHeight: "280px",
+          overflowY: "auto", overscrollBehavior: "contain",
+        }}>
+          ${filtered.length === 0
+            ? html`<div style=${{ padding: "14px 16px", color: "var(--muted)", fontSize: "0.9rem" }}>Nenhum país encontrado.</div>`
+            : query.trim()
+              ? filtered.map((c) => html`
+                  <div key=${c.code}
+                    onClick=${() => { toggle(c.code); setQuery(""); }}
+                    style=${{
+                      display: "flex", alignItems: "center", gap: "10px",
+                      padding: "9px 14px", cursor: "pointer", fontSize: "0.9rem",
+                      background: selected.includes(c.code) ? "#f0f2ff" : "transparent",
+                      transition: "background 0.1s",
+                    }}
+                    onMouseEnter=${(e) => { if (!selected.includes(c.code)) e.currentTarget.style.background = "#f7f8ff"; }}
+                    onMouseLeave=${(e) => { e.currentTarget.style.background = selected.includes(c.code) ? "#f0f2ff" : "transparent"; }}
+                  >
+                    <span style=${{ fontSize: "1.25rem", lineHeight: 1, flexShrink: 0 }}>${flagEmoji(c.code)}</span>
+                    <span style=${{ flex: 1 }}>${c.name}</span>
+                    <span className="muted small">${c.code}</span>
+                    ${selected.includes(c.code) ? html`<span style=${{ color: "var(--accent)", fontWeight: 700, fontSize: "0.9rem" }}>✓</span>` : null}
+                  </div>
+                `)
+              : Object.entries(grouped).map(([region, countries]) => html`
+                  <div key=${region}>
+                    <div style=${{
+                      padding: "7px 14px 4px",
+                      fontSize: "0.65rem", fontWeight: 700,
+                      textTransform: "uppercase", letterSpacing: "0.08em",
+                      color: "var(--accent)", background: "#fafafe",
+                      borderBottom: "1px solid var(--border-light)",
+                    }}>${COUNTRY_REGIONS[region]}</div>
+                    ${countries.map((c) => html`
+                      <div key=${c.code}
+                        onClick=${() => { toggle(c.code); setQuery(""); }}
+                        style=${{
+                          display: "flex", alignItems: "center", gap: "10px",
+                          padding: "8px 14px", cursor: "pointer", fontSize: "0.9rem",
+                          background: selected.includes(c.code) ? "#f0f2ff" : "transparent",
+                          transition: "background 0.1s",
+                        }}
+                        onMouseEnter=${(e) => { if (!selected.includes(c.code)) e.currentTarget.style.background = "#f7f8ff"; }}
+                        onMouseLeave=${(e) => { e.currentTarget.style.background = selected.includes(c.code) ? "#f0f2ff" : "transparent"; }}
+                      >
+                        <span style=${{ fontSize: "1.25rem", lineHeight: 1, flexShrink: 0 }}>${flagEmoji(c.code)}</span>
+                        <span style=${{ flex: 1 }}>${c.name}</span>
+                        <span className="muted small">${c.code}</span>
+                        ${selected.includes(c.code) ? html`<span style=${{ color: "var(--accent)", fontWeight: 700 }}>✓</span>` : null}
+                      </div>
+                    `)}
+                  </div>
+                `)
+          }
+        </div>
+      ` : null}
+    </div>
+  `;
+}
+
+ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels }) {
   const [step, setStep] = useState(1);
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState(null);
@@ -2633,7 +2881,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [adsetName, setAdsetName] = useState("");
   const [adsetBudgetType, setAdsetBudgetType] = useState("daily");
   const [adsetBudget, setAdsetBudget] = useState("");
-  const [countries, setCountries] = useState("BR");
+  const [countries, setCountries] = useState(["BR"]);
   const [ageMin, setAgeMin] = useState("18");
   const [ageMax, setAgeMax] = useState("65");
   const [gender, setGender] = useState("all");
@@ -2682,7 +2930,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     setCampStatus("PAUSED"); setCbo(false); setCampBudgetType("daily"); setCampBudget("");
     setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
-    setCountries("BR"); setAgeMin("18"); setAgeMax("65"); setGender("all");
+    setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
     setPlacementMode("auto"); setManualPlacements({ ...EMPTY_PLACEMENTS });
     setOptGoal("LINK_CLICKS"); setBidStrategy("LOWEST_COST_WITHOUT_CAP");
     setBidAmount(""); setStartTime(""); setEndTime("");
@@ -2908,9 +3156,9 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               <label>Nome do conjunto</label>
               <input type="text" value=${adsetName} onInput=${(e) => setAdsetName(e.target.value)} placeholder="Deixe vazio para gerar automaticamente" />
             </div>
-            <div className="field">
-              <label>Países (siglas separadas por vírgula)</label>
-              <input type="text" value=${countries} onInput=${(e) => setCountries(e.target.value)} placeholder="BR, US, PT" />
+            <div className="field" style=${{ gridColumn: "1 / -1" }}>
+              <label>Locais de segmentação</label>
+              <${CountryPicker} selected=${countries} onChange=${setCountries} />
             </div>
             <div className="field">
               <label>Idade mínima</label>
@@ -3217,7 +3465,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>📦 Conjunto</p>
               <p><strong>Nome:</strong> ${adsetName || `${campName} — Conjunto`}</p>
               ${!cbo ? html`<p><strong>Orçamento:</strong> R$ ${adsetBudget} (${adsetBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
-              <p><strong>Países:</strong> ${countries}</p>
+              <p><strong>Países:</strong> ${(Array.isArray(countries) ? countries : countries.split(",")).map((c) => `${flagEmoji(c.trim())} ${COUNTRY_MAP[c.trim()]?.name || c.trim()}`).join(" · ")}</p>
               <p><strong>Faixa etária:</strong> ${ageMin}–${ageMax} anos</p>
               <p><strong>Gênero:</strong> ${gender === "all" ? "Todos" : gender === "male" ? "Masculino" : "Feminino"}</p>
               <p><strong>Dispositivos:</strong> ${devicePlatforms.length ? devicePlatforms.join(", ") : "Todos"}</p>
