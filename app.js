@@ -2681,6 +2681,28 @@ const COUNTRY_REGIONS = {
 
 const COUNTRY_MAP = Object.fromEntries(COUNTRY_LIST.map((c) => [c.code, c]));
 
+const LANGUAGE_LIST = [
+  { id: 5,   label: "Português (Brasil)" },
+  { id: 41,  label: "Português (Portugal)" },
+  { id: 6,   label: "Espanhol" },
+  { id: 2,   label: "Inglês (EUA)" },
+  { id: 10,  label: "Inglês (UK)" },
+  { id: 31,  label: "Francês" },
+  { id: 30,  label: "Alemão" },
+  { id: 36,  label: "Italiano" },
+  { id: 24,  label: "Holandês" },
+  { id: 45,  label: "Polonês" },
+  { id: 32,  label: "Romeno" },
+  { id: 9,   label: "Japonês" },
+  { id: 23,  label: "Coreano" },
+  { id: 27,  label: "Chinês (Simplificado)" },
+  { id: 28,  label: "Chinês (Tradicional)" },
+  { id: 4,   label: "Árabe" },
+  { id: 16,  label: "Hindi" },
+  { id: 39,  label: "Indonésio" },
+  { id: 34,  label: "Tailandês" },
+];
+
 function flagEmoji(code) {
   if (!code || code.length !== 2) return "🌐";
   return [...code.toUpperCase()].map((c) =>
@@ -2894,6 +2916,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [pixelId, setPixelId] = useState("");
   const [conversionEvent, setConversionEvent] = useState("PURCHASE");
   const [devicePlatforms, setDevicePlatforms] = useState(["mobile", "desktop"]);
+  const [locLanguages, setLocLanguages] = useState([]);
 
   const availableGoals = OPTIMIZATION_GOALS_MAP[objective] || OPTIMIZATION_GOALS_MAP["OUTCOME_TRAFFIC"];
 
@@ -2914,6 +2937,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     setOptGoal("LINK_CLICKS"); setBidStrategy("LOWEST_COST_WITHOUT_CAP");
     setBidAmount(""); setStartTime(""); setEndTime("");
     setPixelId(""); setConversionEvent("PURCHASE"); setDevicePlatforms(["mobile", "desktop"]);
+    setLocLanguages([]);
     setSkipAd(false); setAdName(""); setPageId(""); setAdFormat("image");
     setImageUrl(""); setVideoId(""); setThumbUrl(""); setIgActorId("");
     setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl("");
@@ -2951,6 +2975,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           ...(startTime ? { start_time: new Date(startTime).toISOString() } : {}),
           ...(endTime ? { end_time: new Date(endTime).toISOString() } : {}),
           ...(pixelId ? { pixel_id: pixelId.trim(), conversion_event: conversionEvent } : {}),
+          ...(locLanguages.length > 0 ? { locales: locLanguages } : {}),
         },
         ...(!skipAd ? {
           ad: {
@@ -3138,6 +3163,41 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             <div className="field" style=${{ gridColumn: "1 / -1" }}>
               <label>Locais de segmentação</label>
               <${LocationPicker} selected=${countries} onChange=${setCountries} />
+            </div>
+            <div className="field" style=${{ gridColumn: "1 / -1" }}>
+              <label>Idiomas <span className="muted small">(vazio = todos)</span></label>
+              <div style=${{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                ${locLanguages.map((id) => {
+                  const lang = LANGUAGE_LIST.find((l) => l.id === id);
+                  return html`
+                    <span key=${id} style=${{
+                      display: "inline-flex", alignItems: "center", gap: "5px",
+                      padding: "4px 10px 4px 10px", borderRadius: "999px",
+                      background: "#e8f5e9", border: "1px solid #b2dfdb",
+                      fontSize: "0.83rem", fontWeight: 600, color: "#198a76",
+                    }}>
+                      ${lang?.label || id}
+                      <button
+                        onClick=${() => setLocLanguages(locLanguages.filter((x) => x !== id))}
+                        style=${{ background: "none", border: "none", cursor: "pointer", color: "#198a76", fontSize: "0.75rem", padding: "0 0 0 2px", lineHeight: 1 }}
+                      >✕</button>
+                    </span>
+                  `;
+                })}
+              </div>
+              <select
+                value=""
+                onChange=${(e) => {
+                  const id = Number(e.target.value);
+                  if (id && !locLanguages.includes(id)) setLocLanguages([...locLanguages, id]);
+                  e.target.value = "";
+                }}
+              >
+                <option value="">+ Adicionar idioma...</option>
+                ${LANGUAGE_LIST.filter((l) => !locLanguages.includes(l.id)).map((l) => html`
+                  <option key=${l.id} value=${l.id}>${l.label}</option>
+                `)}
+              </select>
             </div>
             <div className="field">
               <label>Idade mínima</label>
@@ -3445,6 +3505,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               <p><strong>Nome:</strong> ${adsetName || `${campName} — Conjunto`}</p>
               ${!cbo ? html`<p><strong>Orçamento:</strong> R$ ${adsetBudget} (${adsetBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
               <p><strong>Países:</strong> ${(Array.isArray(countries) ? countries : countries.split(",")).map((c) => `${flagEmoji(c.trim())} ${COUNTRY_MAP[c.trim()]?.name || c.trim()}`).join(" · ")}</p>
+              <p><strong>Idiomas:</strong> ${locLanguages.length === 0 ? "Todos" : locLanguages.map((id) => LANGUAGE_LIST.find((l) => l.id === id)?.label || id).join(", ")}</p>
               <p><strong>Faixa etária:</strong> ${ageMin}–${ageMax} anos</p>
               <p><strong>Gênero:</strong> ${gender === "all" ? "Todos" : gender === "male" ? "Masculino" : "Feminino"}</p>
               <p><strong>Dispositivos:</strong> ${devicePlatforms.length ? devicePlatforms.join(", ") : "Todos"}</p>

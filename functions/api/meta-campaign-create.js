@@ -124,6 +124,11 @@ export async function onRequest({ request, env }) {
       targeting.device_platforms = adset.device_platforms;
     }
 
+    // Idiomas
+    if (Array.isArray(adset.locales) && adset.locales.length > 0) {
+      targeting.locales = adset.locales.map(Number).filter(Boolean);
+    }
+
     // Pixel / promoted_object
     if (adset.pixel_id) {
       ap.set("promoted_object", JSON.stringify({
