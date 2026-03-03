@@ -637,18 +637,6 @@ function Filters({
             ? html`<span className="muted small">Carregando Dominios...</span>`
             : null}
         </label>
-        <label className="field">
-          <span>Carregar criativos (Meta)</span>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked=${!!filters.includeAssets}
-              onChange=${(e) =>
-                setFilters((p) => ({ ...p, includeAssets: e.target.checked }))}
-            />
-            <span>Mais lento</span>
-          </label>
-        </label>
       </div>
       <div className="actions presets">
         <span className="muted small">Atalhos:</span>
@@ -3535,6 +3523,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [domains, setDomains] = useState(settings.domains?.length ? settings.domains : [...DEFAULT_DOMAINS]);
   const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
   const [reportType, setReportType] = useState(settings.reportType || "Analytical");
+  const [includeAssets, setIncludeAssets] = useState(!!settings.includeAssets);
   const [newDomain, setNewDomain] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
 
@@ -3548,7 +3537,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const removeDomain = (d) => setDomains(domains.filter((x) => x !== d));
 
   const handleSave = async () => {
-    await onSave({ domains, metaAccountId, reportType });
+    await onSave({ domains, metaAccountId, reportType, includeAssets });
     setSaveMsg("Salvo com sucesso!");
     setTimeout(() => setSaveMsg(""), 3000);
   };
@@ -3586,6 +3575,18 @@ function ConfiguracoesView({ settings, onSave, saving }) {
               <option value="Analytical">Analytical</option>
               <option value="Synthetic">Synthetic</option>
             </select>
+          </div>
+          <div className="field">
+            <label>Carregar criativos (Meta)</label>
+            <label className="checkbox" style=${{ marginTop: "4px" }}>
+              <input
+                type="checkbox"
+                checked=${!!includeAssets}
+                onChange=${(e) => setIncludeAssets(e.target.checked)}
+              />
+              <span>Ativado (mais lento)</span>
+            </label>
+            <span className="muted small">Carrega imagens e vídeos dos anúncios ao buscar dados da Meta.</span>
           </div>
         </div>
 
@@ -3789,7 +3790,7 @@ function App() {
   const [settingsDomains, setSettingsDomains] = useState([...DEFAULT_DOMAINS]);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsData, setSettingsData] = useState({
-    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical",
+    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false,
   });
 
   useEffect(() => {
@@ -3800,8 +3801,12 @@ function App() {
           const s = d.data;
           setSettingsData(s);
           if (Array.isArray(s.domains) && s.domains.length) setSettingsDomains(s.domains);
-          if (s.metaAccountId) setFilters((p) => ({ ...p, metaAccountId: s.metaAccountId }));
-          if (s.reportType)    setFilters((p) => ({ ...p, reportType: s.reportType }));
+          setFilters((p) => ({
+            ...p,
+            ...(s.metaAccountId ? { metaAccountId: s.metaAccountId } : {}),
+            ...(s.reportType    ? { reportType: s.reportType }         : {}),
+            includeAssets: !!s.includeAssets,
+          }));
         }
       })
       .catch(() => {});
@@ -3824,6 +3829,7 @@ function App() {
           ...p,
           metaAccountId: s.metaAccountId || p.metaAccountId,
           reportType: s.reportType || p.reportType,
+          includeAssets: !!s.includeAssets,
         }));
       }
     } catch { /* ignore */ }
