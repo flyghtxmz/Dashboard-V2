@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   metaAccountId: "",
   reportType: "Analytical",
   includeAssets: false,
+  nichos: [],
 };
 
 function getSettings(raw) {
@@ -20,6 +21,7 @@ function getSettings(raw) {
       metaAccountId: parsed.metaAccountId || "",
       reportType: parsed.reportType || "Analytical",
       includeAssets: !!parsed.includeAssets,
+      nichos: Array.isArray(parsed.nichos) ? parsed.nichos : [],
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -49,8 +51,11 @@ export async function onRequest({ request, env }) {
     const metaAccountId = (body.metaAccountId || "").trim();
     const reportType = body.reportType || "Analytical";
     const includeAssets = !!body.includeAssets;
+    const nichos = Array.isArray(body.nichos)
+      ? body.nichos.filter((n) => n && typeof n.nome === "string" && n.nome.trim())
+      : [];
 
-    const settings = { domains, metaAccountId, reportType, includeAssets };
+    const settings = { domains, metaAccountId, reportType, includeAssets, nichos };
     await kv.put(KV_KEY, JSON.stringify(settings));
     return Response.json({ code: "success", data: settings });
   }

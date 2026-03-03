@@ -2830,7 +2830,7 @@ function LocationPicker({ selected, onChange }) {
   `;
 }
 
-function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels }) {
+function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels, nichos }) {
   const [step, setStep] = useState(1);
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState(null);
@@ -2841,6 +2841,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [objective, setObjective] = useState("OUTCOME_TRAFFIC");
   const [specialCat, setSpecialCat] = useState("NONE");
   const [campStatus, setCampStatus] = useState("ACTIVE");
+  const [nicho, setNicho] = useState(null);
   const [cbo, setCbo] = useState(false);
   const [campBudgetType, setCampBudgetType] = useState("daily");
   const [campBudget, setCampBudget] = useState("");
@@ -2896,7 +2897,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const resetForm = () => {
     setStep(1); setResult(null); setFormError("");
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
-    setCampStatus("ACTIVE"); setCbo(false); setCampBudgetType("daily"); setCampBudget("");
+    setCampStatus("ACTIVE"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
     setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
@@ -3050,6 +3051,18 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
           </div>
           <div className="filters">
+            ${nichos && nichos.length > 0 ? html`
+              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <label>Nicho <span className="muted small">(opcional)</span></label>
+                <select value=${nicho ? nicho.slug : ""} onChange=${(e) => {
+                  const found = (nichos || []).find((n) => n.slug === e.target.value);
+                  setNicho(found || null);
+                }}>
+                  <option value="">— Selecione um nicho —</option>
+                  ${(nichos || []).map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}</option>`)}
+                </select>
+              </div>
+            ` : null}
             <div className="field">
               <label>Nome da campanha *</label>
               <input type="text" value=${campName} onInput=${(e) => setCampName(e.target.value)} placeholder="Ex: Tráfego BR — Artigo Saúde" />
@@ -3524,8 +3537,24 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
   const [reportType, setReportType] = useState(settings.reportType || "Analytical");
   const [includeAssets, setIncludeAssets] = useState(!!settings.includeAssets);
+  const [nichos, setNichos] = useState(Array.isArray(settings.nichos) ? settings.nichos : []);
   const [newDomain, setNewDomain] = useState("");
+  const [newNichoNome, setNewNichoNome] = useState("");
+  const [newNichoSlug, setNewNichoSlug] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
+
+  const toSlug = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+  const addNicho = () => {
+    const nome = newNichoNome.trim();
+    if (!nome) return;
+    const slug = newNichoSlug.trim() || toSlug(nome);
+    if (nichos.find((n) => n.slug === slug)) return;
+    setNichos([...nichos, { nome, slug }]);
+    setNewNichoNome(""); setNewNichoSlug("");
+  };
+
+  const removeNicho = (slug) => setNichos(nichos.filter((n) => n.slug !== slug));
 
   const addDomain = () => {
     const d = newDomain.trim().toLowerCase();
@@ -3537,7 +3566,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const removeDomain = (d) => setDomains(domains.filter((x) => x !== d));
 
   const handleSave = async () => {
-    await onSave({ domains, metaAccountId, reportType, includeAssets });
+    await onSave({ domains, metaAccountId, reportType, includeAssets, nichos });
     setSaveMsg("Salvo com sucesso!");
     setTimeout(() => setSaveMsg(""), 3000);
   };
@@ -3622,6 +3651,53 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             </button>
           </div>
           <p className="muted small" style=${{ marginTop: "8px" }}>Esses domínios ficam disponíveis no seletor de Domínio dos filtros.</p>
+        </div>
+
+        <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
+          <h3 style=${{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 700 }}>Nichos</h3>
+          <p className="muted small" style=${{ marginBottom: "16px" }}>Nichos cadastrados aparecem no Passo 1 da criação de campanhas e serão usados para padronizar nomes, URLs e UTMs.</p>
+          <div style=${{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "16px" }}>
+            ${nichos.length === 0
+              ? html`<span className="muted small">Nenhum nicho cadastrado ainda.</span>`
+              : nichos.map((n) => html`
+                <span key=${n.slug} style=${{
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  padding: "5px 12px 5px 14px", borderRadius: "999px",
+                  background: "#e8f5e9", border: "1px solid #b2dfdb",
+                  fontSize: "0.85rem", fontWeight: 600, color: "#0d5c4a",
+                }}>
+                  ${n.nome}
+                  ${n.slug !== n.nome.toLowerCase() ? html`<span style=${{ fontWeight: 400, color: "#5b8e82", fontSize: "0.78rem" }}>(${n.slug})</span>` : null}
+                  <button
+                    onClick=${() => removeNicho(n.slug)}
+                    style=${{ background: "none", border: "none", cursor: "pointer", color: "#5b8e82", fontSize: "0.75rem", padding: "0", lineHeight: 1, display: "flex" }}
+                  >✕</button>
+                </span>
+              `)
+            }
+          </div>
+          <div style=${{ display: "flex", gap: "8px", flexWrap: "wrap", maxWidth: "600px" }}>
+            <input
+              type="text"
+              value=${newNichoNome}
+              onInput=${(e) => setNewNichoNome(e.target.value)}
+              onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
+              placeholder="Nome do nicho (ex: Saúde)"
+              style=${{ flex: 2, minWidth: "160px" }}
+            />
+            <input
+              type="text"
+              value=${newNichoSlug}
+              onInput=${(e) => setNewNichoSlug(e.target.value)}
+              onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
+              placeholder="Slug opcional (ex: saude)"
+              style=${{ flex: 1, minWidth: "130px" }}
+            />
+            <button className="ghost" onClick=${addNicho} disabled=${!newNichoNome.trim()}>
+              + Adicionar
+            </button>
+          </div>
+          <p className="muted small" style=${{ marginTop: "8px" }}>O slug é gerado automaticamente se não preenchido — serve para compor nomes padronizados futuramente.</p>
         </div>
       </section>
     </main>
@@ -3790,7 +3866,7 @@ function App() {
   const [settingsDomains, setSettingsDomains] = useState([...DEFAULT_DOMAINS]);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsData, setSettingsData] = useState({
-    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false,
+    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false, nichos: [],
   });
 
   useEffect(() => {
@@ -6029,6 +6105,7 @@ function App() {
                 pixels=${pixelsList}
                 pixelsLoading=${pixelsLoading}
                 onLoadPixels=${handleLoadPixels}
+                nichos=${settingsData.nichos}
               />
             </main>
           `
