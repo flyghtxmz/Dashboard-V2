@@ -3545,6 +3545,91 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   `;
 }
 
+function LoginView({ onAuthed }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const data = await res.json();
+      if (data.code === "success") {
+        onAuthed(email.trim());
+      } else {
+        setError(data.message || "Erro ao fazer login.");
+      }
+    } catch {
+      setError("Não foi possível conectar ao servidor.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return html`
+    <div className="login-page">
+      <div className="login-card">
+        <div className="login-logo">
+          <div className="login-icon-wrap">📊</div>
+          <h1>Dashboard</h1>
+          <p>Arbitragem de tráfego · Acesso restrito</p>
+        </div>
+        <form onSubmit=${handleSubmit} className="login-form">
+          ${error ? html`<div className="login-error">${error}</div>` : null}
+          <div className="field">
+            <label>E-mail</label>
+            <input
+              type="email"
+              value=${email}
+              onInput=${(e) => setEmail(e.target.value)}
+              placeholder="seu@email.com"
+              required
+              autoComplete="email"
+            />
+          </div>
+          <div className="field">
+            <label>Senha</label>
+            <div style=${{ position: "relative" }}>
+              <input
+                type=${showPwd ? "text" : "password"}
+                value=${password}
+                onInput=${(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+                style=${{ paddingRight: "44px", width: "100%" }}
+              />
+              <button
+                type="button"
+                onClick=${() => setShowPwd(!showPwd)}
+                style=${{
+                  position: "absolute", right: "10px", top: "50%",
+                  transform: "translateY(-50%)", background: "none",
+                  border: "none", cursor: "pointer", color: "var(--muted)",
+                  fontSize: "0.8rem", padding: "0",
+                }}
+              >${showPwd ? "Ocultar" : "Ver"}</button>
+            </div>
+          </div>
+          <button type="submit" className="primary login-btn" disabled=${loading || !email || !password}>
+            ${loading ? "Entrando..." : "Entrar"}
+          </button>
+        </form>
+        <p className="login-footer">Sessão válida por 8 horas.</p>
+      </div>
+    </div>
+  `;
+}
+
 function App() {
   const [filters, setFilters] = useState({
     ...defaultDates(),
@@ -3601,6 +3686,24 @@ function App() {
   const [pixelsList, setPixelsList] = useState([]);
   const [adDestMap, setAdDestMap] = useState({});
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
+
+  // ── Auth ──────────────────────────────────────────────────
+  const [authed, setAuthed]       = useState(null); // null=checking | false=login | true=ok
+  const [authEmail, setAuthEmail] = useState("");
+
+  useEffect(() => {
+    fetch("/api/auth-check")
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) { setAuthed(true); setAuthEmail(d.email || ""); } else setAuthed(false); })
+      .catch(() => setAuthed(false));
+  }, []);
+
+  const handleLogout = async () => {
+    await fetch("/api/auth-logout", { method: "POST" }).catch(() => {});
+    setAuthed(false);
+    setAuthEmail("");
+  };
+  // ─────────────────────────────────────────────────────────
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
   const brlRate = usdBrl || 0;
@@ -5503,6 +5606,19 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (authed === null) return html`
+    <div className="login-page">
+      <div className="login-checking">
+        <span className="login-spinner"></span>
+        Verificando sessão...
+      </div>
+    </div>
+  `;
+
+  if (!authed) return html`
+    <${LoginView} onAuthed=${(em) => { setAuthed(true); setAuthEmail(em); }} />
+  `;
+
   return html`
     <div className="layout">
       <header className="topbar">
@@ -5530,6 +5646,12 @@ function App() {
           <button className="primary" disabled>
             Exportar CSV (breve)
           </button>
+          <div className="login-topbar-user">
+            <span className="login-topbar-email">${authEmail}</span>
+            <button className="ghost" style=${{ fontSize: "0.8rem", padding: "5px 12px" }} onClick=${handleLogout}>
+              Sair
+            </button>
+          </div>
         </div>
       </header>
 
