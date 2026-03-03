@@ -5780,9 +5780,6 @@ function App() {
           >
             ${loading ? "Atualizando..." : "Atualizar"}
           </button>
-          <button className="primary" disabled>
-            Exportar CSV (breve)
-          </button>
           <div className="login-topbar-user">
             <span className="login-topbar-email">${authEmail}</span>
             <button className="ghost" style=${{ fontSize: "0.8rem", padding: "5px 12px" }} onClick=${handleLogout}>
