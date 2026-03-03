@@ -5858,7 +5858,7 @@ function App() {
 
       ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
 
-      ${html`
+      ${activeTab === "dashboard" ? html`
         <${Filters}
           filters=${filters}
           setFilters=${setFilters}
@@ -5867,7 +5867,7 @@ function App() {
           domains=${mergedDomains}
           domainsLoading=${domainsLoading}
         />
-      `}
+      ` : null}
 
       ${activeTab === "dashboard"
         ? html`
