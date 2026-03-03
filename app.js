@@ -638,27 +638,6 @@ function Filters({
             : null}
         </label>
         <label className="field">
-          <span>ID da conta Meta *</span>
-          <input
-            type="text"
-            placeholder="ex.: act_123456789"
-            value=${filters.metaAccountId || ""}
-            onChange=${(e) =>
-              setFilters((p) => ({ ...p, metaAccountId: e.target.value }))}
-          />
-        </label>
-        <label className="field">
-          <span>Tipo de relatório</span>
-          <select
-            value=${filters.reportType}
-            onChange=${(e) =>
-              setFilters((p) => ({ ...p, reportType: e.target.value }))}
-          >
-            <option value="Analytical">Analytical</option>
-            <option value="Synthetic">Synthetic</option>
-          </select>
-        </label>
-        <label className="field">
           <span>Carregar criativos (Meta)</span>
           <label className="checkbox">
             <input
@@ -2873,7 +2852,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [campName, setCampName] = useState("");
   const [objective, setObjective] = useState("OUTCOME_TRAFFIC");
   const [specialCat, setSpecialCat] = useState("NONE");
-  const [campStatus, setCampStatus] = useState("PAUSED");
+  const [campStatus, setCampStatus] = useState("ACTIVE");
   const [cbo, setCbo] = useState(false);
   const [campBudgetType, setCampBudgetType] = useState("daily");
   const [campBudget, setCampBudget] = useState("");
@@ -2929,7 +2908,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const resetForm = () => {
     setStep(1); setResult(null); setFormError("");
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
-    setCampStatus("PAUSED"); setCbo(false); setCampBudgetType("daily"); setCampBudget("");
+    setCampStatus("ACTIVE"); setCbo(false); setCampBudgetType("daily"); setCampBudget("");
     setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
@@ -3545,6 +3524,109 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   `;
 }
 
+const DEFAULT_DOMAINS = [
+  "remediototal.com.br",
+  "br.remediototal.com.br",
+  "es.remediototal.com.br",
+  "intre.remediototal.com.br",
+];
+
+function ConfiguracoesView({ settings, onSave, saving }) {
+  const [domains, setDomains] = useState(settings.domains?.length ? settings.domains : [...DEFAULT_DOMAINS]);
+  const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
+  const [reportType, setReportType] = useState(settings.reportType || "Analytical");
+  const [newDomain, setNewDomain] = useState("");
+  const [saveMsg, setSaveMsg] = useState("");
+
+  const addDomain = () => {
+    const d = newDomain.trim().toLowerCase();
+    if (!d || domains.includes(d)) return;
+    setDomains([...domains, d]);
+    setNewDomain("");
+  };
+
+  const removeDomain = (d) => setDomains(domains.filter((x) => x !== d));
+
+  const handleSave = async () => {
+    await onSave({ domains, metaAccountId, reportType });
+    setSaveMsg("Salvo com sucesso!");
+    setTimeout(() => setSaveMsg(""), 3000);
+  };
+
+  return html`
+    <main className="grid">
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Dashboard</span>
+            <h2 className="section-title">Configurações</h2>
+          </div>
+          <div style=${{ display: "flex", gap: "10px", alignItems: "center" }}>
+            ${saveMsg ? html`<span style=${{ color: "#198a76", fontWeight: 600, fontSize: "0.88rem" }}>${saveMsg}</span>` : null}
+            <button className="primary" onClick=${handleSave} disabled=${saving}>
+              ${saving ? "Salvando..." : "Salvar configurações"}
+            </button>
+          </div>
+        </div>
+
+        <div className="filters" style=${{ marginBottom: "28px" }}>
+          <div className="field">
+            <label>ID da conta Meta</label>
+            <input
+              type="text"
+              value=${metaAccountId}
+              onInput=${(e) => setMetaAccountId(e.target.value)}
+              placeholder="ex.: act_123456789"
+            />
+            <span className="muted small">Usado em análises, duplicação e criação de campanhas.</span>
+          </div>
+          <div className="field">
+            <label>Tipo de relatório</label>
+            <select value=${reportType} onChange=${(e) => setReportType(e.target.value)}>
+              <option value="Analytical">Analytical</option>
+              <option value="Synthetic">Synthetic</option>
+            </select>
+          </div>
+        </div>
+
+        <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px" }}>
+          <h3 style=${{ margin: "0 0 16px", fontSize: "1rem", fontWeight: 700 }}>Domínios</h3>
+          <div style=${{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "16px" }}>
+            ${domains.map((d) => html`
+              <span key=${d} style=${{
+                display: "inline-flex", alignItems: "center", gap: "6px",
+                padding: "5px 12px 5px 14px", borderRadius: "999px",
+                background: "#eef0ff", border: "1px solid #d0d3f8",
+                fontSize: "0.85rem", fontWeight: 600, color: "var(--ink)",
+              }}>
+                ${d}
+                <button
+                  onClick=${() => removeDomain(d)}
+                  style=${{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "0.75rem", padding: "0", lineHeight: 1, display: "flex" }}
+                >✕</button>
+              </span>
+            `)}
+          </div>
+          <div style=${{ display: "flex", gap: "8px", maxWidth: "480px" }}>
+            <input
+              type="text"
+              value=${newDomain}
+              onInput=${(e) => setNewDomain(e.target.value)}
+              onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addDomain(); } }}
+              placeholder="ex.: meudominio.com.br"
+              style=${{ flex: 1 }}
+            />
+            <button className="ghost" onClick=${addDomain} disabled=${!newDomain.trim()}>
+              + Adicionar
+            </button>
+          </div>
+          <p className="muted small" style=${{ marginTop: "8px" }}>Esses domínios ficam disponíveis no seletor de Domínio dos filtros.</p>
+        </div>
+      </section>
+    </main>
+  `;
+}
+
 function LoginView({ onAuthed }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -3686,7 +3768,7 @@ function App() {
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
 
   // ── Auth ──────────────────────────────────────────────────
-  const [authed, setAuthed]       = useState(null); // null=checking | false=login | true=ok
+  const [authed, setAuthed]       = useState(null);
   const [authEmail, setAuthEmail] = useState("");
 
   useEffect(() => {
@@ -3701,6 +3783,57 @@ function App() {
     setAuthed(false);
     setAuthEmail("");
   };
+  // ─────────────────────────────────────────────────────────
+
+  // ── Settings ─────────────────────────────────────────────
+  const [settingsDomains, setSettingsDomains] = useState([...DEFAULT_DOMAINS]);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsData, setSettingsData] = useState({
+    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical",
+  });
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.code === "success" && d.data) {
+          const s = d.data;
+          setSettingsData(s);
+          if (Array.isArray(s.domains) && s.domains.length) setSettingsDomains(s.domains);
+          if (s.metaAccountId) setFilters((p) => ({ ...p, metaAccountId: s.metaAccountId }));
+          if (s.reportType)    setFilters((p) => ({ ...p, reportType: s.reportType }));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveSettings = async (payload) => {
+    setSettingsSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const d = await res.json();
+      if (d.code === "success" && d.data) {
+        const s = d.data;
+        setSettingsData(s);
+        if (Array.isArray(s.domains) && s.domains.length) setSettingsDomains(s.domains);
+        setFilters((p) => ({
+          ...p,
+          metaAccountId: s.metaAccountId || p.metaAccountId,
+          reportType: s.reportType || p.reportType,
+        }));
+      }
+    } catch { /* ignore */ }
+    setSettingsSaving(false);
+  };
+
+  const mergedDomains = useMemo(() => {
+    const all = [...settingsDomains, ...domains];
+    return all.filter((d, i) => all.indexOf(d) === i);
+  }, [settingsDomains, domains]);
   // ─────────────────────────────────────────────────────────
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
@@ -5703,6 +5836,12 @@ function App() {
           Páginas
         </button>
         <button
+          className=${`tab ${activeTab === "configuracoes" ? "active" : ""}`}
+          onClick=${() => setActiveTab("configuracoes")}
+        >
+          ⚙ Configurações
+        </button>
+        <button
           className=${`tab ${activeTab === "criar" ? "active" : ""}`}
           onClick=${() => setActiveTab("criar")}
           style=${{ background: activeTab === "criar" ? "var(--accent)" : "#e8f5e9", borderColor: activeTab === "criar" ? "transparent" : "#a5d6a7", color: activeTab === "criar" ? "#fff" : "#1b5e20" }}
@@ -5719,7 +5858,7 @@ function App() {
           setFilters=${setFilters}
           onSubmit=${handleLoad}
           loading=${loading}
-          domains=${domains}
+          domains=${mergedDomains}
           domainsLoading=${domainsLoading}
         />
       `}
@@ -5867,6 +6006,14 @@ function App() {
                 </div>
               </section>
             </main>
+          `
+        : activeTab === "configuracoes"
+        ? html`
+            <${ConfiguracoesView}
+              settings=${settingsData}
+              onSave=${handleSaveSettings}
+              saving=${settingsSaving}
+            />
           `
         : activeTab === "criar"
         ? html`
