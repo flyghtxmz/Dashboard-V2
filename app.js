@@ -3624,7 +3624,6 @@ function LoginView({ onAuthed }) {
             ${loading ? "Entrando..." : "Entrar"}
           </button>
         </form>
-        <p className="login-footer">Sessão válida por 8 horas.</p>
       </div>
     </div>
   `;
