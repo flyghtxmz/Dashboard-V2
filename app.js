@@ -3581,7 +3581,6 @@ function LoginView({ onAuthed }) {
         <div className="login-logo">
           <div className="login-icon-wrap">📊</div>
           <h1>Dashboard</h1>
-          <p>Arbitragem de tráfego · Acesso restrito</p>
         </div>
         <form onSubmit=${handleSubmit} className="login-form">
           ${error ? html`<div className="login-error">${error}</div>` : null}
