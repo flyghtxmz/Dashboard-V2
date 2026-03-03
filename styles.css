@@ -1074,7 +1074,8 @@ tbody tr:last-child td {
   color: rgba(255, 255, 255, 0.75);
 }
 
-.login-form input {
+.login-form .field input,
+.login-form .field select {
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: #fff;
@@ -1085,15 +1086,26 @@ tbody tr:last-child td {
   transition: border-color 0.15s, box-shadow 0.15s;
   font-family: inherit;
   width: 100%;
+  box-shadow: none;
+  -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.07) inset;
+  -webkit-text-fill-color: #fff;
+  caret-color: #fff;
 }
 
-.login-form input::placeholder {
+.login-form .field input::placeholder {
   color: rgba(255, 255, 255, 0.28);
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.28);
 }
 
-.login-form input:focus {
+.login-form .field input:focus,
+.login-form .field input:focus-visible {
+  background: rgba(255, 255, 255, 0.10);
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(87, 88, 232, 0.28);
+  -webkit-box-shadow: 0 0 0 1000px rgba(30, 28, 80, 0.95) inset, 0 0 0 3px rgba(87, 88, 232, 0.28);
+  -webkit-text-fill-color: #fff;
+  caret-color: #fff;
+  color: #fff;
 }
 
 .login-error {
