@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   reportType: "Analytical",
   includeAssets: false,
   nichos: [],
+  urls: [],
 };
 
 function getSettings(raw) {
@@ -22,6 +23,7 @@ function getSettings(raw) {
       reportType: parsed.reportType || "Analytical",
       includeAssets: !!parsed.includeAssets,
       nichos: Array.isArray(parsed.nichos) ? parsed.nichos : [],
+      urls: Array.isArray(parsed.urls) ? parsed.urls : [],
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -58,8 +60,12 @@ export async function onRequest({ request, env }) {
             paises: Array.isArray(n.paises) ? n.paises.map((p) => String(p).trim()).filter(Boolean) : (n.pais ? [String(n.pais).trim()] : []),
           }))
       : [];
+    const urls = Array.isArray(body.urls)
+      ? body.urls.filter((u) => u && typeof u.nome === "string" && u.nome.trim() && typeof u.url === "string" && u.url.trim())
+          .map((u) => ({ nome: u.nome.trim(), url: u.url.trim() }))
+      : [];
 
-    const settings = { domains, metaAccountId, reportType, includeAssets, nichos };
+    const settings = { domains, metaAccountId, reportType, includeAssets, nichos, urls };
     await kv.put(KV_KEY, JSON.stringify(settings));
     return Response.json({ code: "success", data: settings });
   }
