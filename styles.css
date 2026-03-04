@@ -1197,4 +1197,132 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 
+/* ── Ad Manager (EditarView) ───────────────────────────── */
+
+.manager-campaign {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.manager-campaign-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--border-light);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.manager-campaign-header:hover {
+  background: rgba(87, 88, 232, 0.08);
+}
+
+.manager-toggle {
+  font-size: 0.85rem;
+  color: var(--muted);
+  flex-shrink: 0;
+  width: 14px;
+}
+
+.manager-adset {
+  border-top: 1px solid var(--border);
+}
+
+.manager-adset-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 10px 32px;
+  background: rgba(255, 255, 255, 0.02);
+  flex-wrap: wrap;
+}
+
+.manager-adset-header:hover {
+  background: rgba(87, 88, 232, 0.04);
+}
+
+.manager-adset-name {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 140px;
+}
+
+.manager-ads-table {
+  padding: 0 16px 12px 32px;
+  overflow-x: auto;
+}
+
+.manager-ads-table table {
+  width: 100%;
+  font-size: 0.82rem;
+  border-collapse: collapse;
+}
+
+.manager-ads-table th {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.manager-ads-table td {
+  padding: 6px 8px;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.manager-ads-table tr:last-child td {
+  border-bottom: none;
+}
+
+.manager-ads-table input[type="text"] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.btn-pause {
+  border-color: rgba(250, 204, 21, 0.4) !important;
+  color: #facc15 !important;
+}
+
+.btn-pause:hover:not(:disabled) {
+  background: rgba(250, 204, 21, 0.1) !important;
+  border-color: #facc15 !important;
+}
+
+.btn-activate {
+  border-color: rgba(52, 211, 153, 0.4) !important;
+  color: #34d399 !important;
+}
+
+.btn-activate:hover:not(:disabled) {
+  background: rgba(52, 211, 153, 0.1) !important;
+  border-color: #34d399 !important;
+}
+
+.btn-danger {
+  border-color: rgba(248, 113, 113, 0.4) !important;
+  color: #f87171 !important;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.1) !important;
+  border-color: #f87171 !important;
+}
+
+
 

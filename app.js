@@ -1419,209 +1419,332 @@ function EditarView({
   onRenameAdset,
   editRenaming,
   onResolveDestination,
+  onToggleAdStatus,
+  onDeleteAd,
+  onToggleAdsetStatus,
+  onDeleteAdset,
+  deleting,
+  togglingStatus,
 }) {
+  const [expandedCampaigns, setExpandedCampaigns] = useState(() => new Set());
+  const [expandedAdsets, setExpandedAdsets] = useState(() => new Set());
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [editingUrlId, setEditingUrlId] = useState(null);
+
+  const toggleCampaign = (id) =>
+    setExpandedCampaigns((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  const toggleAdset = (id) =>
+    setExpandedAdsets((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  const campaigns = useMemo(() => {
+    let filtered = ads;
+    if (statusFilter !== "ALL") {
+      filtered = ads.filter((a) => (a.effective_status || a.status) === statusFilter);
+    }
+    const campaignMap = new Map();
+    for (const ad of filtered) {
+      const cid = ad.campaign_id || "unknown";
+      const cname = ad.campaign_name || cid;
+      if (!campaignMap.has(cid)) campaignMap.set(cid, { id: cid, name: cname, adsets: new Map() });
+      const camp = campaignMap.get(cid);
+      const asid = ad.adset_id || "unknown";
+      if (!camp.adsets.has(asid)) camp.adsets.set(asid, { id: asid, name: ad.adset_name || asid, ads: [] });
+      camp.adsets.get(asid).ads.push(ad);
+    }
+    return [...campaignMap.values()].map((c) => ({ ...c, adsets: [...c.adsets.values()] }));
+  }, [ads, statusFilter]);
+
+  const expandAll = () => {
+    setExpandedCampaigns(new Set(campaigns.map((c) => c.id)));
+    setExpandedAdsets(new Set(campaigns.flatMap((c) => c.adsets.map((as) => as.id))));
+  };
+
+  const collapseAll = () => {
+    setExpandedCampaigns(new Set());
+    setExpandedAdsets(new Set());
+  };
+
   return html`
     <main className="dup-grid">
       <section className="card wide">
         <div className="card-head">
           <div>
-            <span className="eyebrow">Editar</span>
-            <h2 className="section-title">URLs e parâmetros</h2>
+            <span className="eyebrow">Gerenciador</span>
+            <h2 className="section-title">Anúncios</h2>
           </div>
           <div className="chip-group">
             <button className="ghost" onClick=${onLoad} disabled=${loading}>
-              ${loading ? "Carregando..." : "Carregar anúncios"}
+              ${loading ? "Carregando..." : "↻ Carregar anúncios"}
             </button>
             <span className="chip neutral">${ads.length} anúncios</span>
+            <button className="ghost small" onClick=${expandAll}>Expandir tudo</button>
+            <button className="ghost small" onClick=${collapseAll}>Recolher tudo</button>
           </div>
         </div>
-        <div className="filters">
-          <label className="field">
-            <span>Filtrar por campanha</span>
+
+        <div className="filters" style=${{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "12px" }}>
+          <label className="field" style=${{ flex: "1 1 220px" }}>
+            <span>Filtrar campanha</span>
             <input
               type="text"
-              placeholder="Digite parte do nome da campanha"
+              placeholder="Nome da campanha..."
               value=${campaignFilter}
               onInput=${(e) => onCampaignFilter?.(e.target.value)}
             />
           </label>
+          <label className="field" style=${{ flex: "0 1 160px" }}>
+            <span>Status</span>
+            <select value=${statusFilter} onChange=${(e) => setStatusFilter(e.target.value)}>
+              <option value="ALL">Todos</option>
+              <option value="ACTIVE">Ativo</option>
+              <option value="PAUSED">Pausado</option>
+              <option value="ARCHIVED">Arquivado</option>
+            </select>
+          </label>
         </div>
-        ${error
-          ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>`
-          : null}
-        <div className="table-wrapper scroll-x" style=${{ marginTop: "12px" }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Campanha</th>
-                <th>Conjunto</th>
-                <th>Anúncio</th>
-                <th>URL</th>
-                <th>Destino (URL)</th>
-                <th>Parâmetros de URL</th>
-                <th>Status URL</th>
-                <th>Atualizado</th>
-                <th>Verificado</th>
-                <th>Status</th>
-                <th>Renomear anúncio</th>
-                <th>Renomear conjunto</th>
-                <th>Limpar Parâmetro e Melhorar URL</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${ads.length === 0
-                ? html`<tr><td colSpan="14" className="muted">Sem dados.</td></tr>`
-                : ads.map((row, idx) => {
-                    const busy = saving && saving[row.id];
-                    const verifyingRow = verifying && verifying[row.id];
-                    const renameAdKey = `ad:${row.id}`;
-                    const renameAdsetKey = row.adset_id ? `adset:${row.adset_id}` : "";
-                    const renamingAd = editRenaming && editRenaming[renameAdKey];
-                    const renamingAdset =
-                      renameAdsetKey && editRenaming && editRenaming[renameAdsetKey];
-                    const urlHasUtm =
-                      /\butm_source=/i.test(row.url || "") ||
-                      /\butm_source=/i.test(row.url_tags || "");
-                    const statusUrl = row.url
-                      ? urlHasUtm
-                        ? "OK"
-                        : "Sem UTM"
-                      : row.object_story_id
-                      ? "Post existente"
-                      : "Sem URL";
-                    const statusTone =
-                      statusUrl === "OK"
-                        ? "good"
-                        : statusUrl === "Post existente"
-                        ? "neutral"
-                        : statusUrl === "Sem UTM"
-                        ? "warn"
-                        : "off";
-                    return html`
-                      <tr key=${row.id || idx}>
-                        <td>${row.campaign_name || "-"}</td>
-                        <td>${row.adset_name || "-"}</td>
-                        <td>${row.name || "-"}</td>
-                        <td>
-                          <input
-                            type="text"
-                            value=${row.url || ""}
-                            placeholder="https://..."
-                            onInput=${(e) =>
-                              onUpdateField(row.id, { url: e.target.value })}
-                          />
-                        </td>
-                        <td>
-                          ${row.destination_url
-                            ? html`<a href=${row.destination_url} target="_blank" rel="noopener noreferrer">
-                                ${row.destination_url}
-                              </a>`
-                            : row.object_story_id
-                            ? html`<div className="inline-actions">
-                                <span className="muted small">Post existente</span>
+
+        ${error ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>` : null}
+
+        ${campaigns.length === 0
+          ? html`<div className="muted" style=${{ padding: "32px", textAlign: "center" }}>
+              ${loading ? "Buscando anúncios..." : 'Clique em "↻ Carregar anúncios" para começar.'}
+            </div>`
+          : campaigns.map((campaign) => {
+              const isExpCamp = expandedCampaigns.has(campaign.id);
+              const totalAds = campaign.adsets.reduce((s, as) => s + as.ads.length, 0);
+              return html`
+                <div className="manager-campaign" key=${campaign.id}>
+                  <div className="manager-campaign-header" onClick=${() => toggleCampaign(campaign.id)}>
+                    <span className="manager-toggle">${isExpCamp ? "▾" : "▸"}</span>
+                    <strong style=${{ flex: 1 }}>${campaign.name}</strong>
+                    <span className="chip neutral">${campaign.adsets.length} conjuntos</span>
+                    <span className="chip neutral">${totalAds} anúncios</span>
+                  </div>
+
+                  ${isExpCamp
+                    ? campaign.adsets.map((adset) => {
+                        const isExpAs = expandedAdsets.has(adset.id);
+                        const firstAd = adset.ads[0] || {};
+                        const asStatus = firstAd.adset_status || firstAd.effective_status || firstAd.status || "PAUSED";
+                        const togglingAs = togglingStatus && togglingStatus[adset.id];
+                        const deletingAs = deleting && deleting[adset.id];
+                        const renameAdsetKey = "adset:" + adset.id;
+                        const renamingAdset = editRenaming && editRenaming[renameAdsetKey];
+                        return html`
+                          <div className="manager-adset" key=${adset.id}>
+                            <div className="manager-adset-header">
+                              <span className="manager-toggle" onClick=${() => toggleAdset(adset.id)}>
+                                ${isExpAs ? "▾" : "▸"}
+                              </span>
+                              <span
+                                className="manager-adset-name"
+                                onClick=${() => toggleAdset(adset.id)}
+                              >
+                                ${adset.name}
+                              </span>
+                              <span className="chip neutral small">${adset.ads.length} ads</span>
+                              <button
+                                className=${"ghost small " + (asStatus === "ACTIVE" ? "btn-pause" : "btn-activate")}
+                                disabled=${togglingAs}
+                                onClick=${(e) => { e.stopPropagation(); onToggleAdsetStatus?.(adset.id, asStatus); }}
+                                title=${asStatus === "ACTIVE" ? "Pausar conjunto" : "Ativar conjunto"}
+                              >
+                                ${togglingAs ? "..." : asStatus === "ACTIVE" ? "⏸ Pausar" : "▶ Ativar"}
+                              </button>
+                              <div className="inline-actions" onClick=${(e) => e.stopPropagation()}>
+                                <input
+                                  type="text"
+                                  value=${firstAd.adset_name || adset.name}
+                                  style=${{ width: "170px", fontSize: "12px" }}
+                                  onInput=${(e) => {
+                                    adset.ads.forEach((ad) => onUpdateField(ad.id, { adset_name: e.target.value }));
+                                  }}
+                                />
                                 <button
                                   className="ghost small"
-                                  disabled=${verifyingRow}
-                                  onClick=${() => onResolveDestination?.(row)}
+                                  disabled=${renamingAdset}
+                                  onClick=${() => onRenameAdset?.(adset.id, firstAd.adset_name || adset.name, renameAdsetKey)}
+                                  title="Renomear conjunto"
                                 >
-                                  ${verifyingRow ? "..." : "Resolver"}
+                                  ${renamingAdset ? "..." : "✏ Renomear"}
                                 </button>
-                              </div>`
-                            : html`<span className="muted small">Sem destino</span>`}
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value=${row.url_tags || ""}
-                            placeholder="utm_source=..."
-                            onInput=${(e) =>
-                              onUpdateField(row.id, { url_tags: e.target.value })}
-                          />
-                        </td>
-                        <td>
-                          <span className=${`status-badge ${statusTone}`}>
-                            ${statusUrl}
-                          </span>
-                        </td>
-                        <td>${formatDateTime(row.updated_time)}</td>
-                        <td>${formatDateTime(row.verified_time)}</td>
-                        <td>${formatStatusLabel(row.status || row.effective_status)}</td>
-                        <td>
-                          <div className="inline-actions">
-                            <input
-                              type="text"
-                              value=${row.name || ""}
-                              onInput=${(e) =>
-                                onUpdateField(row.id, { name: e.target.value })}
-                            />
-                            <button
-                              className="ghost small"
-                              disabled=${renamingAd || !row.name}
-                              onClick=${() =>
-                                onRenameAd?.(row.id, row.name, renameAdKey)}
-                            >
-                              ${renamingAd ? "..." : "Salvar"}
-                            </button>
+                              </div>
+                              <button
+                                className="ghost small btn-danger"
+                                disabled=${deletingAs}
+                                onClick=${(e) => { e.stopPropagation(); onDeleteAdset?.(adset.id, adset.name); }}
+                                title="Apagar conjunto"
+                              >
+                                ${deletingAs ? "Apagando..." : "🗑 Apagar conjunto"}
+                              </button>
+                            </div>
+
+                            ${isExpAs
+                              ? html`
+                                <div className="manager-ads-table">
+                                  <table>
+                                    <thead>
+                                      <tr>
+                                        <th>Anúncio</th>
+                                        <th>URL / Destino</th>
+                                        <th>UTM Tags</th>
+                                        <th>URL</th>
+                                        <th>Status</th>
+                                        <th>Atualizado</th>
+                                        <th>Ações</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      ${adset.ads.map((row, idx) => {
+                                        const busy = saving && saving[row.id];
+                                        const verifyingRow = verifying && verifying[row.id];
+                                        const deletingRow = deleting && deleting[row.id];
+                                        const togglingRow = togglingStatus && togglingStatus[row.id];
+                                        const renameAdKey = "ad:" + row.id;
+                                        const renamingAd = editRenaming && editRenaming[renameAdKey];
+                                        const isEditUrl = editingUrlId === row.id;
+                                        const urlHasUtm = /\butm_source=/i.test(row.url || "") || /\butm_source=/i.test(row.url_tags || "");
+                                        const statusUrl = row.url
+                                          ? urlHasUtm ? "OK" : "Sem UTM"
+                                          : row.object_story_id ? "Post" : "Sem URL";
+                                        const statusTone = statusUrl === "OK" ? "good" : statusUrl === "Post" ? "neutral" : statusUrl === "Sem UTM" ? "warn" : "off";
+                                        const effStatus = row.effective_status || row.status;
+                                        return html`
+                                          <tr key=${row.id || idx} style=${{ opacity: deletingRow ? 0.4 : 1 }}>
+                                            <td style=${{ minWidth: "220px" }}>
+                                              <div className="inline-actions">
+                                                <input
+                                                  type="text"
+                                                  value=${row.name || ""}
+                                                  style=${{ width: "190px", fontSize: "12px" }}
+                                                  onInput=${(e) => onUpdateField(row.id, { name: e.target.value })}
+                                                />
+                                                <button
+                                                  className="ghost small"
+                                                  disabled=${renamingAd || !row.name}
+                                                  onClick=${() => onRenameAd?.(row.id, row.name, renameAdKey)}
+                                                  title="Renomear anúncio"
+                                                >
+                                                  ${renamingAd ? "..." : "✏"}
+                                                </button>
+                                              </div>
+                                            </td>
+                                            <td style=${{ minWidth: "220px" }}>
+                                              ${isEditUrl
+                                                ? html`<div className="inline-actions">
+                                                    <input
+                                                      type="text"
+                                                      value=${row.url || ""}
+                                                      style=${{ width: "200px", fontSize: "12px" }}
+                                                      placeholder="https://..."
+                                                      onInput=${(e) => onUpdateField(row.id, { url: e.target.value })}
+                                                    />
+                                                    <button className="ghost small" onClick=${() => setEditingUrlId(null)}>✕</button>
+                                                  </div>`
+                                                : html`<div className="inline-actions">
+                                                    <span
+                                                      className="muted small"
+                                                      style=${{ maxWidth: "190px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}
+                                                      title=${row.destination_url || row.url || ""}
+                                                    >
+                                                      ${row.destination_url || row.url || (row.object_story_id ? "Post existente" : "—")}
+                                                    </span>
+                                                    <button className="ghost small" onClick=${() => setEditingUrlId(row.id)} title="Editar URL">✏</button>
+                                                    ${row.object_story_id && !row.destination_url
+                                                      ? html`<button
+                                                          className="ghost small"
+                                                          disabled=${verifyingRow}
+                                                          onClick=${() => onResolveDestination?.(row)}
+                                                          title="Resolver destino do post"
+                                                        >
+                                                          ${verifyingRow ? "..." : "🔗"}
+                                                        </button>`
+                                                      : null}
+                                                  </div>`}
+                                            </td>
+                                            <td>
+                                              <input
+                                                type="text"
+                                                value=${row.url_tags || ""}
+                                                placeholder="utm_source=..."
+                                                style=${{ width: "160px", fontSize: "12px" }}
+                                                onInput=${(e) => onUpdateField(row.id, { url_tags: e.target.value })}
+                                              />
+                                            </td>
+                                            <td>
+                                              <span className=${"status-badge " + statusTone}>${statusUrl}</span>
+                                            </td>
+                                            <td>
+                                              <button
+                                                className=${"ghost small " + (effStatus === "ACTIVE" ? "btn-pause" : "btn-activate")}
+                                                disabled=${togglingRow}
+                                                onClick=${() => onToggleAdStatus?.(row)}
+                                                title=${effStatus === "ACTIVE" ? "Pausar anúncio" : "Ativar anúncio"}
+                                              >
+                                                ${togglingRow ? "..." : effStatus === "ACTIVE" ? "⏸ Ativo" : "▶ Pausado"}
+                                              </button>
+                                            </td>
+                                            <td className="muted small">${formatDateTime(row.updated_time)}</td>
+                                            <td>
+                                              <div className="inline-actions" style=${{ gap: "4px", flexWrap: "wrap" }}>
+                                                <button
+                                                  className="ghost small"
+                                                  disabled=${verifyingRow}
+                                                  onClick=${() => onVerify?.(row)}
+                                                  title="Verificar URL do anúncio"
+                                                >
+                                                  ${verifyingRow ? "..." : "🔍 Verificar"}
+                                                </button>
+                                                <button
+                                                  className="ghost small"
+                                                  disabled=${busy || !row.url}
+                                                  onClick=${() => onCleanParams?.(row)}
+                                                  title="Limpar parâmetros e aplicar UTMs"
+                                                >
+                                                  🧹 UTM
+                                                </button>
+                                                <button
+                                                  className="ghost small"
+                                                  disabled=${busy}
+                                                  onClick=${() => onSave(row)}
+                                                  title="Duplicar anúncio com URL atual"
+                                                >
+                                                  ${busy ? "..." : "⧉ Duplicar"}
+                                                </button>
+                                                <button
+                                                  className="ghost small btn-danger"
+                                                  disabled=${deletingRow}
+                                                  onClick=${() => onDeleteAd?.(row)}
+                                                  title="Apagar anúncio permanentemente"
+                                                >
+                                                  ${deletingRow ? "..." : "🗑"}
+                                                </button>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        `;
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              `
+                              : null}
                           </div>
-                        </td>
-                        <td>
-                          <div className="inline-actions">
-                            <input
-                              type="text"
-                              value=${row.adset_name || ""}
-                              onInput=${(e) =>
-                                onUpdateField(row.id, { adset_name: e.target.value })}
-                            />
-                            <button
-                              className="ghost small"
-                              disabled=${renamingAdset || !row.adset_id}
-                              onClick=${() =>
-                                onRenameAdset?.(
-                                  row.adset_id,
-                                  row.adset_name,
-                                  renameAdsetKey
-                                )}
-                            >
-                              ${renamingAdset ? "..." : "Salvar"}
-                            </button>
-                          </div>
-                        </td>
-                        <td>
-                          <button
-                            className="ghost small"
-                            disabled=${busy || !row.url}
-                            onClick=${() => onCleanParams?.(row)}
-                          >
-                            Limpar e aplicar
-                          </button>
-                        </td>
-                        <td>
-                          <button
-                            className="ghost small"
-                            disabled=${busy || !row.url}
-                            onClick=${() => onSave(row)}
-                          >
-                            ${busy ? "Duplicando..." : "Duplicar com URL"}
-                          </button>
-                          <button
-                            className="ghost small"
-                            disabled=${verifyingRow}
-                            onClick=${() => onVerify?.(row)}
-                          >
-                            ${verifyingRow ? "Verificando..." : "Verificar"}
-                          </button>
-                        </td>
-                      </tr>
-                    `;
-                  })}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted small">
-          "Duplicar com URL" cria um novo anúncio com a URL/UTM informada (via /copies),
-          mantendo o criativo original sem virar "Post existente".
-        </p>
+                        `;
+                      })
+                    : null}
+                </div>
+              `;
+            })}
       </section>
     </main>
   `;
@@ -4697,6 +4820,8 @@ function App() {
   const [editSaving, setEditSaving] = useState({});
   const [editVerifying, setEditVerifying] = useState({});
   const [editRenaming, setEditRenaming] = useState({});
+  const [editDeleting, setEditDeleting] = useState({});
+  const [editTogglingStatus, setEditTogglingStatus] = useState({});
   const [pagesLoading, setPagesLoading] = useState(false);
   const [pagesError, setPagesError] = useState("");
   const [pagesList, setPagesList] = useState([]);
@@ -5576,6 +5701,83 @@ function App() {
     const newUrl = `${baseUrl}?${newTags}`;
     updateEditAdField(row.id, { url: newUrl, url_tags: "" });
     await handleSaveEditAd({ ...row, url: newUrl, url_tags: "" });
+  };
+
+  const handleToggleAdStatus = async (row) => {
+    if (!row?.id) return;
+    const current = row.effective_status || row.status;
+    const next = current === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    setEditTogglingStatus((prev) => ({ ...prev, [row.id]: true }));
+    try {
+      await fetchJson(`${API_BASE}/meta-ad-status`, {
+        method: "POST",
+        body: JSON.stringify({ ad_id: row.id, status: next }),
+      });
+      updateEditAdField(row.id, { status: next, effective_status: next });
+      pushLog("meta-ad-status", { message: `Anúncio ${row.id} → ${next}` });
+    } catch (err) {
+      pushLog("meta-ad-status", err);
+    } finally {
+      setEditTogglingStatus((prev) => ({ ...prev, [row.id]: false }));
+    }
+  };
+
+  const handleDeleteEditAd = async (row) => {
+    if (!row?.id) return;
+    if (!window.confirm(`Apagar anúncio "${row.name || row.id}"? Esta ação não pode ser desfeita.`)) return;
+    setEditDeleting((prev) => ({ ...prev, [row.id]: true }));
+    try {
+      await fetchJson(`${API_BASE}/meta-delete-ad`, {
+        method: "POST",
+        body: JSON.stringify({ ad_id: row.id }),
+      });
+      setEditAds((prev) => (prev || []).filter((r) => r.id !== row.id));
+      pushLog("meta-delete-ad", { message: `Anúncio apagado: ${row.id}` });
+    } catch (err) {
+      pushLog("meta-delete-ad", err);
+    } finally {
+      setEditDeleting((prev) => { const n = { ...prev }; delete n[row.id]; return n; });
+    }
+  };
+
+  const handleToggleAdsetStatus = async (adsetId, currentStatus) => {
+    if (!adsetId) return;
+    const next = currentStatus === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    setEditTogglingStatus((prev) => ({ ...prev, [adsetId]: true }));
+    try {
+      await fetchJson(`${API_BASE}/meta-adset-status`, {
+        method: "POST",
+        body: JSON.stringify({ adset_id: adsetId, status: next }),
+      });
+      setEditAds((prev) =>
+        (prev || []).map((r) =>
+          r.adset_id === adsetId ? { ...r, adset_status: next } : r
+        )
+      );
+      pushLog("meta-adset-status", { message: `Conjunto ${adsetId} → ${next}` });
+    } catch (err) {
+      pushLog("meta-adset-status", err);
+    } finally {
+      setEditTogglingStatus((prev) => ({ ...prev, [adsetId]: false }));
+    }
+  };
+
+  const handleDeleteEditAdset = async (adsetId, adsetName) => {
+    if (!adsetId) return;
+    if (!window.confirm(`Apagar conjunto "${adsetName || adsetId}" e todos os seus anúncios? Esta ação não pode ser desfeita.`)) return;
+    setEditDeleting((prev) => ({ ...prev, [adsetId]: true }));
+    try {
+      await fetchJson(`${API_BASE}/meta-adset-delete`, {
+        method: "POST",
+        body: JSON.stringify({ adset_id: adsetId }),
+      });
+      setEditAds((prev) => (prev || []).filter((r) => r.adset_id !== adsetId));
+      pushLog("meta-adset-delete", { message: `Conjunto apagado: ${adsetId}` });
+    } catch (err) {
+      pushLog("meta-adset-delete", err);
+    } finally {
+      setEditDeleting((prev) => { const n = { ...prev }; delete n[adsetId]; return n; });
+    }
   };
 
   const handleTokenCheck = async () => {
@@ -6877,12 +7079,16 @@ function App() {
               onCleanParams=${handleCleanParams}
               onVerify=${handleVerifyEditAd}
               verifying=${editVerifying}
-              onRenameAd=${(id, name, key) =>
-                handleRenameObject(id, name, key)}
-              onRenameAdset=${(id, name, key) =>
-                handleRenameObject(id, name, key)}
+              onRenameAd=${(id, name, key) => handleRenameObject(id, name, key)}
+              onRenameAdset=${(id, name, key) => handleRenameObject(id, name, key)}
               editRenaming=${editRenaming}
               onResolveDestination=${handleResolveDestination}
+              onToggleAdStatus=${handleToggleAdStatus}
+              onDeleteAd=${handleDeleteEditAd}
+              onToggleAdsetStatus=${handleToggleAdsetStatus}
+              onDeleteAdset=${handleDeleteEditAdset}
+              deleting=${editDeleting}
+              togglingStatus=${editTogglingStatus}
             />
           `
         : activeTab === "urls"
