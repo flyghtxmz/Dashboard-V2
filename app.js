@@ -3983,6 +3983,7 @@ function MediaLibrarySection({ accountId }) {
   const [movingKey, setMovingKey] = useState(null);
   const [moveValue, setMoveValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [hidingFolder, setHidingFolder] = useState(null);
 
   const extractPrefix = (name) => {
     const m = String(name || "").match(/^([a-zA-Z0-9]+)[-_]/);
@@ -4049,16 +4050,49 @@ function MediaLibrarySection({ accountId }) {
     setCurrentFolder(folder);
   };
 
+  const hideItem = (key) => {
+    saveLabel(key, { hidden: true });
+    setEditingKey(null); setMovingKey(null);
+  };
+
+  const unhideItem = (key) => {
+    saveLabel(key, { hidden: false });
+  };
+
+  const hideFolderItems = (folder) => {
+    const items = folderMap[folder] || [];
+    setSaving(true);
+    const patch = {};
+    items.forEach((item) => { patch[item.key] = { ...(labels[item.key] || {}), hidden: true }; });
+    const updated = { ...labels, ...patch };
+    setLabels(updated);
+    fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ labels: patch }),
+    }).finally(() => setSaving(false));
+    setHidingFolder(null);
+  };
+
   const folderMap = {};
-  media.forEach((item) => {
+  media.filter((item) => !labels[item.key]?.hidden).forEach((item) => {
     const f = getFolder(item, labels);
     if (!folderMap[f]) folderMap[f] = [];
     folderMap[f].push(item);
   });
   const folderNames = Object.keys(folderMap).sort();
+  const hiddenItems = media.filter((item) => labels[item.key]?.hidden);
+  const hiddenCount = hiddenItems.length;
 
-  const MediaCard = (item) => html`
-    <div key=${item.key} style=${{ width: "130px", border: "1px solid var(--border-light)", borderRadius: "12px", overflow: "hidden", background: "#fff", flexShrink: 0 }}>
+  const FolderIcon = () => html`
+    <svg width="40" height="36" viewBox="0 0 40 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 8C2 5.79 3.79 4 6 4H15.17C15.70 4 16.21 4.21 16.59 4.59L18.41 6.41C18.79 6.79 19.30 7 19.83 7H34C36.21 7 38 8.79 38 11V30C38 32.21 36.21 34 34 34H6C3.79 34 2 32.21 2 30V8Z" fill="#FFC107" stroke="#E6A800" stroke-width="1.5"/>
+      <path d="M2 13H38V30C38 32.21 36.21 34 34 34H6C3.79 34 2 32.21 2 30V13Z" fill="#FFD54F"/>
+    </svg>
+  `;
+
+  const MediaCard = (item, isHidden) => html`
+    <div key=${item.key} style=${{ width: "130px", border: "1px solid var(--border-light)", borderRadius: "12px", overflow: "hidden", background: "#fff", flexShrink: 0, opacity: isHidden ? .6 : 1 }}>
       <div style=${{ width: "130px", height: "90px", background: "#eee", overflow: "hidden", position: "relative" }}>
         ${item.url
           ? html`<img src=${item.url} alt=${item.name} style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />`
@@ -4077,10 +4111,15 @@ function MediaLibrarySection({ accountId }) {
           <button onClick=${() => commitRename(item.key)} style=${{ marginTop: "4px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "var(--accent)", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>✓ Salvar</button>
         ` : html`
           <p style=${{ margin: "0 0 5px", fontSize: "0.74rem", fontWeight: 600, color: "var(--ink)", wordBreak: "break-all", lineHeight: 1.3 }}>${getDisplayName(item)}</p>
-          <div style=${{ display: "flex", gap: "4px" }}>
-            <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>✏️</button>
-            <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover para pasta" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>📂</button>
-          </div>
+          ${isHidden ? html`
+            <button onClick=${() => unhideItem(item.key)} style=${{ width: "100%", padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.73rem", color: "var(--muted)" }}>👁️ Mostrar</button>
+          ` : html`
+            <div style=${{ display: "flex", gap: "4px" }}>
+              <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>✏️</button>
+              <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover para pasta" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>📂</button>
+              <button onClick=${() => hideItem(item.key)} title="Ocultar" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>🙈</button>
+            </div>
+          `}
         `}
         ${movingKey === item.key && editingKey !== item.key ? html`
           <div style=${{ marginTop: "5px" }}>
@@ -4098,11 +4137,6 @@ function MediaLibrarySection({ accountId }) {
     </div>
   `;
 
-  const folderPreviewUrl = (folder) => {
-    const first = (folderMap[folder] || []).find((i) => i.url);
-    return first ? first.url : null;
-  };
-
   return html`
     <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
       <div style=${{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "14px", gap: "12px" }}>
@@ -4110,9 +4144,16 @@ function MediaLibrarySection({ accountId }) {
           <h3 style=${{ margin: "0 0 2px", fontSize: "1rem", fontWeight: 700 }}>Biblioteca de Mídia</h3>
           <p className="muted small" style=${{ margin: 0 }}>Imagens e vídeos da conta Meta. Organize por pastas e renomeie os criativos localmente.</p>
         </div>
-        <button className="ghost" onClick=${loadMedia} disabled=${loading} style=${{ whiteSpace: "nowrap", flexShrink: 0 }}>
-          ${loading ? "Carregando..." : "↺ Carregar mídias"}
-        </button>
+        <div style=${{ display: "flex", gap: "8px", flexShrink: 0 }}>
+          ${hiddenCount > 0 ? html`
+            <button className="ghost" onClick=${() => { setCurrentFolder("__hidden__"); setEditingKey(null); setMovingKey(null); }} style=${{ whiteSpace: "nowrap", fontSize: "0.82rem" }}>
+              🙈 Ocultos (${hiddenCount})
+            </button>
+          ` : null}
+          <button className="ghost" onClick=${loadMedia} disabled=${loading} style=${{ whiteSpace: "nowrap" }}>
+            ${loading ? "Carregando..." : "↺ Carregar mídias"}
+          </button>
+        </div>
       </div>
 
       ${error ? html`<div className="status error" style=${{ marginBottom: "12px" }}>${error}</div>` : null}
@@ -4121,49 +4162,68 @@ function MediaLibrarySection({ accountId }) {
         <div style=${{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
           ${currentFolder !== null ? html`
             <button
-              onClick=${() => { setCurrentFolder(null); setEditingKey(null); setMovingKey(null); }}
+              onClick=${() => { setCurrentFolder(null); setEditingKey(null); setMovingKey(null); setHidingFolder(null); }}
               style=${{ display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px", borderRadius: "20px", border: "1px solid var(--border)", background: "var(--surface-2, #f5f5fb)", cursor: "pointer", fontSize: "0.82rem", color: "var(--ink)", fontWeight: 600 }}
             >← Pastas</button>
             <span style=${{ color: "var(--muted)", fontSize: "0.82rem" }}>/</span>
-            <span style=${{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink)" }}>📁 ${currentFolder}</span>
+            <span style=${{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink)" }}>
+              ${currentFolder === "__hidden__" ? "🙈 Arquivos Ocultos" : html`📁 ${currentFolder}`}
+            </span>
           ` : html`<span style=${{ fontSize: "0.82rem", color: "var(--muted)" }}>${media.length} mídias em ${folderNames.length} pasta${folderNames.length !== 1 ? "s" : ""}${saving ? " — salvando..." : ""}</span>`}
         </div>
       ` : null}
 
-      ${currentFolder === null ? html`
+      ${currentFolder === "__hidden__" ? html`
+        ${hiddenItems.length === 0 ? html`
+          <p className="muted small" style=${{ textAlign: "center", padding: "30px 0" }}>Nenhum arquivo oculto.</p>
+        ` : html`
+          <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+            ${hiddenItems.map((item) => MediaCard(item, true))}
+          </div>
+        `}
+      ` : currentFolder !== null ? html`
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+          ${(folderMap[currentFolder] || []).map((item) => MediaCard(item, false))}
+        </div>
+        ${(folderMap[currentFolder] || []).length === 0 ? html`
+          <p className="muted small" style=${{ textAlign: "center", padding: "30px 0" }}>Pasta vazia.</p>
+        ` : null}
+      ` : html`
         <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
           ${folderNames.map((folder) => {
             const items = folderMap[folder];
-            const preview = folderPreviewUrl(folder);
+            const isConfirming = hidingFolder === folder;
             return html`
-              <div
-                key=${folder}
-                onClick=${() => { setCurrentFolder(folder); setEditingKey(null); setMovingKey(null); }}
-                style=${{ width: "140px", border: "1px solid var(--border-light)", borderRadius: "14px", overflow: "hidden", background: "#fff", cursor: "pointer", flexShrink: 0, transition: "box-shadow .15s", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}
-                onMouseEnter=${(e) => e.currentTarget.style.boxShadow = "0 4px 14px rgba(87,88,232,.18)"}
-                onMouseLeave=${(e) => e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,.04)"}
-              >
-                <div style=${{ width: "140px", height: "80px", background: "var(--surface-2, #f5f5fb)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  ${preview
-                    ? html`<img src=${preview} alt=${folder} style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: .7 }} />`
-                    : html`<span style=${{ fontSize: "2rem" }}>📁</span>`
-                  }
-                </div>
-                <div style=${{ padding: "8px 10px 10px" }}>
-                  <p style=${{ margin: "0 0 2px", fontSize: "0.8rem", fontWeight: 700, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${folder}</p>
-                  <p style=${{ margin: 0, fontSize: "0.73rem", color: "var(--muted)" }}>${items.length} item${items.length !== 1 ? "s" : ""}</p>
+              <div key=${folder} style=${{ width: "140px", flexShrink: 0, position: "relative" }}>
+                <div
+                  onClick=${() => { if (!isConfirming) { setCurrentFolder(folder); setEditingKey(null); setMovingKey(null); } }}
+                  style=${{ border: "1px solid var(--border-light)", borderRadius: "14px", overflow: "hidden", background: "#fff", cursor: isConfirming ? "default" : "pointer", transition: "box-shadow .15s", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}
+                  onMouseEnter=${(e) => { if (!isConfirming) e.currentTarget.style.boxShadow = "0 4px 14px rgba(87,88,232,.18)"; }}
+                  onMouseLeave=${(e) => e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,.04)"}
+                >
+                  <div style=${{ width: "140px", height: "80px", background: "var(--surface-2, #f5f5fb)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <${FolderIcon} />
+                  </div>
+                  <div style=${{ padding: "8px 10px 10px" }}>
+                    ${isConfirming ? html`
+                      <p style=${{ margin: "0 0 5px", fontSize: "0.72rem", color: "#c44", fontWeight: 700, lineHeight: 1.3 }}>Ocultar todos os ${items.length} itens?</p>
+                      <div style=${{ display: "flex", gap: "4px" }}>
+                        <button onClick=${(e) => { e.stopPropagation(); hideFolderItems(folder); }} style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "none", background: "#c44", color: "#fff", fontSize: "0.7rem", cursor: "pointer", fontWeight: 700 }}>Sim</button>
+                        <button onClick=${(e) => { e.stopPropagation(); setHidingFolder(null); }} style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", fontSize: "0.7rem", cursor: "pointer" }}>Não</button>
+                      </div>
+                    ` : html`
+                      <p style=${{ margin: "0 0 2px", fontSize: "0.8rem", fontWeight: 700, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${folder}</p>
+                      <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <p style=${{ margin: 0, fontSize: "0.73rem", color: "var(--muted)" }}>${items.length} item${items.length !== 1 ? "s" : ""}</p>
+                        <button onClick=${(e) => { e.stopPropagation(); setHidingFolder(folder); }} title="Ocultar pasta" style=${{ padding: "2px 5px", borderRadius: "6px", border: "none", background: "none", cursor: "pointer", fontSize: "0.72rem", color: "var(--muted)" }}>🙈</button>
+                      </div>
+                    `}
+                  </div>
                 </div>
               </div>
             `;
           })}
         </div>
-      ` : html`
-        <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-          ${(folderMap[currentFolder] || []).map((item) => MediaCard(item))}
-        </div>
-        ${(folderMap[currentFolder] || []).length === 0 ? html`
-          <p className="muted small" style=${{ textAlign: "center", padding: "30px 0" }}>Pasta vazia.</p>
-        ` : null}
       `}
 
       ${media.length === 0 && !loading ? html`

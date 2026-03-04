@@ -19,6 +19,34 @@ async function fetchPaged(url) {
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
   if (!token) return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
+
+  if (request.method === "DELETE") {
+    const params = getQuery(request);
+    const key = params.get("key");
+    const type = params.get("type");
+    if (!key || !type) return jsonResponse(400, { error: "Parametros obrigatorios: key, type" });
+
+    if (type === "video") {
+      const t = encodeURIComponent(token);
+      const res = await fetch(`${API_BASE}/${key}?access_token=${t}`, { method: "DELETE" });
+      const json = await safeJson(res);
+      if (!res.ok) return jsonResponse(500, { error: "Erro ao deletar vídeo na Meta", details: json });
+      return jsonResponse(200, { code: "success", deleted: true });
+    }
+
+    // Images cannot be deleted via Meta API — mark as hidden in KV
+    const account_id = params.get("account_id");
+    if (!account_id) return jsonResponse(400, { error: "account_id obrigatorio para ocultar imagem" });
+    const kv = env.CPA_RULES_KV || env.DASHBOARD_KV;
+    if (!kv) return jsonResponse(500, { error: "KV nao configurado" });
+    const kvKey = `media_labels:${account_id}`;
+    let existing = {};
+    try { existing = JSON.parse(await kv.get(kvKey) || "{}"); } catch { }
+    existing[key] = { ...(existing[key] || {}), deleted: true };
+    await kv.put(kvKey, JSON.stringify(existing));
+    return jsonResponse(200, { code: "success", deleted: true, note: "Imagem ocultada localmente (Meta API nao suporta exclusao de imagens)" });
+  }
+
   if (request.method !== "GET") return jsonResponse(405, { error: "Method not allowed" });
 
   const params = getQuery(request);
