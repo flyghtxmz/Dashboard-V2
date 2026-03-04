@@ -2842,6 +2842,9 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [specialCat, setSpecialCat] = useState("NONE");
   const [campStatus, setCampStatus] = useState("ACTIVE");
   const [nicho, setNicho] = useState(null);
+  const [campNameManual, setCampNameManual] = useState(false);
+  const [adsetNameManual, setAdsetNameManual] = useState(false);
+  const [adNameManual, setAdNameManual] = useState(false);
   const [cbo, setCbo] = useState(false);
   const [campBudgetType, setCampBudgetType] = useState("daily");
   const [campBudget, setCampBudget] = useState("");
@@ -2894,10 +2897,46 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     if (goals.length) setOptGoal(goals[0].value);
   };
 
+  const buildCampName = (n, obj) => {
+    if (!n) return "";
+    const objLabel = OBJECTIVES.find((o) => o.value === obj)?.label || obj;
+    const paises = Array.isArray(n.paises) ? n.paises : (n.pais ? [n.pais] : []);
+    const geo = paises.length ? ` | ${paises.join(" / ")}` : "";
+    return `${n.nome} | ${objLabel}${geo}`;
+  };
+
+  const buildAdsetName = (n, goal, obj) => {
+    if (!n) return "";
+    const goalLabel = (OPTIMIZATION_GOALS_MAP[obj] || []).find((g) => g.value === goal)?.label || goal;
+    const paises = Array.isArray(n.paises) ? n.paises : (n.pais ? [n.pais] : []);
+    const geo = paises.length ? ` | ${paises.join(" / ")}` : "";
+    return `${n.nome} | ${goalLabel}${geo}`;
+  };
+
+  const buildAdName = (n, obj, fmt) => {
+    if (!n) return "";
+    const objLabel = OBJECTIVES.find((o) => o.value === obj)?.label || obj;
+    const fmtLabel = fmt === "video" ? "Vídeo" : "Imagem";
+    return `${n.nome} | ${objLabel} | ${fmtLabel}`;
+  };
+
+  useEffect(() => {
+    if (!campNameManual) { const v = buildCampName(nicho, objective); if (v) setCampName(v); }
+  }, [nicho, objective]);
+
+  useEffect(() => {
+    if (!adsetNameManual) { const v = buildAdsetName(nicho, optGoal, objective); if (v) setAdsetName(v); }
+  }, [nicho, optGoal, objective]);
+
+  useEffect(() => {
+    if (!adNameManual) { const v = buildAdName(nicho, objective, adFormat); if (v) setAdName(v); }
+  }, [nicho, objective, adFormat]);
+
   const resetForm = () => {
     setStep(1); setResult(null); setFormError("");
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
     setCampStatus("ACTIVE"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
+    setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false);
     setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
@@ -3072,7 +3111,15 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
             <div className="field">
               <label>Nome da campanha *</label>
-              <input type="text" value=${campName} onInput=${(e) => setCampName(e.target.value)} placeholder="Ex: Tráfego BR — Artigo Saúde" />
+              <div style=${{ display: "flex", gap: "6px" }}>
+                <input
+                  type="text" value=${campName}
+                  onInput=${(e) => { setCampName(e.target.value); setCampNameManual(true); }}
+                  placeholder="Ex: Saúde | Tráfego | Brasil"
+                  style=${{ flex: 1 }}
+                />
+                <button title="Sugerir nome" onClick=${() => { const v = buildCampName(nicho, objective); if (v) { setCampName(v); setCampNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem", whiteSpace: "nowrap" }}>↺</button>
+              </div>
             </div>
             <div className="field">
               <label>Objetivo *</label>
@@ -3145,7 +3192,15 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           <div className="filters">
             <div className="field">
               <label>Nome do conjunto</label>
-              <input type="text" value=${adsetName} onInput=${(e) => setAdsetName(e.target.value)} placeholder="Deixe vazio para gerar automaticamente" />
+              <div style=${{ display: "flex", gap: "6px" }}>
+                <input
+                  type="text" value=${adsetName}
+                  onInput=${(e) => { setAdsetName(e.target.value); setAdsetNameManual(true); }}
+                  placeholder="Ex: Saúde | Cliques no link | Brasil"
+                  style=${{ flex: 1 }}
+                />
+                <button title="Sugerir nome" onClick=${() => { const v = buildAdsetName(nicho, optGoal, objective); if (v) { setAdsetName(v); setAdsetNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem" }}>↺</button>
+              </div>
             </div>
             <div className="field" style=${{ gridColumn: "1 / -1" }}>
               <label>Locais de segmentação</label>
@@ -3365,7 +3420,15 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             <div className="filters">
               <div className="field">
                 <label>Nome do anúncio</label>
-                <input type="text" value=${adName} onInput=${(e) => setAdName(e.target.value)} placeholder="Ex: Imagem 1 — Versão A" />
+                <div style=${{ display: "flex", gap: "6px" }}>
+                  <input
+                    type="text" value=${adName}
+                    onInput=${(e) => { setAdName(e.target.value); setAdNameManual(true); }}
+                    placeholder="Ex: Saúde | Tráfego | Imagem"
+                    style=${{ flex: 1 }}
+                  />
+                  <button title="Sugerir nome" onClick=${() => { const v = buildAdName(nicho, objective, adFormat); if (v) { setAdName(v); setAdNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem" }}>↺</button>
+                </div>
               </div>
               <div className="field">
                 <label>
@@ -3902,8 +3965,183 @@ function ConfiguracoesView({ settings, onSave, saving }) {
           </div>
           <p className="muted small" style=${{ marginTop: "8px" }}>O ID é gerado automaticamente a partir do nome — pode ser editado manualmente.</p>
         </div>
+
+        <${MediaLibrarySection} accountId=${metaAccountId} />
       </section>
     </main>
+  `;
+}
+
+function MediaLibrarySection({ accountId }) {
+  const [media, setMedia] = useState([]);
+  const [labels, setLabels] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [openFolders, setOpenFolders] = useState({});
+  const [editingKey, setEditingKey] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const [movingKey, setMovingKey] = useState(null);
+  const [moveValue, setMoveValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const extractPrefix = (name) => {
+    const m = String(name || "").match(/^([a-zA-Z0-9]+)[-_]/);
+    return m ? m[1].toLowerCase() : "geral";
+  };
+
+  const getFolder = (item, lbs) => (lbs || labels)[item.key]?.folder || extractPrefix(item.name);
+  const getDisplayName = (item) => labels[item.key]?.label || item.name;
+
+  const fetchLabels = async (acct) => {
+    try {
+      const r = await fetch(`/api/media-labels?account_id=${encodeURIComponent(acct)}`);
+      const d = await r.json();
+      if (d.code === "success") return d.data || {};
+    } catch { }
+    return {};
+  };
+
+  const loadMedia = async () => {
+    if (!accountId) { setError("Configure o ID da conta Meta primeiro."); return; }
+    setLoading(true); setError("");
+    try {
+      const [lbs, r] = await Promise.all([
+        fetchLabels(accountId),
+        fetch(`/api/meta-media?account_id=${encodeURIComponent(accountId)}`),
+      ]);
+      setLabels(lbs);
+      const d = await r.json();
+      if (d.code === "success") {
+        const all = [...d.data.images, ...d.data.videos];
+        setMedia(all);
+        const fo = {};
+        all.forEach((item) => { fo[getFolder(item, lbs)] = true; });
+        setOpenFolders(fo);
+      } else {
+        setError(d.error || "Erro ao carregar mídias");
+      }
+    } catch (err) {
+      setError("Erro: " + (err.message || "verifique o token Meta"));
+    }
+    setLoading(false);
+  };
+
+  const saveLabel = async (key, patch) => {
+    setSaving(true);
+    const updated = { ...labels, [key]: { ...(labels[key] || {}), ...patch } };
+    setLabels(updated);
+    try {
+      await fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labels: { [key]: updated[key] } }),
+      });
+    } catch { }
+    setSaving(false);
+  };
+
+  const commitRename = (key) => {
+    if (!editValue.trim()) { setEditingKey(null); return; }
+    saveLabel(key, { label: editValue.trim() });
+    setEditingKey(null);
+  };
+
+  const commitMove = (key) => {
+    const folder = moveValue.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || "geral";
+    saveLabel(key, { folder });
+    setOpenFolders((prev) => ({ ...prev, [folder]: true }));
+    setMovingKey(null);
+  };
+
+  const folderMap = {};
+  media.forEach((item) => {
+    const f = getFolder(item, labels);
+    if (!folderMap[f]) folderMap[f] = [];
+    folderMap[f].push(item);
+  });
+  const folderNames = Object.keys(folderMap).sort();
+
+  return html`
+    <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
+      <div style=${{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "14px", gap: "12px" }}>
+        <div>
+          <h3 style=${{ margin: "0 0 2px", fontSize: "1rem", fontWeight: 700 }}>Biblioteca de Mídia</h3>
+          <p className="muted small" style=${{ margin: 0 }}>Imagens e vídeos da conta Meta. Organize por pastas e renomeie os criativos localmente.</p>
+        </div>
+        <button className="ghost" onClick=${loadMedia} disabled=${loading} style=${{ whiteSpace: "nowrap", flexShrink: 0 }}>
+          ${loading ? "Carregando..." : "↺ Carregar mídias"}
+        </button>
+      </div>
+
+      ${error ? html`<div className="status error" style=${{ marginBottom: "12px" }}>${error}</div>` : null}
+
+      ${media.length > 0 ? html`<p className="muted small" style=${{ marginBottom: "10px" }}>${media.length} mídias${saving ? " — salvando..." : ""}</p>` : null}
+
+      ${folderNames.map((folder) => {
+        const items = folderMap[folder];
+        const isOpen = openFolders[folder] !== false;
+        return html`
+          <div key=${folder} style=${{ border: "1px solid var(--border-light)", borderRadius: "14px", marginBottom: "10px", overflow: "hidden" }}>
+            <button
+              onClick=${() => setOpenFolders((prev) => ({ ...prev, [folder]: !prev[folder] }))}
+              style=${{ width: "100%", display: "flex", alignItems: "center", gap: "8px", padding: "10px 16px", background: "var(--surface-2, #f5f5fb)", border: "none", cursor: "pointer", textAlign: "left", fontSize: "0.9rem", fontWeight: 700, color: "var(--ink)" }}
+            >
+              <span>${isOpen ? "▾" : "▸"}</span>
+              <span>📁 ${folder}</span>
+              <span style=${{ fontWeight: 400, color: "var(--muted)", fontSize: "0.82rem" }}>${items.length} item${items.length !== 1 ? "s" : ""}</span>
+            </button>
+            ${isOpen ? html`
+              <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px", padding: "14px" }}>
+                ${items.map((item) => html`
+                  <div key=${item.key} style=${{ width: "130px", border: "1px solid var(--border-light)", borderRadius: "12px", overflow: "hidden", background: "#fff", flexShrink: 0 }}>
+                    <div style=${{ width: "130px", height: "90px", background: "#eee", overflow: "hidden", position: "relative" }}>
+                      ${item.url
+                        ? html`<img src=${item.url} alt=${item.name} style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />`
+                        : html`<div style=${{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>${item.type === "video" ? "🎬" : "🖼️"}</div>`
+                      }
+                      <span style=${{ position: "absolute", top: "4px", right: "4px", background: item.type === "video" ? "#1a1a2e" : "#5758e8", color: "#fff", fontSize: "0.62rem", fontWeight: 700, padding: "2px 5px", borderRadius: "6px", textTransform: "uppercase" }}>${item.type === "video" ? "VID" : "IMG"}</span>
+                    </div>
+                    <div style=${{ padding: "8px 8px 6px" }}>
+                      ${editingKey === item.key ? html`
+                        <input
+                          type="text" value=${editValue}
+                          onInput=${(e) => setEditValue(e.target.value)}
+                          onKeyDown=${(e) => { if (e.key === "Enter") commitRename(item.key); if (e.key === "Escape") setEditingKey(null); }}
+                          style=${{ width: "100%", boxSizing: "border-box", padding: "3px 6px", borderRadius: "7px", border: "1px solid var(--accent)", fontSize: "0.75rem" }}
+                        />
+                        <button onClick=${() => commitRename(item.key)} style=${{ marginTop: "4px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "var(--accent)", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>✓ Salvar</button>
+                      ` : html`
+                        <p style=${{ margin: "0 0 5px", fontSize: "0.74rem", fontWeight: 600, color: "var(--ink)", wordBreak: "break-all", lineHeight: 1.3 }}>${getDisplayName(item)}</p>
+                        <div style=${{ display: "flex", gap: "4px" }}>
+                          <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>✏️</button>
+                          <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover pasta" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>📂</button>
+                        </div>
+                      `}
+                      ${movingKey === item.key && editingKey !== item.key ? html`
+                        <div style=${{ marginTop: "5px" }}>
+                          <input
+                            type="text" value=${moveValue}
+                            onInput=${(e) => setMoveValue(e.target.value)}
+                            onKeyDown=${(e) => { if (e.key === "Enter") commitMove(item.key); if (e.key === "Escape") setMovingKey(null); }}
+                            placeholder="nome-da-pasta"
+                            style=${{ width: "100%", boxSizing: "border-box", padding: "3px 6px", borderRadius: "7px", border: "1px solid #f0a500", fontSize: "0.72rem" }}
+                          />
+                          <button onClick=${() => commitMove(item.key)} style=${{ marginTop: "3px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "#f0a500", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>Mover</button>
+                        </div>
+                      ` : null}
+                    </div>
+                  </div>
+                `)}
+              </div>
+            ` : null}
+          </div>
+        `;
+      })}
+
+      ${media.length === 0 && !loading ? html`
+        <p className="muted small" style=${{ textAlign: "center", padding: "20px 0", color: "var(--muted)" }}>Clique em "↺ Carregar mídias" para visualizar imagens e vídeos da conta Meta.</p>
+      ` : null}
+    </div>
   `;
 }
 
