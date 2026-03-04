@@ -1430,9 +1430,17 @@ function EditarView({
   hiddenCampaigns,
   onHideCampaign,
   onUnhideCampaign,
+  dateStart,
+  dateEnd,
+  onDateChange,
 }) {
   const [managerTab, setManagerTab] = useState("campaigns");
   const [editingUrlId, setEditingUrlId] = useState(null);
+  const [showHiddenPanel, setShowHiddenPanel] = useState(false);
+
+  const fmtMoney = (v) => v ? "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+  const fmtPct = (v) => v ? Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%" : "—";
+  const fmtFreq = (v) => v ? Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
 
   const fmtBudget = (v) => {
     if (!v) return "—";
@@ -1510,6 +1518,11 @@ function EditarView({
             <h2 className="section-title">Anúncios</h2>
           </div>
           <div className="chip-group">
+            ${hiddenList.length > 0 ? html`
+              <button className="ghost" onClick=${() => setShowHiddenPanel((v) => !v)}
+                style=${{ fontSize: "0.82rem", whiteSpace: "nowrap" }}>
+                🙈 Ocultas (${hiddenList.length})
+              </button>` : null}
             <button className="ghost" onClick=${() => onLoad(true)} disabled=${loading}>
               ${loading ? "Carregando..." : "↻ Atualizar"}
             </button>
@@ -1517,7 +1530,7 @@ function EditarView({
           </div>
         </div>
 
-        <div className="filters" style=${{ display: "flex", gap: "12px", marginBottom: "4px" }}>
+        <div className="filters" style=${{ display: "flex", gap: "12px", marginBottom: "4px", flexWrap: "wrap", alignItems: "flex-end" }}>
           <label className="field" style=${{ flex: "1 1 220px" }}>
             <span>Buscar</span>
             <input
@@ -1527,6 +1540,20 @@ function EditarView({
               onInput=${(e) => onCampaignFilter?.(e.target.value)}
             />
           </label>
+          <label className="field" style=${{ flex: "0 0 140px" }}>
+            <span>De</span>
+            <input type="date" value=${dateStart || ""}
+              onInput=${(e) => onDateChange?.(e.target.value, dateEnd)} />
+          </label>
+          <label className="field" style=${{ flex: "0 0 140px" }}>
+            <span>Até</span>
+            <input type="date" value=${dateEnd || ""}
+              onInput=${(e) => onDateChange?.(dateStart, e.target.value)} />
+          </label>
+          <button className="btn-primary" style=${{ alignSelf: "flex-end", height: "36px" }}
+            onClick=${() => onLoad(true, dateStart, dateEnd)} disabled=${loading}>
+            ${loading ? "..." : "Aplicar"}
+          </button>
         </div>
 
         <div className="manager-tabs">
@@ -1555,31 +1582,27 @@ function EditarView({
 
         ${error ? html`<div className="status error" style=${{ margin: "8px 0" }}><strong>Erro:</strong> ${error}</div>` : null}
 
-        ${hiddenList.length > 0 ? html`
-          <div className="manager-hidden-bar">
-            <span className="muted small">Campanhas ocultas:</span>
+        ${(showHiddenPanel && hiddenList.length > 0) ? html`
+          <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center", padding: "10px 0 12px", borderBottom: "1px solid var(--border)" }}>
             ${hiddenList.map((c) => html`
               <span key=${c.id} className="chip neutral" style=${{ fontSize: "11px" }}>
                 ${c.name}
-                <button
-                  className="ghost small"
+                <button className="ghost small"
                   style=${{ padding: "0 4px", marginLeft: "2px" }}
                   onClick=${() => onUnhideCampaign?.(c.id)}
-                  title="Restaurar campanha"
+                  title="Restaurar"
                 >×</button>
               </span>
             `)}
-            <button
-              className="ghost small"
-              style=${{ marginLeft: "8px", fontSize: "11px" }}
-              onClick=${() => hiddenList.forEach((c) => onUnhideCampaign?.(c.id))}
+            <button className="ghost small" style=${{ fontSize: "11px" }}
+              onClick=${() => { hiddenList.forEach((c) => onUnhideCampaign?.(c.id)); setShowHiddenPanel(false); }}
             >Restaurar todas</button>
           </div>` : null}
 
         ${(ads.length === 0 && !loading) ? html`
           <div className="muted" style=${{ padding: "40px", textAlign: "center" }}>
             ${hiddenList.length > 0
-              ? "Todas as campanhas estão ocultas. Clique no × acima para restaurar."
+              ? html`Todas as campanhas estão ocultas. Clique em <strong>🙈 Ocultas</strong> no topo para restaurar.`
               : "Clique em \"↻ Atualizar\" para carregar as campanhas."}
           </div>` : null}
 
@@ -1608,12 +1631,11 @@ function EditarView({
                     : "—";
                   return html`<tr key=${c.id}>
                     <td>
-                      <button
-                        className=${"status-circle " + (isActive ? "active" : "paused")}
-                        disabled=${toggling}
-                        onClick=${() => onToggleCampaignStatus?.(c.id, c.status)}
-                        title=${isActive ? "Pausar campanha" : "Ativar campanha"}
-                      ></button>
+                      <label className="toggle-switch" title=${isActive ? "Pausar campanha" : "Ativar campanha"}>
+                        <input type="checkbox" checked=${isActive} disabled=${toggling}
+                          onChange=${() => onToggleCampaignStatus?.(c.id, c.status)} />
+                        <span className="toggle-slider"></span>
+                      </label>
                     </td>
                     <td style=${{ fontWeight: 600 }}>${c.name}</td>
                     <td>
@@ -1663,12 +1685,11 @@ function EditarView({
                   const currentName = ads.find((a) => a.adset_id === as.id)?.adset_name || as.name;
                   return html`<tr key=${as.id} style=${{ opacity: deletingAs ? 0.4 : 1 }}>
                     <td>
-                      <button
-                        className=${"status-circle " + (isActive ? "active" : "paused")}
-                        disabled=${toggling}
-                        onClick=${() => onToggleAdsetStatus?.(as.id, as.status)}
-                        title=${isActive ? "Pausar conjunto" : "Ativar conjunto"}
-                      ></button>
+                      <label className="toggle-switch" title=${isActive ? "Pausar conjunto" : "Ativar conjunto"}>
+                        <input type="checkbox" checked=${isActive} disabled=${toggling}
+                          onChange=${() => onToggleAdsetStatus?.(as.id, as.status)} />
+                        <span className="toggle-slider"></span>
+                      </label>
                     </td>
                     <td style=${{ fontWeight: 500, minWidth: "180px" }}>${as.name}</td>
                     <td className="muted small">${as.campaignName}</td>
@@ -1722,6 +1743,12 @@ function EditarView({
                   <th>UTM Tags</th>
                   <th>Status URL</th>
                   <th>Veiculação</th>
+                  <th>Valor usado</th>
+                  <th>CTR</th>
+                  <th>CPC</th>
+                  <th>CPM</th>
+                  <th>Frequência</th>
+                  <th>Taxa Viz.</th>
                   <th>Atualizado</th>
                   <th>Ações</th>
                 </tr>
@@ -1744,12 +1771,11 @@ function EditarView({
                   const isActive = effStatus === "ACTIVE";
                   return html`<tr key=${row.id || idx} style=${{ opacity: deletingRow ? 0.4 : 1 }}>
                     <td>
-                      <button
-                        className=${"status-circle " + (isActive ? "active" : "paused")}
-                        disabled=${togglingRow}
-                        onClick=${() => onToggleAdStatus?.(row)}
-                        title=${isActive ? "Pausar" : "Ativar"}
-                      ></button>
+                      <label className="toggle-switch" title=${isActive ? "Pausar" : "Ativar"}>
+                        <input type="checkbox" checked=${isActive} disabled=${togglingRow}
+                          onChange=${() => onToggleAdStatus?.(row)} />
+                        <span className="toggle-slider"></span>
+                      </label>
                     </td>
                     <td style=${{ minWidth: "200px" }}>
                       <div className="inline-actions">
@@ -1798,6 +1824,12 @@ function EditarView({
                         ${effLabel(effStatus)}
                       </span>
                     </td>
+                    <td className="muted small">${fmtMoney(row.spend)}</td>
+                    <td className="muted small">${fmtPct(row.ctr)}</td>
+                    <td className="muted small">${fmtMoney(row.cpc)}</td>
+                    <td className="muted small">${fmtMoney(row.cpm)}</td>
+                    <td className="muted small">${fmtFreq(row.frequency)}</td>
+                    <td className="muted small">${fmtPct(row.video_thruplay_rate)}</td>
                     <td className="muted small">${formatDateTime(row.updated_time)}</td>
                     <td>
                       <div className="inline-actions" style=${{ gap: "3px" }}>
@@ -4897,6 +4929,9 @@ function App() {
   const [editAds, setEditAds] = useState([]);
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const [editDateStart, setEditDateStart] = useState(todayStr);
+  const [editDateEnd, setEditDateEnd] = useState(todayStr);
   const [editSaving, setEditSaving] = useState({});
   const [editVerifying, setEditVerifying] = useState({});
   const [editRenaming, setEditRenaming] = useState({});
@@ -5544,7 +5579,7 @@ function App() {
     });
   };
 
-  const handleLoadEditar = async (force = false) => {
+  const handleLoadEditar = async (force = false, dateStart, dateEnd) => {
     if (!filters.metaAccountId.trim()) {
       setEditError("Informe o ID da conta de anúncios (Meta).");
       return;
@@ -5554,6 +5589,10 @@ function App() {
     try {
       const qs = new URLSearchParams({ account_id: filters.metaAccountId.trim() });
       if (force) qs.set("force", "1");
+      const ds = dateStart || editDateStart;
+      const de = dateEnd || editDateEnd;
+      if (ds) qs.set("start_date", ds);
+      if (de) qs.set("end_date", de);
       const res = await fetchJson(`${API_BASE}/meta-structure?${qs.toString()}`);
       const cache = loadEditDestinationCache();
       const rows = (res.data || []).map((row) => {
@@ -7223,6 +7262,9 @@ function App() {
               hiddenCampaigns=${hiddenCampaigns}
               onHideCampaign=${handleHideCampaign}
               onUnhideCampaign=${handleUnhideCampaign}
+              dateStart=${editDateStart}
+              dateEnd=${editDateEnd}
+              onDateChange=${(s, e) => { setEditDateStart(s); setEditDateEnd(e); }}
             />
           `
         : activeTab === "urls"

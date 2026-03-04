@@ -1367,28 +1367,54 @@ tbody tr:last-child td {
   border-bottom-color: var(--accent);
 }
 
-/* ── Status circle (Meta-style on/off dot) ── */
-.status-circle {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
-  flex-shrink: 0;
+/* ── Toggle Switch (Meta-style on/off) ── */
+.toggle-switch {
+  position: relative;
   display: inline-block;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
 }
 
-.status-circle.active {
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #6b7280;
+  border-radius: 22px;
+  transition: background 0.2s;
+}
+
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.toggle-switch input:checked + .toggle-slider {
   background: #34d399;
 }
 
-.status-circle.paused {
-  background: #6b7280;
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(16px);
 }
 
-.status-circle:disabled {
-  opacity: 0.5;
+.toggle-switch input:disabled + .toggle-slider {
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
