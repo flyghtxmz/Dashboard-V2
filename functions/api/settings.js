@@ -62,7 +62,7 @@ export async function onRequest({ request, env }) {
       : [];
     const urls = Array.isArray(body.urls)
       ? body.urls.filter((u) => u && typeof u.nome === "string" && u.nome.trim() && typeof u.url === "string" && u.url.trim())
-          .map((u) => ({ nome: u.nome.trim(), url: u.url.trim() }))
+          .map((u) => ({ nome: u.nome.trim(), url: u.url.trim(), nicho: u.nicho || null }))
       : [];
 
     const settings = { domains, metaAccountId, reportType, includeAssets, nichos, urls };

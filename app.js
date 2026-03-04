@@ -3629,13 +3629,16 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               </div>
               <div className="field" style=${{ gridColumn: "1 / -1" }}>
                 <label>URL de destino * (inclua UTMs!)</label>
-                ${_savedUrls.length > 0 ? html`
-                  <select style=${{ marginBottom: "6px", fontSize: "0.85rem" }}
-                    onChange=${(e) => { if (e.target.value) setDestUrl(e.target.value); e.target.value = ""; }}>
-                    <option value="">⚡ Usar URL salva...</option>
-                    ${_savedUrls.map((u, i) => html`<option key=${i} value=${u.url}>${u.nome}</option>`)}
-                  </select>
-                ` : null}
+${(() => {
+                  const filtered = _savedUrls.filter((u) => !u.nicho || !nicho || u.nicho === nicho.slug);
+                  return filtered.length > 0 ? html`
+                    <select style=${{ marginBottom: "6px", fontSize: "0.85rem" }}
+                      onChange=${(e) => { if (e.target.value) setDestUrl(e.target.value); e.target.value = ""; }}>
+                      <option value="">⚡ Usar URL salva...</option>
+                      ${filtered.map((u, i) => html`<option key=${i} value=${u.url}>${u.nome}</option>`)}
+                    </select>
+                  ` : null;
+                })()}
                 <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo?utm_source=fb&utm_medium=cpc&utm_content={{ad.name}}" />
                 <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
                   <span className="muted small" style=${{ alignSelf: "center" }}>Macros:</span>
@@ -3858,9 +3861,11 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [urls, setUrls] = useState(Array.isArray(settings.urls) ? settings.urls : []);
   const [newUrlNome, setNewUrlNome] = useState("");
   const [newUrlValue, setNewUrlValue] = useState("");
+  const [newUrlNicho, setNewUrlNicho] = useState("");
   const [editingUrlIdx, setEditingUrlIdx] = useState(null);
   const [editUrlNome, setEditUrlNome] = useState("");
   const [editUrlValue, setEditUrlValue] = useState("");
+  const [editUrlNicho, setEditUrlNicho] = useState("");
   const [newDomain, setNewDomain] = useState("");
   const [newNichoNome, setNewNichoNome] = useState("");
   const [newNichoSlug, setNewNichoSlug] = useState("");
@@ -3914,16 +3919,16 @@ function ConfiguracoesView({ settings, onSave, saving }) {
     const nome = newUrlNome.trim();
     const url = newUrlValue.trim();
     if (!nome || !url) return;
-    setUrls([...urls, { nome, url }]);
-    setNewUrlNome(""); setNewUrlValue("");
+    setUrls([...urls, { nome, url, nicho: newUrlNicho || null }]);
+    setNewUrlNome(""); setNewUrlValue(""); setNewUrlNicho("");
   };
   const removeUrl = (i) => setUrls(urls.filter((_, j) => j !== i));
-  const startEditUrl = (i) => { setEditingUrlIdx(i); setEditUrlNome(urls[i].nome); setEditUrlValue(urls[i].url); };
+  const startEditUrl = (i) => { setEditingUrlIdx(i); setEditUrlNome(urls[i].nome); setEditUrlValue(urls[i].url); setEditUrlNicho(urls[i].nicho || ""); };
   const saveEditUrl = (i) => {
     const nome = editUrlNome.trim(); const url = editUrlValue.trim();
     if (!nome || !url) return;
-    setUrls(urls.map((u, j) => j === i ? { nome, url } : u));
-    setEditingUrlIdx(null); setEditUrlNome(""); setEditUrlValue("");
+    setUrls(urls.map((u, j) => j === i ? { nome, url, nicho: editUrlNicho || null } : u));
+    setEditingUrlIdx(null); setEditUrlNome(""); setEditUrlValue(""); setEditUrlNicho("");
   };
 
   const addDomain = () => {
@@ -4165,6 +4170,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                   <thead>
                     <tr style=${{ background: "var(--surface-2, #f5f5fb)" }}>
                       <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Nome</th>
+                      <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Nicho</th>
                       <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>URL</th>
                       <th style=${{ width: "110px" }}></th>
                     </tr>
@@ -4173,9 +4179,16 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                     ${urls.map((u, i) => html`
                       <tr key=${i} style=${{ borderTop: i === 0 ? "none" : "1px solid var(--border-light)", background: editingUrlIdx === i ? "#f0f4ff" : "#fff" }}>
                         ${editingUrlIdx === i ? html`
-                          <td style=${{ padding: "8px 10px", minWidth: "140px" }}>
+                          <td style=${{ padding: "8px 10px", minWidth: "130px" }}>
                             <input type="text" value=${editUrlNome} onInput=${(e) => setEditUrlNome(e.target.value)}
                               style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box" }} />
+                          </td>
+                          <td style=${{ padding: "8px 10px", minWidth: "120px" }}>
+                            <select value=${editUrlNicho} onChange=${(e) => setEditUrlNicho(e.target.value)}
+                              style=${{ width: "100%", padding: "6px 8px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.85rem" }}>
+                              <option value="">Todos</option>
+                              ${nichos.map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}</option>`)}
+                            </select>
                           </td>
                           <td style=${{ padding: "8px 10px" }}>
                             <input type="url" value=${editUrlValue} onInput=${(e) => setEditUrlValue(e.target.value)}
@@ -4187,6 +4200,12 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                           </td>
                         ` : html`
                           <td style=${{ padding: "10px 14px", fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>${u.nome}</td>
+                          <td style=${{ padding: "10px 14px" }}>
+                            ${u.nicho
+                              ? html`<span style=${{ padding: "2px 8px", borderRadius: "999px", background: "#eef0ff", border: "1px solid #d0d3f8", fontSize: "0.78rem", fontWeight: 600, color: "var(--ink)" }}>${nichos.find((n) => n.slug === u.nicho)?.nome || u.nicho}</span>`
+                              : html`<span className="muted" style=${{ fontSize: "0.8rem" }}>Todos</span>`
+                            }
+                          </td>
                           <td style=${{ padding: "10px 14px", color: "var(--muted)", fontFamily: "monospace", fontSize: "0.78rem", wordBreak: "break-all" }}>${u.url}</td>
                           <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                             <button className="ghost" onClick=${() => startEditUrl(i)} style=${{ padding: "3px 10px", fontSize: "0.8rem", marginRight: "4px" }}>Editar</button>
@@ -4201,14 +4220,22 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             `
           }
           <div style=${{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "160px" }}>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "150px" }}>
               <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Nome *</label>
               <input type="text" value=${newUrlNome} onInput=${(e) => setNewUrlNome(e.target.value)}
                 placeholder="ex: Oferta principal"
                 onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
                 style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }} />
             </div>
-            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "280px" }}>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "140px" }}>
+              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Nicho</label>
+              <select value=${newUrlNicho} onChange=${(e) => setNewUrlNicho(e.target.value)}
+                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}>
+                <option value="">Todos</option>
+                ${nichos.map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}</option>`)}
+              </select>
+            </div>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "260px" }}>
               <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>URL *</label>
               <input type="url" value=${newUrlValue} onInput=${(e) => setNewUrlValue(e.target.value)}
                 placeholder="https://seusite.com/artigo"
