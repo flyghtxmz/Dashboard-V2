@@ -1209,16 +1209,27 @@ tbody tr:last-child td {
 .manager-campaign-header {
   display: flex;
   align-items: center;
+  background: var(--border-light);
+}
+
+.manager-campaign-header-click {
+  display: flex;
+  align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: var(--border-light);
+  flex: 1;
   cursor: pointer;
   user-select: none;
   transition: background 0.15s;
 }
 
-.manager-campaign-header:hover {
+.manager-campaign-header-click:hover {
   background: rgba(87, 88, 232, 0.08);
+}
+
+.manager-campaign-header > button {
+  margin-right: 12px;
+  flex-shrink: 0;
 }
 
 .manager-toggle {

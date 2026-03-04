@@ -1548,16 +1548,18 @@ function EditarView({
               const totalAds = campaign.adsets.reduce((s, as) => s + as.ads.length, 0);
               return html`
                 <div className="manager-campaign" key=${campaign.id}>
-                  <div className="manager-campaign-header" onClick=${() => toggleCampaign(campaign.id)}>
-                    <span className="manager-toggle">${isExpCamp ? "▾" : "▸"}</span>
-                    <strong style=${{ flex: 1 }}>${campaign.name}</strong>
-                    <span className="chip neutral">${campaign.adsets.length} conjuntos</span>
-                    <span className="chip neutral">${totalAds} anúncios</span>
+                  <div className="manager-campaign-header">
+                    <div className="manager-campaign-header-click" onClick=${() => toggleCampaign(campaign.id)}>
+                      <span className="manager-toggle">${isExpCamp ? "▾" : "▸"}</span>
+                      <strong style=${{ flex: 1 }}>${campaign.name}</strong>
+                      <span className="chip neutral">${campaign.adsets.length} conjuntos</span>
+                      <span className="chip neutral">${totalAds} anúncios</span>
+                    </div>
                     <button
                       className="ghost small btn-danger"
                       title="Ocultar campanha do Dashboard"
-                      onClick=${(e) => { e.stopPropagation(); onHideCampaign?.(campaign.id); }}
-                      style=${{ marginLeft: "4px" }}
+                      onClick=${() => onHideCampaign?.(campaign.id)}
+                      style=${{ flexShrink: 0 }}
                     >
                       🙈 Ocultar do Dashboard
                     </button>
