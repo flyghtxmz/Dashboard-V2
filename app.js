@@ -3550,7 +3550,57 @@ const PAISES_NICHOS = [
   "Grécia", "Croácia", "Irlanda", "Ucrânia",
 ];
 
-function ConfiguracoesView({ settings, onSave, saving }) {
+function PaisSelect({ value, onChange, placeholder, inputStyle }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(value || "");
+  const ref = useRef(null);
+
+  useEffect(() => { setQuery(value || ""); }, [value]);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const filtered = query.trim()
+    ? PAISES_NICHOS.filter((p) => p.toLowerCase().includes(query.toLowerCase()))
+    : PAISES_NICHOS;
+
+  const select = (p) => { onChange(p); setQuery(p); setOpen(false); };
+
+  return html`
+    <div ref=${ref} style=${{ position: "relative" }}>
+      <input
+        type="text"
+        value=${query}
+        onFocus=${() => setOpen(true)}
+        onInput=${(e) => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+        placeholder=${placeholder || "Digite para buscar..."}
+        style=${{ width: "100%", boxSizing: "border-box", ...inputStyle }}
+      />
+      ${open && filtered.length > 0 ? html`
+        <ul style=${{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 300,
+          background: "#fff", border: "1px solid #dde", borderRadius: "12px",
+          boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+          maxHeight: "180px", overflowY: "auto",
+          margin: 0, padding: "4px 0", listStyle: "none",
+          fontSize: "0.86rem", color: "#1a1a2e",
+        }}>
+          ${filtered.map((p) => html`
+            <li key=${p}
+              onMouseDown=${(e) => { e.preventDefault(); select(p); }}
+              onMouseEnter=${(e) => { e.currentTarget.style.background = "#f0f1ff"; }}
+              onMouseLeave=${(e) => { e.currentTarget.style.background = "transparent"; }}
+              style=${{ padding: "7px 14px", cursor: "pointer", color: "#1a1a2e" }}
+            >${p}</li>
+          `)}
+        </ul>
+      ` : null}
+    </div>
+  `;
+}
   const [domains, setDomains] = useState(settings.domains?.length ? settings.domains : [...DEFAULT_DOMAINS]);
   const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
   const [reportType, setReportType] = useState(settings.reportType || "Analytical");
@@ -3691,9 +3741,6 @@ function ConfiguracoesView({ settings, onSave, saving }) {
         </div>
 
         <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
-          <datalist id="paises-nicho-list">
-            ${PAISES_NICHOS.map((p) => html`<option key=${p} value=${p} />`)}
-          </datalist>
 
           <h3 style=${{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 700 }}>Nichos</h3>
           <p className="muted small" style=${{ marginBottom: "16px" }}>Nichos cadastrados aparecem no Passo 1 da criação de campanhas e serão usados para padronizar nomes, URLs e UTMs.</p>
@@ -3723,9 +3770,12 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                                 style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box", fontFamily: "monospace" }} />
                             </td>
                             <td style=${{ padding: "8px 10px" }}>
-                              <input type="text" list="paises-nicho-list" value=${editPais} onInput=${(e) => setEditPais(e.target.value)}
+                              <${PaisSelect}
+                                value=${editPais}
+                                onChange=${(v) => setEditPais(v)}
                                 placeholder="Digite o país..."
-                                style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box" }} />
+                                inputStyle=${{ padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem" }}
+                              />
                             </td>
                             <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                               <button className="primary" onClick=${() => saveEditNicho(n.slug)} style=${{ padding: "4px 12px", fontSize: "0.82rem", marginRight: "4px" }}>✓</button>
@@ -3772,14 +3822,11 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             </div>
             <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 2, minWidth: "150px" }}>
               <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>País</label>
-              <input
-                type="text"
-                list="paises-nicho-list"
+              <${PaisSelect}
                 value=${newNichoPais}
-                onInput=${(e) => setNewNichoPais(e.target.value)}
-                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
+                onChange=${(v) => setNewNichoPais(v)}
                 placeholder="Digite para buscar..."
-                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
+                inputStyle=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
               />
             </div>
             <button className="ghost" onClick=${addNicho} disabled=${!newNichoNome.trim()} style=${{ whiteSpace: "nowrap", alignSelf: "flex-end" }}>+ Adicionar</button>
