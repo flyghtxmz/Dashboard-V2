@@ -1555,27 +1555,35 @@ function EditarView({
 
         ${error ? html`<div className="status error" style=${{ margin: "8px 0" }}><strong>Erro:</strong> ${error}</div>` : null}
 
+        ${hiddenList.length > 0 ? html`
+          <div className="manager-hidden-bar">
+            <span className="muted small">Campanhas ocultas:</span>
+            ${hiddenList.map((c) => html`
+              <span key=${c.id} className="chip neutral" style=${{ fontSize: "11px" }}>
+                ${c.name}
+                <button
+                  className="ghost small"
+                  style=${{ padding: "0 4px", marginLeft: "2px" }}
+                  onClick=${() => onUnhideCampaign?.(c.id)}
+                  title="Restaurar campanha"
+                >×</button>
+              </span>
+            `)}
+            <button
+              className="ghost small"
+              style=${{ marginLeft: "8px", fontSize: "11px" }}
+              onClick=${() => hiddenList.forEach((c) => onUnhideCampaign?.(c.id))}
+            >Restaurar todas</button>
+          </div>` : null}
+
         ${(ads.length === 0 && !loading) ? html`
           <div className="muted" style=${{ padding: "40px", textAlign: "center" }}>
-            Clique em "↻ Atualizar" para carregar as campanhas.
+            ${hiddenList.length > 0
+              ? "Todas as campanhas estão ocultas. Clique no × acima para restaurar."
+              : "Clique em \"↻ Atualizar\" para carregar as campanhas."}
           </div>` : null}
 
         ${(managerTab === "campaigns" && ads.length > 0) ? html`
-          ${hiddenList.length > 0 ? html`
-            <div className="manager-hidden-bar">
-              <span className="muted small">Ocultas do Dashboard:</span>
-              ${hiddenList.map((c) => html`
-                <span key=${c.id} className="chip neutral" style=${{ fontSize: "11px" }}>
-                  ${c.name}
-                  <button
-                    className="ghost small"
-                    style=${{ padding: "0 4px", marginLeft: "2px" }}
-                    onClick=${() => onUnhideCampaign?.(c.id)}
-                    title="Mostrar no Dashboard"
-                  >×</button>
-                </span>
-              `)}
-            </div>` : null}
           <div className="table-wrapper scroll-x">
             <table className="manager-table">
               <thead>
