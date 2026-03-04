@@ -3601,6 +3601,8 @@ function PaisSelect({ value, onChange, placeholder, inputStyle }) {
     </div>
   `;
 }
+
+function ConfiguracoesView({ settings, onSave, saving }) {
   const [domains, setDomains] = useState(settings.domains?.length ? settings.domains : [...DEFAULT_DOMAINS]);
   const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
   const [reportType, setReportType] = useState(settings.reportType || "Analytical");
