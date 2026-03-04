@@ -2849,6 +2849,8 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [campNumLoading, setCampNumLoading] = useState(false);
   const [cjNum, setCjNum] = useState("01");
   const [anNum, setAnNum] = useState("01");
+  const [savedAdsets, setSavedAdsets] = useState([]);
+  const [savedAds, setSavedAds] = useState([]);
   const [cbo, setCbo] = useState(false);
   const [campBudgetType, setCampBudgetType] = useState("daily");
   const [campBudget, setCampBudget] = useState("");
@@ -2933,6 +2935,43 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     return `${n.slug}-${geo}-cj${nn}-an${mm}`;
   };
 
+  const snapshotCurrentAdset = () => ({
+    name: adsetName.trim(),
+    optimization_goal: optGoal,
+    bid_strategy: bidStrategy,
+    status: campStatus,
+    ...(!cbo && adsetBudgetType === "daily" ? { daily_budget: Math.round(Number(adsetBudget) * 100) } : {}),
+    ...(!cbo && adsetBudgetType === "lifetime" ? { lifetime_budget: Math.round(Number(adsetBudget) * 100) } : {}),
+    ...(bidAmount ? { bid_amount: Math.round(Number(bidAmount) * 100) } : {}),
+    countries,
+    age_min: Number(ageMin),
+    age_max: Number(ageMax),
+    genders: gender === "male" ? [1] : gender === "female" ? [2] : [],
+    device_platforms: devicePlatforms,
+    ...(placementMode === "manual" ? { manual_placements: manualPlacements } : {}),
+    ...(startTime ? { start_time: new Date(startTime).toISOString() } : {}),
+    ...(endTime ? { end_time: new Date(endTime).toISOString() } : {}),
+    ...(pixelId ? { pixel_id: pixelId.trim(), conversion_event: conversionEvent } : {}),
+    ...(locLanguages.length > 0 ? { locales: locLanguages } : {}),
+    _cjNum: cjNum,
+  });
+
+  const snapshotCurrentAd = () => ({
+    name: adName.trim(),
+    page_id: pageId,
+    ad_format: adFormat,
+    image_url: adFormat === "image" ? imageUrl.trim() : undefined,
+    video_id: adFormat === "video" ? videoId.trim() : undefined,
+    thumb_url: adFormat === "video" ? thumbUrl.trim() : undefined,
+    ig_actor_id: igActorId.trim() || undefined,
+    headline: headline.trim(),
+    body: adBody.trim(),
+    description: adDescription.trim(),
+    cta_type: ctaType,
+    destination_url: destUrl.trim(),
+    _anNum: anNum,
+  });
+
   useEffect(() => {
     if (!campNameManual) { const v = buildCampName(nicho, objective, campNum); if (v) setCampName(v); }
   }, [nicho, objective, campNum]);
@@ -2960,6 +2999,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
     setCampStatus("ACTIVE"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
     setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCampNum("01"); setCjNum("01"); setAnNum("01");
+    setSavedAdsets([]); setSavedAds([]);
     setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
@@ -2988,41 +3028,13 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           ...(cbo && campBudgetType === "lifetime" ? { lifetime_budget: Math.round(Number(campBudget) * 100) } : {}),
           ...(spendingLimit ? { spending_limit: Math.round(Number(spendingLimit) * 100) } : {}),
         },
-        adset: {
-          name: adsetName.trim() || `${campName.trim()} — Conjunto`,
-          optimization_goal: optGoal,
-          bid_strategy: bidStrategy,
-          status: campStatus,
-          ...(!cbo && adsetBudgetType === "daily" ? { daily_budget: Math.round(Number(adsetBudget) * 100) } : {}),
-          ...(!cbo && adsetBudgetType === "lifetime" ? { lifetime_budget: Math.round(Number(adsetBudget) * 100) } : {}),
-          ...(bidAmount ? { bid_amount: Math.round(Number(bidAmount) * 100) } : {}),
-          countries,
-          age_min: Number(ageMin),
-          age_max: Number(ageMax),
-          genders: gender === "male" ? [1] : gender === "female" ? [2] : [],
-          device_platforms: devicePlatforms,
-          ...(placementMode === "manual" ? { manual_placements: manualPlacements } : {}),
-          ...(startTime ? { start_time: new Date(startTime).toISOString() } : {}),
-          ...(endTime ? { end_time: new Date(endTime).toISOString() } : {}),
-          ...(pixelId ? { pixel_id: pixelId.trim(), conversion_event: conversionEvent } : {}),
-          ...(locLanguages.length > 0 ? { locales: locLanguages } : {}),
-        },
-        ...(!skipAd ? {
-          ad: {
-            name: adName.trim() || `${campName.trim()} — Anúncio`,
-            page_id: pageId,
-            ad_format: adFormat,
-            image_url: adFormat === "image" ? imageUrl.trim() : undefined,
-            video_id: adFormat === "video" ? videoId.trim() : undefined,
-            thumb_url: adFormat === "video" ? thumbUrl.trim() : undefined,
-            ig_actor_id: igActorId.trim() || undefined,
-            headline: headline.trim(),
-            body: adBody.trim(),
-            description: adDescription.trim(),
-            cta_type: ctaType,
-            destination_url: destUrl.trim(),
-          },
-        } : {}),
+        adsets: (() => {
+          const allAdsets = [...savedAdsets, snapshotCurrentAdset()];
+          const currentAd = snapshotCurrentAd();
+          const hasCurrentAd = Boolean(currentAd.page_id && currentAd.destination_url);
+          const allAds = skipAd ? [] : [...savedAds, ...(hasCurrentAd ? [currentAd] : [])];
+          return allAdsets.map((adsetSnap) => ({ ...adsetSnap, ads: allAds }));
+        })(),
       };
 
       const res = await fetchJson("/api/meta-campaign-create", {
@@ -3031,7 +3043,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
       });
       setResult(res);
       setStep(5);
-      if (res.code === "success" && nicho) {
+      if ((res.code === "success" || res.code === "partial") && nicho) {
         const num = parseInt(campNum, 10);
         if (!isNaN(num)) {
           fetch(`/api/camp-counters?account_id=${encodeURIComponent(accountId)}`, {
@@ -3050,7 +3062,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
 
   const step1Valid = campName.trim() && (!cbo || campBudget);
   const step2Valid = cbo || adsetBudget;
-  const step3Valid = skipAd || (
+  const step3Valid = skipAd || savedAds.length > 0 || (
     pageId && destUrl.trim() && headline.trim() &&
     (adFormat === "image" ? imageUrl.trim() : videoId.trim())
   );
@@ -3098,8 +3110,24 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
         ${result?.error ? html`<p className="muted small" style=${{ margin: "8px 0" }}>${result.error}</p>` : null}
         <div style=${{ display: "inline-flex", flexDirection: "column", gap: "6px", margin: "20px auto", fontSize: "0.92rem", textAlign: "left" }}>
           ${result?.campaign_id ? html`<div>🎯 Campanha: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.campaign_id}</code></div>` : null}
-          ${result?.adset_id ? html`<div>📦 Conjunto: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.adset_id}</code></div>` : null}
-          ${result?.ad_id ? html`<div>📣 Anúncio: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.ad_id}</code></div>` : null}
+          ${Array.isArray(result?.results) && result.results.length > 0 ? html`
+            ${result.results.map((r, i) => html`
+              <div key=${i} style=${{ marginTop: "6px", padding: "8px 12px", border: "1px solid var(--border)", borderRadius: "8px", background: r.error ? "#fff4f4" : "#f0f4ff" }}>
+                <div style=${{ fontWeight: 700 }}>📦 ${r.name}</div>
+                ${r.error ? html`<div style=${{ color: "var(--danger)", fontSize: "0.8rem" }}>Erro: ${typeof r.error === "string" ? r.error : JSON.stringify(r.error)}</div>` : html`
+                  <div style=${{ fontSize: "0.8rem", color: "var(--muted)" }}>ID: ${r.adset_id}</div>
+                `}
+                ${r.ads && r.ads.map((a, j) => html`
+                  <div key=${j} style=${{ paddingLeft: "12px", fontSize: "0.82rem" }}>
+                    ${a.error ? html`❌ ${a.name} — ${typeof a.error === "string" ? a.error : JSON.stringify(a.error)}` : html`✅ ${a.name} <code style=${{ background: "#f0f1ff", padding: "1px 4px", borderRadius: "4px" }}>${a.ad_id}</code>`}
+                  </div>
+                `)}
+              </div>
+            `)}
+          ` : html`
+            ${result?.adset_id ? html`<div>📦 Conjunto: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.adset_id}</code></div>` : null}
+            ${result?.ad_id ? html`<div>📣 Anúncio: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.ad_id}</code></div>` : null}
+          `}
         </div>
         <p className="muted small">Tudo criado com status <strong>Pausado</strong>. Revise e ative no Gerenciador de Anúncios quando pronto.</p>
         <button className="primary" onClick=${resetForm} style=${{ marginTop: "20px" }}>
@@ -3440,11 +3468,34 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             ` : null}
           </div>
 
+          ${savedAdsets.length > 0 ? html`
+            <div style=${{ border: "1px solid var(--accent-2)", borderRadius: "10px", padding: "10px 14px", background: "#f0f4ff", marginBottom: "4px" }}>
+              <p style=${{ fontSize: "0.8rem", color: "var(--muted)", marginBottom: "8px" }}>Conjuntos já salvos (${savedAdsets.length}):</p>
+              ${savedAdsets.map((s, i) => html`
+                <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: i < savedAdsets.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <span style=${{ fontSize: "0.85rem" }}><strong>CJ${s._cjNum}</strong> — ${s.name || "(sem nome)"} · ${(Array.isArray(s.countries) ? s.countries : [s.countries]).join(", ")}</span>
+                  <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => setSavedAdsets((prev) => prev.filter((_, j) => j !== i))}>✕</button>
+                </div>
+              `)}
+            </div>
+          ` : null}
+
           <div style=${{ display: "flex", justifyContent: "space-between" }}>
             <button onClick=${() => setStep(1)}>← Voltar</button>
-            <button className="primary" disabled=${!step2Valid} onClick=${() => setStep(3)}>
-              Próximo: Anúncio →
-            </button>
+            <div style=${{ display: "flex", gap: "8px" }}>
+              <button className="ghost" disabled=${!step2Valid} onClick=${() => {
+                setSavedAdsets((prev) => [...prev, snapshotCurrentAdset()]);
+                const nextCj = String(savedAdsets.length + 2).padStart(2, "0");
+                setCjNum(nextCj);
+                setAdsetNameManual(false);
+                setAdsetBudget("");
+              }}>
+                ➕ Salvar e adicionar outro conjunto
+              </button>
+              <button className="primary" disabled=${!step2Valid} onClick=${() => setStep(3)}>
+                Próximo: Anúncio →
+              </button>
+            </div>
           </div>
         </section>
       `}
@@ -3591,11 +3642,37 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               </div>
             </div>
           ` : null}
+          ${!skipAd && savedAds.length > 0 ? html`
+            <div style=${{ border: "1px solid var(--accent-2)", borderRadius: "10px", padding: "10px 14px", background: "#f0f4ff", marginBottom: "4px" }}>
+              <p style=${{ fontSize: "0.8rem", color: "var(--muted)", marginBottom: "8px" }}>Anúncios já salvos (${savedAds.length}):</p>
+              ${savedAds.map((a, i) => html`
+                <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: i < savedAds.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <span style=${{ fontSize: "0.85rem" }}><strong>AN${a._anNum}</strong> — ${a.name || "(sem nome)"} · ${a.ad_format === "video" ? "Vídeo" : "Imagem"}</span>
+                  <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => setSavedAds((prev) => prev.filter((_, j) => j !== i))}>✕</button>
+                </div>
+              `)}
+            </div>
+          ` : null}
+
           <div style=${{ display: "flex", justifyContent: "space-between" }}>
             <button onClick=${() => setStep(2)}>← Voltar</button>
-            <button className="primary" disabled=${!step3Valid} onClick=${() => setStep(4)}>
-              Revisar →
-            </button>
+            <div style=${{ display: "flex", gap: "8px" }}>
+              ${!skipAd ? html`
+                <button className="ghost" disabled=${!step3Valid} onClick=${() => {
+                  setSavedAds((prev) => [...prev, snapshotCurrentAd()]);
+                  const nextAn = String(savedAds.length + 2).padStart(2, "0");
+                  setAnNum(nextAn);
+                  setAdNameManual(false);
+                  setImageUrl(""); setVideoId(""); setThumbUrl("");
+                  setHeadline(""); setAdBody(""); setAdDescription("");
+                }}>
+                  ➕ Salvar e adicionar outro anúncio
+                </button>
+              ` : null}
+              <button className="primary" disabled=${!step3Valid} onClick=${() => setStep(4)}>
+                Revisar →
+              </button>
+            </div>
           </div>
         </section>
       `}
@@ -3647,6 +3724,19 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               `}
             </div>
           </div>
+          ${(savedAdsets.length > 0 || savedAds.length > 0) ? html`
+            <div style=${{ padding: "12px 16px", border: "1px solid var(--accent-2)", borderRadius: "12px", background: "#f0f4ff" }}>
+              <strong>📊 Estrutura a criar:</strong>
+              ${' '}${savedAdsets.length + 1} conjunto(s) × ${skipAd ? 0 : savedAds.length + 1} anúncio(s)
+              ${' '}= <strong>${skipAd ? savedAdsets.length + 1 : (savedAdsets.length + 1) * (savedAds.length + 1)} combinação(ões)</strong>
+              ${savedAdsets.length > 0 ? html`
+                <ul style=${{ margin: "8px 0 0 16px", fontSize: "0.83rem" }}>
+                  ${savedAdsets.map((s, i) => html`<li key=${i}>CJ${s._cjNum} — ${s.name}</li>`)}
+                  <li><strong>CJ${cjNum} — ${adsetName || "(atual)"}</strong></li>
+                </ul>
+              ` : null}
+            </div>
+          ` : null}
           <div style=${{ padding: "14px 16px", border: "1px solid #f1c27d", borderRadius: "12px", background: "#fff4e5" }}>
             <strong>⚠️ Atenção:</strong> tudo será criado com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
             ${campStatus === "ACTIVE" ? html` <span className="muted small">Isso significa que os anúncios entrarão em veiculação imediatamente após aprovação do Meta.</span>` : null}
