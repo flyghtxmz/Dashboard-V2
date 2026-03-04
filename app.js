@@ -2845,6 +2845,8 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [campNameManual, setCampNameManual] = useState(false);
   const [adsetNameManual, setAdsetNameManual] = useState(false);
   const [adNameManual, setAdNameManual] = useState(false);
+  const [cjNum, setCjNum] = useState("01");
+  const [anNum, setAnNum] = useState("01");
   const [cbo, setCbo] = useState(false);
   const [campBudgetType, setCampBudgetType] = useState("daily");
   const [campBudget, setCampBudget] = useState("");
@@ -2913,11 +2915,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     return `${n.nome} | ${goalLabel}${geo}`;
   };
 
-  const buildAdName = (n, obj, fmt) => {
-    if (!n) return "";
-    const objLabel = OBJECTIVES.find((o) => o.value === obj)?.label || obj;
-    const fmtLabel = fmt === "video" ? "Vídeo" : "Imagem";
-    return `${n.nome} | ${objLabel} | ${fmtLabel}`;
+  const buildAdName = (n, ctrs, cj, an) => {
+    if (!n || !n.slug) return "";
+    const geo = (Array.isArray(ctrs) && ctrs.length ? ctrs : ["br"]).map((c) => c.toLowerCase()).join("-");
+    const nn = String(cj || "01").padStart(2, "0");
+    const mm = String(an || "01").padStart(2, "0");
+    return `${n.slug}-${geo}-cj${nn}-an${mm}`;
   };
 
   useEffect(() => {
@@ -2929,14 +2932,14 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   }, [nicho, optGoal, objective]);
 
   useEffect(() => {
-    if (!adNameManual) { const v = buildAdName(nicho, objective, adFormat); if (v) setAdName(v); }
-  }, [nicho, objective, adFormat]);
+    if (!adNameManual) { const v = buildAdName(nicho, countries, cjNum, anNum); if (v) setAdName(v); }
+  }, [nicho, countries, cjNum, anNum]);
 
   const resetForm = () => {
     setStep(1); setResult(null); setFormError("");
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
     setCampStatus("ACTIVE"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
-    setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false);
+    setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCjNum("01"); setAnNum("01");
     setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
@@ -3420,14 +3423,35 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             <div className="filters">
               <div className="field">
                 <label>Nome do anúncio</label>
+                <div style=${{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "8px" }}>
+                  <div style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style=${{ fontSize: "0.8rem", color: "var(--muted)", whiteSpace: "nowrap" }}>CJ nº</span>
+                    <input
+                      type="text" value=${cjNum}
+                      onInput=${(e) => { setCjNum(e.target.value); setAdNameManual(false); }}
+                      placeholder="01"
+                      style=${{ width: "48px", textAlign: "center" }}
+                    />
+                  </div>
+                  <div style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style=${{ fontSize: "0.8rem", color: "var(--muted)", whiteSpace: "nowrap" }}>AN nº</span>
+                    <input
+                      type="text" value=${anNum}
+                      onInput=${(e) => { setAnNum(e.target.value); setAdNameManual(false); }}
+                      placeholder="01"
+                      style=${{ width: "48px", textAlign: "center" }}
+                    />
+                  </div>
+                  <span style=${{ fontSize: "0.78rem", color: "var(--muted)", marginLeft: "auto" }}>${nicho && countries.length ? buildAdName(nicho, countries, cjNum, anNum) : ""}</span>
+                </div>
                 <div style=${{ display: "flex", gap: "6px" }}>
                   <input
                     type="text" value=${adName}
                     onInput=${(e) => { setAdName(e.target.value); setAdNameManual(true); }}
-                    placeholder="Ex: Saúde | Tráfego | Imagem"
+                    placeholder="nicho-país-cj01-an01"
                     style=${{ flex: 1 }}
                   />
-                  <button title="Sugerir nome" onClick=${() => { const v = buildAdName(nicho, objective, adFormat); if (v) { setAdName(v); setAdNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem" }}>↺</button>
+                  <button title="Sugerir nome" onClick=${() => { const v = buildAdName(nicho, countries, cjNum, anNum); if (v) { setAdName(v); setAdNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem" }}>↺</button>
                 </div>
               </div>
               <div className="field">
