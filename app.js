@@ -3553,7 +3553,7 @@ const PAISES_NICHOS = [
   "Grécia", "Croácia", "Irlanda", "Ucrânia",
 ];
 
-function PaisSelect({ value, onChange, placeholder, inputStyle }) {
+function PaisSelect({ value, onChange, placeholder, inputStyle, onEnter }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(value || "");
   const ref = useRef(null);
@@ -3572,6 +3572,20 @@ function PaisSelect({ value, onChange, placeholder, inputStyle }) {
 
   const select = (p) => { onChange(p); setQuery(p); setOpen(false); };
 
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (open && filtered.length > 0) {
+        select(filtered[0]);
+        if (onEnter) setTimeout(onEnter, 0);
+      } else if (query.trim() && onEnter) {
+        onEnter();
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
   return html`
     <div ref=${ref} style=${{ position: "relative" }}>
       <input
@@ -3579,6 +3593,7 @@ function PaisSelect({ value, onChange, placeholder, inputStyle }) {
         value=${query}
         onFocus=${() => setOpen(true)}
         onInput=${(e) => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onKeyDown=${handleKeyDown}
         placeholder=${placeholder || "Digite para buscar..."}
         style=${{ width: "100%", boxSizing: "border-box", ...inputStyle }}
       />
@@ -3803,6 +3818,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                                 <${PaisSelect}
                                   value=${editPaisInput}
                                   onChange=${(v) => setEditPaisInput(v)}
+                                  onEnter=${addEditPais}
                                   placeholder="Adicionar país..."
                                   inputStyle=${{ padding: "5px 8px", borderRadius: "8px", border: "1px solid var(--accent)", fontSize: "0.82rem", minWidth: 0 }}
                                 />
@@ -3875,6 +3891,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                 <${PaisSelect}
                   value=${newNichoPaisInput}
                   onChange=${(v) => setNewNichoPaisInput(v)}
+                  onEnter=${addNewPais}
                   placeholder="Digite para buscar..."
                   inputStyle=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
                 />
