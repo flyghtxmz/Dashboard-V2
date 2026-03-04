@@ -2830,7 +2830,8 @@ function LocationPicker({ selected, onChange }) {
   `;
 }
 
-function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels, nichos }) {
+function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels, nichos, savedUrls }) {
+  const _savedUrls = Array.isArray(savedUrls) ? savedUrls : [];
   const [step, setStep] = useState(1);
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState(null);
@@ -3628,6 +3629,13 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               </div>
               <div className="field" style=${{ gridColumn: "1 / -1" }}>
                 <label>URL de destino * (inclua UTMs!)</label>
+                ${_savedUrls.length > 0 ? html`
+                  <select style=${{ marginBottom: "6px", fontSize: "0.85rem" }}
+                    onChange=${(e) => { if (e.target.value) setDestUrl(e.target.value); e.target.value = ""; }}>
+                    <option value="">⚡ Usar URL salva...</option>
+                    ${_savedUrls.map((u, i) => html`<option key=${i} value=${u.url}>${u.nome}</option>`)}
+                  </select>
+                ` : null}
                 <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo?utm_source=fb&utm_medium=cpc&utm_content={{ad.name}}" />
                 <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
                   <span className="muted small" style=${{ alignSelf: "center" }}>Macros:</span>
@@ -3847,6 +3855,12 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [reportType, setReportType] = useState(settings.reportType || "Analytical");
   const [includeAssets, setIncludeAssets] = useState(!!settings.includeAssets);
   const [nichos, setNichos] = useState(Array.isArray(settings.nichos) ? settings.nichos : []);
+  const [urls, setUrls] = useState(Array.isArray(settings.urls) ? settings.urls : []);
+  const [newUrlNome, setNewUrlNome] = useState("");
+  const [newUrlValue, setNewUrlValue] = useState("");
+  const [editingUrlIdx, setEditingUrlIdx] = useState(null);
+  const [editUrlNome, setEditUrlNome] = useState("");
+  const [editUrlValue, setEditUrlValue] = useState("");
   const [newDomain, setNewDomain] = useState("");
   const [newNichoNome, setNewNichoNome] = useState("");
   const [newNichoSlug, setNewNichoSlug] = useState("");
@@ -3896,6 +3910,22 @@ function ConfiguracoesView({ settings, onSave, saving }) {
 
   const removeNicho = (slug) => setNichos(nichos.filter((n) => n.slug !== slug));
 
+  const addUrl = () => {
+    const nome = newUrlNome.trim();
+    const url = newUrlValue.trim();
+    if (!nome || !url) return;
+    setUrls([...urls, { nome, url }]);
+    setNewUrlNome(""); setNewUrlValue("");
+  };
+  const removeUrl = (i) => setUrls(urls.filter((_, j) => j !== i));
+  const startEditUrl = (i) => { setEditingUrlIdx(i); setEditUrlNome(urls[i].nome); setEditUrlValue(urls[i].url); };
+  const saveEditUrl = (i) => {
+    const nome = editUrlNome.trim(); const url = editUrlValue.trim();
+    if (!nome || !url) return;
+    setUrls(urls.map((u, j) => j === i ? { nome, url } : u));
+    setEditingUrlIdx(null); setEditUrlNome(""); setEditUrlValue("");
+  };
+
   const addDomain = () => {
     const d = newDomain.trim().toLowerCase();
     if (!d || domains.includes(d)) return;
@@ -3907,7 +3937,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
 
   const handleSave = async () => {
     try {
-      await onSave({ domains, metaAccountId, reportType, includeAssets, nichos });
+      await onSave({ domains, metaAccountId, reportType, includeAssets, nichos, urls });
       setSaveMsg("✓ Salvo com sucesso!");
     } catch (err) {
       setSaveMsg("Erro ao salvar: " + (err.message || "tente novamente"));
@@ -4122,6 +4152,71 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             <button className="ghost" onClick=${addNicho} disabled=${!newNichoNome.trim()} style=${{ whiteSpace: "nowrap", alignSelf: "flex-end" }}>+ Adicionar</button>
           </div>
           <p className="muted small" style=${{ marginTop: "8px" }}>O ID é gerado automaticamente a partir do nome — pode ser editado manualmente.</p>
+        </div>
+
+        <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
+          <h3 style=${{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 700 }}>URLs cadastradas</h3>
+          <p className="muted small" style=${{ marginBottom: "16px" }}>URLs salvas ficam disponíveis como atalho no campo de URL de destino ao criar anúncios.</p>
+          ${urls.length === 0
+            ? html`<p className="muted small" style=${{ marginBottom: "12px" }}>Nenhuma URL cadastrada ainda.</p>`
+            : html`
+              <div style=${{ border: "1px solid var(--border-light)", borderRadius: "14px", overflow: "hidden", marginBottom: "16px" }}>
+                <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
+                  <thead>
+                    <tr style=${{ background: "var(--surface-2, #f5f5fb)" }}>
+                      <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Nome</th>
+                      <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>URL</th>
+                      <th style=${{ width: "110px" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${urls.map((u, i) => html`
+                      <tr key=${i} style=${{ borderTop: i === 0 ? "none" : "1px solid var(--border-light)", background: editingUrlIdx === i ? "#f0f4ff" : "#fff" }}>
+                        ${editingUrlIdx === i ? html`
+                          <td style=${{ padding: "8px 10px", minWidth: "140px" }}>
+                            <input type="text" value=${editUrlNome} onInput=${(e) => setEditUrlNome(e.target.value)}
+                              style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box" }} />
+                          </td>
+                          <td style=${{ padding: "8px 10px" }}>
+                            <input type="url" value=${editUrlValue} onInput=${(e) => setEditUrlValue(e.target.value)}
+                              style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.82rem", boxSizing: "border-box", fontFamily: "monospace" }} />
+                          </td>
+                          <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                            <button className="primary" onClick=${() => saveEditUrl(i)} style=${{ padding: "4px 12px", fontSize: "0.82rem", marginRight: "4px" }}>✓</button>
+                            <button className="ghost" onClick=${() => setEditingUrlIdx(null)} style=${{ padding: "4px 10px", fontSize: "0.82rem" }}>✕</button>
+                          </td>
+                        ` : html`
+                          <td style=${{ padding: "10px 14px", fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>${u.nome}</td>
+                          <td style=${{ padding: "10px 14px", color: "var(--muted)", fontFamily: "monospace", fontSize: "0.78rem", wordBreak: "break-all" }}>${u.url}</td>
+                          <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                            <button className="ghost" onClick=${() => startEditUrl(i)} style=${{ padding: "3px 10px", fontSize: "0.8rem", marginRight: "4px" }}>Editar</button>
+                            <button onClick=${() => removeUrl(i)} style=${{ background: "none", border: "none", cursor: "pointer", color: "#c0392b", fontSize: "1rem", lineHeight: 1 }}>✕</button>
+                          </td>
+                        `}
+                      </tr>
+                    `)}
+                  </tbody>
+                </table>
+              </div>
+            `
+          }
+          <div style=${{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "160px" }}>
+              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Nome *</label>
+              <input type="text" value=${newUrlNome} onInput=${(e) => setNewUrlNome(e.target.value)}
+                placeholder="ex: Oferta principal"
+                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
+                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }} />
+            </div>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "280px" }}>
+              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>URL *</label>
+              <input type="url" value=${newUrlValue} onInput=${(e) => setNewUrlValue(e.target.value)}
+                placeholder="https://seusite.com/artigo?utm_source=fb&..."
+                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
+                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.85rem", fontFamily: "monospace" }} />
+            </div>
+            <button className="ghost" onClick=${addUrl} disabled=${!newUrlNome.trim() || !newUrlValue.trim()} style=${{ whiteSpace: "nowrap", alignSelf: "flex-end" }}>+ Adicionar</button>
+          </div>
         </div>
 
         <${MediaLibrarySection} accountId=${metaAccountId} />
@@ -6799,6 +6894,7 @@ function App() {
                 pixelsLoading=${pixelsLoading}
                 onLoadPixels=${handleLoadPixels}
                 nichos=${settingsData.nichos}
+                savedUrls=${settingsData.urls || []}
               />
             </main>
           `
