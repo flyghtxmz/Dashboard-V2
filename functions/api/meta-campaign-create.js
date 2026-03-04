@@ -147,6 +147,10 @@ export async function onRequest({ request, env }) {
     if (campaign.lifetime_budget) cp.set("lifetime_budget", String(campaign.lifetime_budget));
     if (campaign.spending_limit) cp.set("spending_limit", String(campaign.spending_limit));
     if (campaign.bid_strategy) cp.set("bid_strategy", campaign.bid_strategy);
+    // Obrigatorio quando nao usa orcamento de campanha (CBO)
+    if (!campaign.daily_budget && !campaign.lifetime_budget) {
+      cp.set("is_adset_budget_sharing_enabled", "false");
+    }
     cp.set("access_token", token);
     const campRes = await fetch(`${API_BASE}/${encodeURIComponent(account_id)}/campaigns`, { method: "POST", body: cp });
     const campData = await safeJson(campRes);
