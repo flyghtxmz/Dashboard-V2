@@ -4156,7 +4156,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
 
         <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
           <h3 style=${{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 700 }}>URLs cadastradas</h3>
-          <p className="muted small" style=${{ marginBottom: "16px" }}>URLs salvas ficam disponíveis como atalho no campo de URL de destino ao criar anúncios.</p>
+          <p className="muted small" style=${{ marginBottom: "16px" }}>Cadastre a URL base (sem UTMs). As UTMs serão adicionadas diretamente no campo de URL ao criar o anúncio.</p>
           ${urls.length === 0
             ? html`<p className="muted small" style=${{ marginBottom: "12px" }}>Nenhuma URL cadastrada ainda.</p>`
             : html`
@@ -4211,7 +4211,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "280px" }}>
               <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>URL *</label>
               <input type="url" value=${newUrlValue} onInput=${(e) => setNewUrlValue(e.target.value)}
-                placeholder="https://seusite.com/artigo?utm_source=fb&..."
+                placeholder="https://seusite.com/artigo"
                 onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
                 style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.85rem", fontFamily: "monospace" }} />
             </div>
