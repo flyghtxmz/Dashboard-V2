@@ -3630,10 +3630,17 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               <div className="field" style=${{ gridColumn: "1 / -1" }}>
                 <label>URL de destino * (inclua UTMs!)</label>
 ${(() => {
+                  const UTM_SUFFIX = `utm_source=fb&utm_medium=cpc&utm_campaign=${encodeURIComponent(campName)}&utm_term=${encodeURIComponent(adsetName)}&utm_content=${encodeURIComponent(adName)}&ad_id={{ad.id}}`;
                   const filtered = _savedUrls.filter((u) => !u.nicho || !nicho || u.nicho === nicho.slug);
                   return filtered.length > 0 ? html`
                     <select style=${{ marginBottom: "6px", fontSize: "0.85rem" }}
-                      onChange=${(e) => { if (e.target.value) setDestUrl(e.target.value); e.target.value = ""; }}>
+                      onChange=${(e) => {
+                        if (!e.target.value) return;
+                        const base = e.target.value;
+                        const sep = base.includes("?") ? "&" : "?";
+                        setDestUrl(base + sep + UTM_SUFFIX);
+                        e.target.value = "";
+                      }}>
                       <option value="">⚡ Usar URL salva...</option>
                       ${filtered.map((u, i) => html`<option key=${i} value=${u.url}>${u.nome}</option>`)}
                     </select>
