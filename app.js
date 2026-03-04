@@ -2866,6 +2866,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [gender, setGender] = useState("all");
   const [placementMode, setPlacementMode] = useState("auto");
   const [manualPlacements, setManualPlacements] = useState({ ...EMPTY_PLACEMENTS });
+  const [advantageAudience, setAdvantageAudience] = useState(0);
   const [optGoal, setOptGoal] = useState("LINK_CLICKS");
   const [bidStrategy, setBidStrategy] = useState("LOWEST_COST_WITHOUT_CAP");
   const [bidAmount, setBidAmount] = useState("");
@@ -2950,6 +2951,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     genders: gender === "male" ? [1] : gender === "female" ? [2] : [],
     device_platforms: devicePlatforms,
     ...(placementMode === "manual" ? { manual_placements: manualPlacements } : {}),
+    advantage_audience: advantageAudience,
     ...(startTime ? { start_time: new Date(startTime).toISOString() } : {}),
     ...(endTime ? { end_time: new Date(endTime).toISOString() } : {}),
     ...(pixelId ? { pixel_id: pixelId.trim(), conversion_event: conversionEvent } : {}),
@@ -3004,7 +3006,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
-    setPlacementMode("auto"); setManualPlacements({ ...EMPTY_PLACEMENTS });
+    setPlacementMode("auto"); setManualPlacements({ ...EMPTY_PLACEMENTS }); setAdvantageAudience(0);
     setOptGoal("LINK_CLICKS"); setBidStrategy("LOWEST_COST_WITHOUT_CAP");
     setBidAmount(""); setStartTime(""); setEndTime("");
     setPixelId(""); setConversionEvent("PURCHASE"); setDevicePlatforms(["mobile", "desktop"]);
@@ -3467,6 +3469,19 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                 `)}
               </div>
             ` : null}
+            <div style=${{ marginTop: "14px", paddingTop: "12px", borderTop: "1px solid var(--border-light)" }}>
+              <strong style=${{ display: "block", marginBottom: "8px", fontSize: "0.85rem" }}>Público Advantage+</strong>
+              <div style=${{ display: "flex", gap: "20px" }}>
+                <label className="checkbox" style=${{ cursor: "pointer" }}>
+                  <input type="radio" name="advantageAudience" checked=${advantageAudience === 0} onChange=${() => setAdvantageAudience(0)} />
+                  Desativado — usar meu públio definido
+                </label>
+                <label className="checkbox" style=${{ cursor: "pointer" }}>
+                  <input type="radio" name="advantageAudience" checked=${advantageAudience === 1} onChange=${() => setAdvantageAudience(1)} />
+                  Ativado — Meta pode expandir o público
+                </label>
+              </div>
+            </div>
           </div>
 
           ${savedAdsets.length > 0 ? html`
