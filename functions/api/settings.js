@@ -52,7 +52,11 @@ export async function onRequest({ request, env }) {
     const includeAssets = !!body.includeAssets;
     const nichos = Array.isArray(body.nichos)
       ? body.nichos.filter((n) => n && typeof n.nome === "string" && n.nome.trim())
-          .map((n) => ({ nome: n.nome.trim(), slug: (n.slug || "").trim(), pais: (n.pais || "").trim() }))
+          .map((n) => ({
+            nome: n.nome.trim(),
+            slug: (n.slug || "").trim(),
+            paises: Array.isArray(n.paises) ? n.paises.map((p) => String(p).trim()).filter(Boolean) : (n.pais ? [String(n.pais).trim()] : []),
+          }))
       : [];
 
     const settings = { domains, metaAccountId, reportType, includeAssets, nichos };

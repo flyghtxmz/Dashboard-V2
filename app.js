@@ -3059,7 +3059,10 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                   setNicho(found || null);
                 }}>
                   <option value="">— Selecione um nicho —</option>
-                  ${(nichos || []).map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}${n.pais ? ` — ${n.pais}` : ""}</option>`)}
+                  ${(nichos || []).map((n) => {
+                    const lista = Array.isArray(n.paises) ? n.paises : (n.pais ? [n.pais] : []);
+                    return html`<option key=${n.slug} value=${n.slug}>${n.nome}${lista.length ? ` — ${lista.join(", ")}` : ""}</option>`;
+                  })}
                 </select>
               ` : html`
                 <select disabled>
@@ -3611,11 +3614,13 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [newDomain, setNewDomain] = useState("");
   const [newNichoNome, setNewNichoNome] = useState("");
   const [newNichoSlug, setNewNichoSlug] = useState("");
-  const [newNichoPais, setNewNichoPais] = useState("");
+  const [newNichoPaises, setNewNichoPaises] = useState([]);
+  const [newNichoPaisInput, setNewNichoPaisInput] = useState("");
   const [editingSlug, setEditingSlug] = useState(null);
   const [editNome, setEditNome] = useState("");
   const [editSlug, setEditSlug] = useState("");
-  const [editPais, setEditPais] = useState("");
+  const [editPaises, setEditPaises] = useState([]);
+  const [editPaisInput, setEditPaisInput] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
 
   const toSlug = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -3625,17 +3630,31 @@ function ConfiguracoesView({ settings, onSave, saving }) {
     if (!nome) return;
     const slug = newNichoSlug.trim() || toSlug(nome);
     if (nichos.find((n) => n.slug === slug)) return;
-    setNichos([...nichos, { nome, slug, pais: newNichoPais.trim() }]);
-    setNewNichoNome(""); setNewNichoSlug(""); setNewNichoPais("");
+    setNichos([...nichos, { nome, slug, paises: newNichoPaises }]);
+    setNewNichoNome(""); setNewNichoSlug(""); setNewNichoPaises([]); setNewNichoPaisInput("");
   };
 
-  const startEditNicho = (n) => { setEditingSlug(n.slug); setEditNome(n.nome); setEditSlug(n.slug); setEditPais(n.pais || ""); };
-  const cancelEditNicho = () => { setEditingSlug(null); setEditNome(""); setEditSlug(""); setEditPais(""); };
+  const addNewPais = () => {
+    const p = newNichoPaisInput.trim();
+    if (!p || newNichoPaises.includes(p)) return;
+    setNewNichoPaises([...newNichoPaises, p]);
+    setNewNichoPaisInput("");
+  };
+
+  const addEditPais = () => {
+    const p = editPaisInput.trim();
+    if (!p || editPaises.includes(p)) return;
+    setEditPaises([...editPaises, p]);
+    setEditPaisInput("");
+  };
+
+  const startEditNicho = (n) => { setEditingSlug(n.slug); setEditNome(n.nome); setEditSlug(n.slug); setEditPaises(Array.isArray(n.paises) ? n.paises : (n.pais ? [n.pais] : [])); setEditPaisInput(""); };
+  const cancelEditNicho = () => { setEditingSlug(null); setEditNome(""); setEditSlug(""); setEditPaises([]); setEditPaisInput(""); };
   const saveEditNicho = (originalSlug) => {
     const nome = editNome.trim();
     const slug = editSlug.trim() || toSlug(nome);
     if (!nome || !slug) return;
-    setNichos(nichos.map((n) => n.slug === originalSlug ? { nome, slug, pais: editPais.trim() } : n));
+    setNichos(nichos.map((n) => n.slug === originalSlug ? { nome, slug, paises: editPaises } : n));
     cancelEditNicho();
   };
 
@@ -3771,13 +3790,24 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                               <input type="text" value=${editSlug} onInput=${(e) => setEditSlug(e.target.value)} placeholder=${toSlug(editNome)}
                                 style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box", fontFamily: "monospace" }} />
                             </td>
-                            <td style=${{ padding: "8px 10px" }}>
-                              <${PaisSelect}
-                                value=${editPais}
-                                onChange=${(v) => setEditPais(v)}
-                                placeholder="Digite o país..."
-                                inputStyle=${{ padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem" }}
-                              />
+                            <td style=${{ padding: "8px 10px", verticalAlign: "top" }}>
+                              <div style=${{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: editPaises.length ? "6px" : 0 }}>
+                                ${editPaises.map((p) => html`
+                                  <span key=${p} style=${{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "999px", background: "#eef0ff", border: "1px solid #d0d3f8", fontSize: "0.78rem", fontWeight: 600, color: "var(--ink)" }}>
+                                    ${p}
+                                    <button onMouseDown=${(e) => { e.preventDefault(); setEditPaises(editPaises.filter((x) => x !== p)); }} style=${{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "0.7rem", padding: 0, lineHeight: 1 }}>✕</button>
+                                  </span>
+                                `)}
+                              </div>
+                              <div style=${{ display: "flex", gap: "4px" }}>
+                                <${PaisSelect}
+                                  value=${editPaisInput}
+                                  onChange=${(v) => setEditPaisInput(v)}
+                                  placeholder="Adicionar país..."
+                                  inputStyle=${{ padding: "5px 8px", borderRadius: "8px", border: "1px solid var(--accent)", fontSize: "0.82rem", minWidth: 0 }}
+                                />
+                                <button onClick=${addEditPais} disabled=${!editPaisInput.trim()} style=${{ padding: "4px 8px", borderRadius: "8px", border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff", fontSize: "0.78rem", cursor: "pointer", whiteSpace: "nowrap" }}>+</button>
+                              </div>
                             </td>
                             <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                               <button className="primary" onClick=${() => saveEditNicho(n.slug)} style=${{ padding: "4px 12px", fontSize: "0.82rem", marginRight: "4px" }}>✓</button>
@@ -3786,7 +3816,16 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                           ` : html`
                             <td style=${{ padding: "10px 14px", fontWeight: 600, color: "var(--ink)" }}>${n.nome}</td>
                             <td style=${{ padding: "10px 14px", color: "var(--muted)", fontFamily: "monospace", fontSize: "0.82rem" }}>${n.slug}</td>
-                            <td style=${{ padding: "10px 14px", color: "var(--ink)", fontSize: "0.85rem" }}>${n.pais || html`<span className="muted">—</span>`}</td>
+                            <td style=${{ padding: "10px 14px" }}>
+                              ${(() => {
+                                const lista = Array.isArray(n.paises) ? n.paises : (n.pais ? [n.pais] : []);
+                                return lista.length
+                                  ? html`<div style=${{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                                      ${lista.map((p) => html`<span key=${p} style=${{ padding: "2px 8px", borderRadius: "999px", background: "#eef0ff", border: "1px solid #d0d3f8", fontSize: "0.78rem", fontWeight: 600, color: "var(--ink)" }}>${p}</span>`)}
+                                    </div>`
+                                  : html`<span className="muted">—</span>`;
+                              })()}
+                            </td>
                             <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                               <button className="ghost" onClick=${() => startEditNicho(n)} style=${{ padding: "3px 10px", fontSize: "0.8rem", marginRight: "4px" }}>Editar</button>
                               <button onClick=${() => removeNicho(n.slug)} style=${{ background: "none", border: "none", cursor: "pointer", color: "#c0392b", fontSize: "1rem", lineHeight: 1 }}>✕</button>
@@ -3823,13 +3862,24 @@ function ConfiguracoesView({ settings, onSave, saving }) {
               />
             </div>
             <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 2, minWidth: "150px" }}>
-              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>País</label>
-              <${PaisSelect}
-                value=${newNichoPais}
-                onChange=${(v) => setNewNichoPais(v)}
-                placeholder="Digite para buscar..."
-                inputStyle=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
-              />
+              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Países</label>
+              <div style=${{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: newNichoPaises.length ? "6px" : 0 }}>
+                ${newNichoPaises.map((p) => html`
+                  <span key=${p} style=${{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 9px", borderRadius: "999px", background: "#eef0ff", border: "1px solid #d0d3f8", fontSize: "0.8rem", fontWeight: 600, color: "var(--ink)" }}>
+                    ${p}
+                    <button onMouseDown=${(e) => { e.preventDefault(); setNewNichoPaises(newNichoPaises.filter((x) => x !== p)); }} style=${{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "0.7rem", padding: 0, lineHeight: 1 }}>✕</button>
+                  </span>
+                `)}
+              </div>
+              <div style=${{ display: "flex", gap: "6px" }}>
+                <${PaisSelect}
+                  value=${newNichoPaisInput}
+                  onChange=${(v) => setNewNichoPaisInput(v)}
+                  placeholder="Digite para buscar..."
+                  inputStyle=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
+                />
+                <button onClick=${addNewPais} disabled=${!newNichoPaisInput.trim()} style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", fontSize: "0.88rem", cursor: "pointer", whiteSpace: "nowrap" }}>+ País</button>
+              </div>
             </div>
             <button className="ghost" onClick=${addNicho} disabled=${!newNichoNome.trim()} style=${{ whiteSpace: "nowrap", alignSelf: "flex-end" }}>+ Adicionar</button>
           </div>
