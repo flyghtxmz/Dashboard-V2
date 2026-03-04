@@ -1493,7 +1493,7 @@ function EditarView({
             <h2 className="section-title">Anúncios</h2>
           </div>
           <div className="chip-group">
-            <button className="ghost" onClick=${onLoad} disabled=${loading}>
+            <button className="ghost" onClick=${() => onLoad(true)} disabled=${loading}>
               ${loading ? "Carregando..." : "↻ Carregar anúncios"}
             </button>
             <span className="chip neutral">${ads.length} anúncios</span>
@@ -5497,7 +5497,7 @@ function App() {
     });
   };
 
-  const handleLoadEditar = async () => {
+  const handleLoadEditar = async (force = false) => {
     if (!filters.metaAccountId.trim()) {
       setEditError("Informe o ID da conta de anúncios (Meta).");
       return;
@@ -5505,16 +5505,9 @@ function App() {
     setEditLoading(true);
     setEditError("");
     try {
-      const res = await fetchJson(
-        `${API_BASE}/meta-ad-edit-list?${new URLSearchParams({
-          account_id: filters.metaAccountId.trim(),
-        }).toString()}`,
-        {
-          cacheTtlMs: 5 * 60 * 1000,
-          cacheKey: `meta-edit-list:${filters.metaAccountId.trim()}`,
-          force: true,
-        }
-      );
+      const qs = new URLSearchParams({ account_id: filters.metaAccountId.trim() });
+      if (force) qs.set("force", "1");
+      const res = await fetchJson(`${API_BASE}/meta-structure?${qs.toString()}`);
       const cache = loadEditDestinationCache();
       const rows = (res.data || []).map((row) => {
         if (row.destination_url) return row;
@@ -5524,7 +5517,7 @@ function App() {
       setEditAds(rows);
     } catch (err) {
       setEditError(formatError(err));
-      pushLog("meta-edit-list", err);
+      pushLog("meta-structure", err);
       setEditAds([]);
     } finally {
       setEditLoading(false);
