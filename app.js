@@ -1425,11 +1425,22 @@ function EditarView({
   onDeleteAdset,
   deleting,
   togglingStatus,
+  hiddenCampaigns,
+  onHideCampaign,
+  onUnhideCampaign,
 }) {
   const [expandedCampaigns, setExpandedCampaigns] = useState(() => new Set());
   const [expandedAdsets, setExpandedAdsets] = useState(() => new Set());
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [editingUrlId, setEditingUrlId] = useState(null);
+
+  const allCampaigns = useMemo(() => {
+    const map = new Map();
+    for (const ad of ads) {
+      if (ad.campaign_id && !map.has(ad.campaign_id)) map.set(ad.campaign_id, { id: ad.campaign_id, name: ad.campaign_name || ad.campaign_id });
+    }
+    return [...map.values()];
+  }, [ads]);
 
   const toggleCampaign = (id) =>
     setExpandedCampaigns((prev) => {
@@ -1514,6 +1525,20 @@ function EditarView({
 
         ${error ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>` : null}
 
+        ${(hiddenCampaigns && hiddenCampaigns.size > 0) ? html`
+          <div style=${{ marginBottom: "10px", display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+            <span className="muted small">${hiddenCampaigns.size} campanha(s) oculta(s) do Dashboard:</span>
+            ${[...hiddenCampaigns].map((cid) => {
+              const camp = allCampaigns.find((c) => c.id === cid);
+              return html`<span key=${cid} className="chip neutral" style=${{ fontSize: "11px", gap: "4px" }}>
+                ${camp ? camp.name : cid}
+                <button className="ghost small" style=${{ padding: "0 4px", fontSize: "11px", marginLeft: "2px" }}
+                  onClick=${() => onUnhideCampaign?.(cid)} title="Mostrar novamente no Dashboard">
+                  ✕
+                </button>
+              </span>`;
+            })}
+          </div>` : null}
         ${campaigns.length === 0
           ? html`<div className="muted" style=${{ padding: "32px", textAlign: "center" }}>
               ${loading ? "Buscando anúncios..." : 'Clique em "↻ Carregar anúncios" para começar.'}
@@ -1528,6 +1553,14 @@ function EditarView({
                     <strong style=${{ flex: 1 }}>${campaign.name}</strong>
                     <span className="chip neutral">${campaign.adsets.length} conjuntos</span>
                     <span className="chip neutral">${totalAds} anúncios</span>
+                    <button
+                      className="ghost small btn-danger"
+                      title="Ocultar campanha do Dashboard"
+                      onClick=${(e) => { e.stopPropagation(); onHideCampaign?.(campaign.id); }}
+                      style=${{ marginLeft: "4px" }}
+                    >
+                      🙈 Ocultar do Dashboard
+                    </button>
                   </div>
 
                   ${isExpCamp
@@ -4822,6 +4855,12 @@ function App() {
   const [editRenaming, setEditRenaming] = useState({});
   const [editDeleting, setEditDeleting] = useState({});
   const [editTogglingStatus, setEditTogglingStatus] = useState({});
+  const [hiddenCampaigns, setHiddenCampaigns] = useState(() => {
+    try {
+      const raw = localStorage.getItem("__cd_hidden_camps__");
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch (e) { return new Set(); }
+  });
   const [pagesLoading, setPagesLoading] = useState(false);
   const [pagesError, setPagesError] = useState("");
   const [pagesList, setPagesList] = useState([]);
@@ -5432,6 +5471,30 @@ function App() {
     } catch (e) {
       // ignore
     }
+  };
+
+  const saveHiddenCampaigns = (set) => {
+    try {
+      localStorage.setItem("__cd_hidden_camps__", JSON.stringify([...set]));
+    } catch (e) {}
+  };
+
+  const handleHideCampaign = (campaignId) => {
+    setHiddenCampaigns((prev) => {
+      const next = new Set(prev);
+      next.add(campaignId);
+      saveHiddenCampaigns(next);
+      return next;
+    });
+  };
+
+  const handleUnhideCampaign = (campaignId) => {
+    setHiddenCampaigns((prev) => {
+      const next = new Set(prev);
+      next.delete(campaignId);
+      saveHiddenCampaigns(next);
+      return next;
+    });
   };
 
   const handleLoadEditar = async () => {
@@ -6602,6 +6665,7 @@ function App() {
     const term = filters.adsetFilter.trim().toLowerCase();
     const domainKey = normalizeKey(appliedFilters?.domain || filters.domain || "");
     const base = mergedMeta.filter((row) => {
+      if (hiddenCampaigns.has(row.campaign_id)) return false;
       if (!domainKey) return true;
       const host = getHostname(row.destination_url);
       if (!host) return true;
@@ -6611,7 +6675,7 @@ function App() {
     return base.filter((row) =>
       (row.adset_name || "").toLowerCase().includes(term)
     );
-  }, [mergedMeta, filters.adsetFilter, appliedFilters, filters.domain]);
+  }, [mergedMeta, filters.adsetFilter, appliedFilters, filters.domain, hiddenCampaigns]);
 
   const filteredMeta = useMemo(() => {
     if (isTodaySelected) {
@@ -7089,6 +7153,9 @@ function App() {
               onDeleteAdset=${handleDeleteEditAdset}
               deleting=${editDeleting}
               togglingStatus=${editTogglingStatus}
+              hiddenCampaigns=${hiddenCampaigns}
+              onHideCampaign=${handleHideCampaign}
+              onUnhideCampaign=${handleUnhideCampaign}
             />
           `
         : activeTab === "urls"
