@@ -3051,9 +3051,9 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
           </div>
           <div className="filters">
-            ${nichos && nichos.length > 0 ? html`
-              <div className="field" style=${{ gridColumn: "1 / -1" }}>
-                <label>Nicho <span className="muted small">(opcional)</span></label>
+            <div className="field" style=${{ gridColumn: "1 / -1" }}>
+              <label>Nicho <span className="muted small">(opcional)</span></label>
+              ${nichos && nichos.length > 0 ? html`
                 <select value=${nicho ? nicho.slug : ""} onChange=${(e) => {
                   const found = (nichos || []).find((n) => n.slug === e.target.value);
                   setNicho(found || null);
@@ -3061,8 +3061,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                   <option value="">— Selecione um nicho —</option>
                   ${(nichos || []).map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}</option>`)}
                 </select>
-              </div>
-            ` : null}
+              ` : html`
+                <select disabled>
+                  <option>Nenhum nicho cadastrado — acesse Configurações para adicionar</option>
+                </select>
+              `}
+            </div>
             <div className="field">
               <label>Nome da campanha *</label>
               <input type="text" value=${campName} onInput=${(e) => setCampName(e.target.value)} placeholder="Ex: Tráfego BR — Artigo Saúde" />
