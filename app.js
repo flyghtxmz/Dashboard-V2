@@ -3059,7 +3059,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                   setNicho(found || null);
                 }}>
                   <option value="">— Selecione um nicho —</option>
-                  ${(nichos || []).map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}</option>`)}
+                  ${(nichos || []).map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}${n.pais ? ` — ${n.pais}` : ""}</option>`)}
                 </select>
               ` : html`
                 <select disabled>
@@ -3536,6 +3536,20 @@ const DEFAULT_DOMAINS = [
   "intre.remediototal.com.br",
 ];
 
+const PAISES_NICHOS = [
+  // América do Sul
+  "Argentina", "Bolívia", "Brasil", "Chile", "Colômbia", "Equador",
+  "Guiana", "Guiana Francesa", "Paraguai", "Peru", "Suriname", "Uruguai", "Venezuela",
+  // América do Norte
+  "Estados Unidos", "Canadá", "México", "Cuba", "Guatemala", "Honduras",
+  "Costa Rica", "Panamá", "República Dominicana", "El Salvador", "Nicarágua",
+  // Europa
+  "Alemanha", "França", "Espanha", "Portugal", "Itália", "Reino Unido",
+  "Países Baixos", "Bélgica", "Suécia", "Noruega", "Dinamarca", "Finlândia",
+  "Suíça", "Áustria", "Polônia", "República Tcheca", "Hungria", "Romênia",
+  "Grécia", "Croácia", "Irlanda", "Ucrânia",
+];
+
 function ConfiguracoesView({ settings, onSave, saving }) {
   const [domains, setDomains] = useState(settings.domains?.length ? settings.domains : [...DEFAULT_DOMAINS]);
   const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
@@ -3545,9 +3559,11 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [newDomain, setNewDomain] = useState("");
   const [newNichoNome, setNewNichoNome] = useState("");
   const [newNichoSlug, setNewNichoSlug] = useState("");
+  const [newNichoPais, setNewNichoPais] = useState("");
   const [editingSlug, setEditingSlug] = useState(null);
   const [editNome, setEditNome] = useState("");
   const [editSlug, setEditSlug] = useState("");
+  const [editPais, setEditPais] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
 
   const toSlug = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -3557,17 +3573,17 @@ function ConfiguracoesView({ settings, onSave, saving }) {
     if (!nome) return;
     const slug = newNichoSlug.trim() || toSlug(nome);
     if (nichos.find((n) => n.slug === slug)) return;
-    setNichos([...nichos, { nome, slug }]);
-    setNewNichoNome(""); setNewNichoSlug("");
+    setNichos([...nichos, { nome, slug, pais: newNichoPais.trim() }]);
+    setNewNichoNome(""); setNewNichoSlug(""); setNewNichoPais("");
   };
 
-  const startEditNicho = (n) => { setEditingSlug(n.slug); setEditNome(n.nome); setEditSlug(n.slug); };
-  const cancelEditNicho = () => { setEditingSlug(null); setEditNome(""); setEditSlug(""); };
+  const startEditNicho = (n) => { setEditingSlug(n.slug); setEditNome(n.nome); setEditSlug(n.slug); setEditPais(n.pais || ""); };
+  const cancelEditNicho = () => { setEditingSlug(null); setEditNome(""); setEditSlug(""); setEditPais(""); };
   const saveEditNicho = (originalSlug) => {
     const nome = editNome.trim();
     const slug = editSlug.trim() || toSlug(nome);
     if (!nome || !slug) return;
-    setNichos(nichos.map((n) => n.slug === originalSlug ? { nome, slug } : n));
+    setNichos(nichos.map((n) => n.slug === originalSlug ? { nome, slug, pais: editPais.trim() } : n));
     cancelEditNicho();
   };
 
@@ -3675,6 +3691,10 @@ function ConfiguracoesView({ settings, onSave, saving }) {
         </div>
 
         <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
+          <datalist id="paises-nicho-list">
+            ${PAISES_NICHOS.map((p) => html`<option key=${p} value=${p} />`)}
+          </datalist>
+
           <h3 style=${{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 700 }}>Nichos</h3>
           <p className="muted small" style=${{ marginBottom: "16px" }}>Nichos cadastrados aparecem no Passo 1 da criação de campanhas e serão usados para padronizar nomes, URLs e UTMs.</p>
           ${nichos.length === 0
@@ -3685,7 +3705,8 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                     <thead>
                       <tr style=${{ background: "var(--surface-2, #f5f5fb)" }}>
                         <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Nome</th>
-                        <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Slug</th>
+                        <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>ID</th>
+                        <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>País</th>
                         <th style=${{ width: "120px" }}></th>
                       </tr>
                     </thead>
@@ -3701,14 +3722,20 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                               <input type="text" value=${editSlug} onInput=${(e) => setEditSlug(e.target.value)} placeholder=${toSlug(editNome)}
                                 style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box", fontFamily: "monospace" }} />
                             </td>
-                            <td style=${{ padding: "8px 10px", textAlign: "right" }}>
+                            <td style=${{ padding: "8px 10px" }}>
+                              <input type="text" list="paises-nicho-list" value=${editPais} onInput=${(e) => setEditPais(e.target.value)}
+                                placeholder="Digite o país..."
+                                style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box" }} />
+                            </td>
+                            <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                               <button className="primary" onClick=${() => saveEditNicho(n.slug)} style=${{ padding: "4px 12px", fontSize: "0.82rem", marginRight: "4px" }}>✓</button>
                               <button className="ghost" onClick=${cancelEditNicho} style=${{ padding: "4px 10px", fontSize: "0.82rem" }}>✕</button>
                             </td>
                           ` : html`
                             <td style=${{ padding: "10px 14px", fontWeight: 600, color: "var(--ink)" }}>${n.nome}</td>
                             <td style=${{ padding: "10px 14px", color: "var(--muted)", fontFamily: "monospace", fontSize: "0.82rem" }}>${n.slug}</td>
-                            <td style=${{ padding: "8px 10px", textAlign: "right" }}>
+                            <td style=${{ padding: "10px 14px", color: "var(--ink)", fontSize: "0.85rem" }}>${n.pais || html`<span className="muted">—</span>`}</td>
+                            <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                               <button className="ghost" onClick=${() => startEditNicho(n)} style=${{ padding: "3px 10px", fontSize: "0.8rem", marginRight: "4px" }}>Editar</button>
                               <button onClick=${() => removeNicho(n.slug)} style=${{ background: "none", border: "none", cursor: "pointer", color: "#c0392b", fontSize: "1rem", lineHeight: 1 }}>✕</button>
                             </td>
@@ -3720,26 +3747,44 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                 </div>
               `
             }
-          <div style=${{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-            <input
-              type="text"
-              value=${newNichoNome}
-              onInput=${(e) => { setNewNichoNome(e.target.value); setNewNichoSlug(toSlug(e.target.value)); }}
-              onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
-              placeholder="Nome (ex: Saúde)"
-              style=${{ flex: 2, minWidth: "160px", padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
-            />
-            <input
-              type="text"
-              value=${newNichoSlug}
-              onInput=${(e) => setNewNichoSlug(e.target.value)}
-              onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
-              placeholder="Slug (ex: saude)"
-              style=${{ flex: 1, minWidth: "130px", padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem", fontFamily: "monospace" }}
-            />
-            <button className="ghost" onClick=${addNicho} disabled=${!newNichoNome.trim()}>+ Adicionar</button>
+          <div style=${{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 2, minWidth: "150px" }}>
+              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Nome *</label>
+              <input
+                type="text"
+                value=${newNichoNome}
+                onInput=${(e) => { setNewNichoNome(e.target.value); setNewNichoSlug(toSlug(e.target.value)); }}
+                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
+                placeholder="ex: Saúde"
+                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
+              />
+            </div>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "120px" }}>
+              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>ID</label>
+              <input
+                type="text"
+                value=${newNichoSlug}
+                onInput=${(e) => setNewNichoSlug(e.target.value)}
+                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
+                placeholder="ex: saude"
+                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem", fontFamily: "monospace" }}
+              />
+            </div>
+            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 2, minWidth: "150px" }}>
+              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>País</label>
+              <input
+                type="text"
+                list="paises-nicho-list"
+                value=${newNichoPais}
+                onInput=${(e) => setNewNichoPais(e.target.value)}
+                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
+                placeholder="Digite para buscar..."
+                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
+              />
+            </div>
+            <button className="ghost" onClick=${addNicho} disabled=${!newNichoNome.trim()} style=${{ whiteSpace: "nowrap", alignSelf: "flex-end" }}>+ Adicionar</button>
           </div>
-          <p className="muted small" style=${{ marginTop: "8px" }}>O slug é gerado automaticamente a partir do nome — pode ser editado manualmente.</p>
+          <p className="muted small" style=${{ marginTop: "8px" }}>O ID é gerado automaticamente a partir do nome — pode ser editado manualmente.</p>
         </div>
       </section>
     </main>
