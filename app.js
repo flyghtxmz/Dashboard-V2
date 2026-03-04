@@ -3977,7 +3977,7 @@ function MediaLibrarySection({ accountId }) {
   const [labels, setLabels] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [openFolders, setOpenFolders] = useState({});
+  const [currentFolder, setCurrentFolder] = useState(null);
   const [editingKey, setEditingKey] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [movingKey, setMovingKey] = useState(null);
@@ -4003,7 +4003,7 @@ function MediaLibrarySection({ accountId }) {
 
   const loadMedia = async () => {
     if (!accountId) { setError("Configure o ID da conta Meta primeiro."); return; }
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setCurrentFolder(null); setEditingKey(null); setMovingKey(null);
     try {
       const [lbs, r] = await Promise.all([
         fetchLabels(accountId),
@@ -4012,11 +4012,7 @@ function MediaLibrarySection({ accountId }) {
       setLabels(lbs);
       const d = await r.json();
       if (d.code === "success") {
-        const all = [...d.data.images, ...d.data.videos];
-        setMedia(all);
-        const fo = {};
-        all.forEach((item) => { fo[getFolder(item, lbs)] = true; });
-        setOpenFolders(fo);
+        setMedia([...d.data.images, ...d.data.videos]);
       } else {
         setError(d.error || "Erro ao carregar mídias");
       }
@@ -4049,8 +4045,8 @@ function MediaLibrarySection({ accountId }) {
   const commitMove = (key) => {
     const folder = moveValue.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || "geral";
     saveLabel(key, { folder });
-    setOpenFolders((prev) => ({ ...prev, [folder]: true }));
     setMovingKey(null);
+    setCurrentFolder(folder);
   };
 
   const folderMap = {};
@@ -4060,6 +4056,52 @@ function MediaLibrarySection({ accountId }) {
     folderMap[f].push(item);
   });
   const folderNames = Object.keys(folderMap).sort();
+
+  const MediaCard = (item) => html`
+    <div key=${item.key} style=${{ width: "130px", border: "1px solid var(--border-light)", borderRadius: "12px", overflow: "hidden", background: "#fff", flexShrink: 0 }}>
+      <div style=${{ width: "130px", height: "90px", background: "#eee", overflow: "hidden", position: "relative" }}>
+        ${item.url
+          ? html`<img src=${item.url} alt=${item.name} style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />`
+          : html`<div style=${{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>${item.type === "video" ? "🎬" : "🖼️"}</div>`
+        }
+        <span style=${{ position: "absolute", top: "4px", right: "4px", background: item.type === "video" ? "#1a1a2e" : "#5758e8", color: "#fff", fontSize: "0.62rem", fontWeight: 700, padding: "2px 5px", borderRadius: "6px", textTransform: "uppercase" }}>${item.type === "video" ? "VID" : "IMG"}</span>
+      </div>
+      <div style=${{ padding: "8px 8px 6px" }}>
+        ${editingKey === item.key ? html`
+          <input
+            type="text" value=${editValue}
+            onInput=${(e) => setEditValue(e.target.value)}
+            onKeyDown=${(e) => { if (e.key === "Enter") commitRename(item.key); if (e.key === "Escape") setEditingKey(null); }}
+            style=${{ width: "100%", boxSizing: "border-box", padding: "3px 6px", borderRadius: "7px", border: "1px solid var(--accent)", fontSize: "0.75rem" }}
+          />
+          <button onClick=${() => commitRename(item.key)} style=${{ marginTop: "4px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "var(--accent)", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>✓ Salvar</button>
+        ` : html`
+          <p style=${{ margin: "0 0 5px", fontSize: "0.74rem", fontWeight: 600, color: "var(--ink)", wordBreak: "break-all", lineHeight: 1.3 }}>${getDisplayName(item)}</p>
+          <div style=${{ display: "flex", gap: "4px" }}>
+            <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>✏️</button>
+            <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover para pasta" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>📂</button>
+          </div>
+        `}
+        ${movingKey === item.key && editingKey !== item.key ? html`
+          <div style=${{ marginTop: "5px" }}>
+            <input
+              type="text" value=${moveValue}
+              onInput=${(e) => setMoveValue(e.target.value)}
+              onKeyDown=${(e) => { if (e.key === "Enter") commitMove(item.key); if (e.key === "Escape") setMovingKey(null); }}
+              placeholder="nome-da-pasta"
+              style=${{ width: "100%", boxSizing: "border-box", padding: "3px 6px", borderRadius: "7px", border: "1px solid #f0a500", fontSize: "0.72rem" }}
+            />
+            <button onClick=${() => commitMove(item.key)} style=${{ marginTop: "3px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "#f0a500", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>Mover</button>
+          </div>
+        ` : null}
+      </div>
+    </div>
+  `;
+
+  const folderPreviewUrl = (folder) => {
+    const first = (folderMap[folder] || []).find((i) => i.url);
+    return first ? first.url : null;
+  };
 
   return html`
     <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
@@ -4075,68 +4117,54 @@ function MediaLibrarySection({ accountId }) {
 
       ${error ? html`<div className="status error" style=${{ marginBottom: "12px" }}>${error}</div>` : null}
 
-      ${media.length > 0 ? html`<p className="muted small" style=${{ marginBottom: "10px" }}>${media.length} mídias${saving ? " — salvando..." : ""}</p>` : null}
-
-      ${folderNames.map((folder) => {
-        const items = folderMap[folder];
-        const isOpen = openFolders[folder] !== false;
-        return html`
-          <div key=${folder} style=${{ border: "1px solid var(--border-light)", borderRadius: "14px", marginBottom: "10px", overflow: "hidden" }}>
+      ${media.length > 0 ? html`
+        <div style=${{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+          ${currentFolder !== null ? html`
             <button
-              onClick=${() => setOpenFolders((prev) => ({ ...prev, [folder]: !prev[folder] }))}
-              style=${{ width: "100%", display: "flex", alignItems: "center", gap: "8px", padding: "10px 16px", background: "var(--surface-2, #f5f5fb)", border: "none", cursor: "pointer", textAlign: "left", fontSize: "0.9rem", fontWeight: 700, color: "var(--ink)" }}
-            >
-              <span>${isOpen ? "▾" : "▸"}</span>
-              <span>📁 ${folder}</span>
-              <span style=${{ fontWeight: 400, color: "var(--muted)", fontSize: "0.82rem" }}>${items.length} item${items.length !== 1 ? "s" : ""}</span>
-            </button>
-            ${isOpen ? html`
-              <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px", padding: "14px" }}>
-                ${items.map((item) => html`
-                  <div key=${item.key} style=${{ width: "130px", border: "1px solid var(--border-light)", borderRadius: "12px", overflow: "hidden", background: "#fff", flexShrink: 0 }}>
-                    <div style=${{ width: "130px", height: "90px", background: "#eee", overflow: "hidden", position: "relative" }}>
-                      ${item.url
-                        ? html`<img src=${item.url} alt=${item.name} style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />`
-                        : html`<div style=${{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>${item.type === "video" ? "🎬" : "🖼️"}</div>`
-                      }
-                      <span style=${{ position: "absolute", top: "4px", right: "4px", background: item.type === "video" ? "#1a1a2e" : "#5758e8", color: "#fff", fontSize: "0.62rem", fontWeight: 700, padding: "2px 5px", borderRadius: "6px", textTransform: "uppercase" }}>${item.type === "video" ? "VID" : "IMG"}</span>
-                    </div>
-                    <div style=${{ padding: "8px 8px 6px" }}>
-                      ${editingKey === item.key ? html`
-                        <input
-                          type="text" value=${editValue}
-                          onInput=${(e) => setEditValue(e.target.value)}
-                          onKeyDown=${(e) => { if (e.key === "Enter") commitRename(item.key); if (e.key === "Escape") setEditingKey(null); }}
-                          style=${{ width: "100%", boxSizing: "border-box", padding: "3px 6px", borderRadius: "7px", border: "1px solid var(--accent)", fontSize: "0.75rem" }}
-                        />
-                        <button onClick=${() => commitRename(item.key)} style=${{ marginTop: "4px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "var(--accent)", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>✓ Salvar</button>
-                      ` : html`
-                        <p style=${{ margin: "0 0 5px", fontSize: "0.74rem", fontWeight: 600, color: "var(--ink)", wordBreak: "break-all", lineHeight: 1.3 }}>${getDisplayName(item)}</p>
-                        <div style=${{ display: "flex", gap: "4px" }}>
-                          <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>✏️</button>
-                          <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover pasta" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>📂</button>
-                        </div>
-                      `}
-                      ${movingKey === item.key && editingKey !== item.key ? html`
-                        <div style=${{ marginTop: "5px" }}>
-                          <input
-                            type="text" value=${moveValue}
-                            onInput=${(e) => setMoveValue(e.target.value)}
-                            onKeyDown=${(e) => { if (e.key === "Enter") commitMove(item.key); if (e.key === "Escape") setMovingKey(null); }}
-                            placeholder="nome-da-pasta"
-                            style=${{ width: "100%", boxSizing: "border-box", padding: "3px 6px", borderRadius: "7px", border: "1px solid #f0a500", fontSize: "0.72rem" }}
-                          />
-                          <button onClick=${() => commitMove(item.key)} style=${{ marginTop: "3px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "#f0a500", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>Mover</button>
-                        </div>
-                      ` : null}
-                    </div>
-                  </div>
-                `)}
+              onClick=${() => { setCurrentFolder(null); setEditingKey(null); setMovingKey(null); }}
+              style=${{ display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px", borderRadius: "20px", border: "1px solid var(--border)", background: "var(--surface-2, #f5f5fb)", cursor: "pointer", fontSize: "0.82rem", color: "var(--ink)", fontWeight: 600 }}
+            >← Pastas</button>
+            <span style=${{ color: "var(--muted)", fontSize: "0.82rem" }}>/</span>
+            <span style=${{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink)" }}>📁 ${currentFolder}</span>
+          ` : html`<span style=${{ fontSize: "0.82rem", color: "var(--muted)" }}>${media.length} mídias em ${folderNames.length} pasta${folderNames.length !== 1 ? "s" : ""}${saving ? " — salvando..." : ""}</span>`}
+        </div>
+      ` : null}
+
+      ${currentFolder === null ? html`
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+          ${folderNames.map((folder) => {
+            const items = folderMap[folder];
+            const preview = folderPreviewUrl(folder);
+            return html`
+              <div
+                key=${folder}
+                onClick=${() => { setCurrentFolder(folder); setEditingKey(null); setMovingKey(null); }}
+                style=${{ width: "140px", border: "1px solid var(--border-light)", borderRadius: "14px", overflow: "hidden", background: "#fff", cursor: "pointer", flexShrink: 0, transition: "box-shadow .15s", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}
+                onMouseEnter=${(e) => e.currentTarget.style.boxShadow = "0 4px 14px rgba(87,88,232,.18)"}
+                onMouseLeave=${(e) => e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,.04)"}
+              >
+                <div style=${{ width: "140px", height: "80px", background: "var(--surface-2, #f5f5fb)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  ${preview
+                    ? html`<img src=${preview} alt=${folder} style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: .7 }} />`
+                    : html`<span style=${{ fontSize: "2rem" }}>📁</span>`
+                  }
+                </div>
+                <div style=${{ padding: "8px 10px 10px" }}>
+                  <p style=${{ margin: "0 0 2px", fontSize: "0.8rem", fontWeight: 700, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${folder}</p>
+                  <p style=${{ margin: 0, fontSize: "0.73rem", color: "var(--muted)" }}>${items.length} item${items.length !== 1 ? "s" : ""}</p>
+                </div>
               </div>
-            ` : null}
-          </div>
-        `;
-      })}
+            `;
+          })}
+        </div>
+      ` : html`
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+          ${(folderMap[currentFolder] || []).map((item) => MediaCard(item))}
+        </div>
+        ${(folderMap[currentFolder] || []).length === 0 ? html`
+          <p className="muted small" style=${{ textAlign: "center", padding: "30px 0" }}>Pasta vazia.</p>
+        ` : null}
+      `}
 
       ${media.length === 0 && !loading ? html`
         <p className="muted small" style=${{ textAlign: "center", padding: "20px 0", color: "var(--muted)" }}>Clique em "↺ Carregar mídias" para visualizar imagens e vídeos da conta Meta.</p>
