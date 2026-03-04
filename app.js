@@ -2846,6 +2846,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [adsetNameManual, setAdsetNameManual] = useState(false);
   const [adNameManual, setAdNameManual] = useState(false);
   const [campNum, setCampNum] = useState("01");
+  const [campNumLoading, setCampNumLoading] = useState(false);
   const [cjNum, setCjNum] = useState("01");
   const [anNum, setAnNum] = useState("01");
   const [cbo, setCbo] = useState(false);
@@ -2937,6 +2938,16 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   }, [nicho, objective, campNum]);
 
   useEffect(() => {
+    if (!nicho || !accountId) return;
+    setCampNumLoading(true);
+    fetch(`/api/camp-counters?account_id=${encodeURIComponent(accountId)}&nicho=${encodeURIComponent(nicho.slug)}&objective=${encodeURIComponent(objective)}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.code === "success") { setCampNum(d.nextFormatted); setCampNameManual(false); } })
+      .catch(() => {})
+      .finally(() => setCampNumLoading(false));
+  }, [nicho, objective]);
+
+  useEffect(() => {
     if (!adsetNameManual) { const v = buildAdsetName(nicho, objective, countries, cjNum); if (v) setAdsetName(v); }
   }, [nicho, objective, countries, cjNum]);
 
@@ -3020,6 +3031,16 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
       });
       setResult(res);
       setStep(5);
+      if (res.code === "success" && nicho) {
+        const num = parseInt(campNum, 10);
+        if (!isNaN(num)) {
+          fetch(`/api/camp-counters?account_id=${encodeURIComponent(accountId)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nicho: nicho.slug, num }),
+          }).catch(() => {});
+        }
+      }
     } catch (err) {
       setFormError(formatError(err));
     } finally {
@@ -3129,9 +3150,13 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                   type="text" value=${campNum}
                   onInput=${(e) => { setCampNum(e.target.value); setCampNameManual(false); }}
                   placeholder="01"
-                  style=${{ width: "48px", textAlign: "center" }}
+                  disabled=${campNumLoading}
+                  style=${{ width: "48px", textAlign: "center", opacity: campNumLoading ? .5 : 1 }}
                 />
-                <span style=${{ fontSize: "0.78rem", color: "var(--muted)", marginLeft: "4px" }}>${nicho ? buildCampName(nicho, objective, campNum) : ""}</span>
+                ${campNumLoading
+                  ? html`<span style=${{ fontSize: "0.78rem", color: "var(--muted)" }}>verificando...</span>`
+                  : html`<span style=${{ fontSize: "0.78rem", color: "var(--muted)", marginLeft: "4px" }}>${nicho ? buildCampName(nicho, objective, campNum) : ""}</span>`
+                }
               </div>
               <div style=${{ display: "flex", gap: "6px" }}>
                 <input
