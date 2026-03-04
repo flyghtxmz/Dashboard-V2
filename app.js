@@ -2845,6 +2845,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [campNameManual, setCampNameManual] = useState(false);
   const [adsetNameManual, setAdsetNameManual] = useState(false);
   const [adNameManual, setAdNameManual] = useState(false);
+  const [campNum, setCampNum] = useState("01");
   const [cjNum, setCjNum] = useState("01");
   const [anNum, setAnNum] = useState("01");
   const [cbo, setCbo] = useState(false);
@@ -2899,20 +2900,28 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     if (goals.length) setOptGoal(goals[0].value);
   };
 
-  const buildCampName = (n, obj) => {
-    if (!n) return "";
-    const objLabel = OBJECTIVES.find((o) => o.value === obj)?.label || obj;
-    const paises = Array.isArray(n.paises) ? n.paises : (n.pais ? [n.pais] : []);
-    const geo = paises.length ? ` | ${paises.join(" / ")}` : "";
-    return `${n.nome} | ${objLabel}${geo}`;
+  const TIPO_MAP = {
+    OUTCOME_TRAFFIC: "cnl",
+    OUTCOME_SALES: "vnd",
+    OUTCOME_LEADS: "cad",
+    OUTCOME_ENGAGEMENT: "eng",
+    OUTCOME_AWARENESS: "rec",
+    OUTCOME_APP_PROMOTION: "app",
   };
 
-  const buildAdsetName = (n, goal, obj) => {
-    if (!n) return "";
-    const goalLabel = (OPTIMIZATION_GOALS_MAP[obj] || []).find((g) => g.value === goal)?.label || goal;
-    const paises = Array.isArray(n.paises) ? n.paises : (n.pais ? [n.pais] : []);
-    const geo = paises.length ? ` | ${paises.join(" / ")}` : "";
-    return `${n.nome} | ${goalLabel}${geo}`;
+  const buildCampName = (n, obj, num) => {
+    if (!n || !n.slug) return "";
+    const tipo = TIPO_MAP[obj] || "cmp";
+    const nn = String(num || "01").padStart(2, "0");
+    return `cmp-${nn}-${tipo}-${n.slug}`;
+  };
+
+  const buildAdsetName = (n, obj, ctrs, cj) => {
+    if (!n || !n.slug) return "";
+    const tipo = TIPO_MAP[obj] || "cmp";
+    const geo = (Array.isArray(ctrs) && ctrs.length ? ctrs : ["br"]).map((c) => c.toLowerCase()).join("-");
+    const nn = String(cj || "01").padStart(2, "0");
+    return `${n.slug}-${tipo}-${geo}-cj${nn}`;
   };
 
   const buildAdName = (n, ctrs, cj, an) => {
@@ -2924,12 +2933,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   };
 
   useEffect(() => {
-    if (!campNameManual) { const v = buildCampName(nicho, objective); if (v) setCampName(v); }
-  }, [nicho, objective]);
+    if (!campNameManual) { const v = buildCampName(nicho, objective, campNum); if (v) setCampName(v); }
+  }, [nicho, objective, campNum]);
 
   useEffect(() => {
-    if (!adsetNameManual) { const v = buildAdsetName(nicho, optGoal, objective); if (v) setAdsetName(v); }
-  }, [nicho, optGoal, objective]);
+    if (!adsetNameManual) { const v = buildAdsetName(nicho, objective, countries, cjNum); if (v) setAdsetName(v); }
+  }, [nicho, objective, countries, cjNum]);
 
   useEffect(() => {
     if (!adNameManual) { const v = buildAdName(nicho, countries, cjNum, anNum); if (v) setAdName(v); }
@@ -2939,7 +2948,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     setStep(1); setResult(null); setFormError("");
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
     setCampStatus("ACTIVE"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
-    setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCjNum("01"); setAnNum("01");
+    setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCampNum("01"); setCjNum("01"); setAnNum("01");
     setSpendingLimit("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
@@ -3114,14 +3123,24 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
             <div className="field">
               <label>Nome da campanha *</label>
+              <div style=${{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                <span style=${{ fontSize: "0.8rem", color: "var(--muted)", whiteSpace: "nowrap" }}>Cmp nº</span>
+                <input
+                  type="text" value=${campNum}
+                  onInput=${(e) => { setCampNum(e.target.value); setCampNameManual(false); }}
+                  placeholder="01"
+                  style=${{ width: "48px", textAlign: "center" }}
+                />
+                <span style=${{ fontSize: "0.78rem", color: "var(--muted)", marginLeft: "4px" }}>${nicho ? buildCampName(nicho, objective, campNum) : ""}</span>
+              </div>
               <div style=${{ display: "flex", gap: "6px" }}>
                 <input
                   type="text" value=${campName}
                   onInput=${(e) => { setCampName(e.target.value); setCampNameManual(true); }}
-                  placeholder="Ex: Saúde | Tráfego | Brasil"
+                  placeholder="cmp-01-cnl-nicho"
                   style=${{ flex: 1 }}
                 />
-                <button title="Sugerir nome" onClick=${() => { const v = buildCampName(nicho, objective); if (v) { setCampName(v); setCampNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem", whiteSpace: "nowrap" }}>↺</button>
+                <button title="Sugerir nome" onClick=${() => { const v = buildCampName(nicho, objective, campNum); if (v) { setCampName(v); setCampNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem", whiteSpace: "nowrap" }}>↺</button>
               </div>
             </div>
             <div className="field">
@@ -3199,10 +3218,10 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                 <input
                   type="text" value=${adsetName}
                   onInput=${(e) => { setAdsetName(e.target.value); setAdsetNameManual(true); }}
-                  placeholder="Ex: Saúde | Cliques no link | Brasil"
+                  placeholder="nicho-cnl-br-cj01"
                   style=${{ flex: 1 }}
                 />
-                <button title="Sugerir nome" onClick=${() => { const v = buildAdsetName(nicho, optGoal, objective); if (v) { setAdsetName(v); setAdsetNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem" }}>↺</button>
+                <button title="Sugerir nome" onClick=${() => { const v = buildAdsetName(nicho, objective, countries, cjNum); if (v) { setAdsetName(v); setAdsetNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem" }}>↺</button>
               </div>
             </div>
             <div className="field" style=${{ gridColumn: "1 / -1" }}>
