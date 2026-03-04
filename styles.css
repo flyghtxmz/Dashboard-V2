@@ -419,7 +419,7 @@ button.small {
 .field input,
 .field select {
   padding: 9px 12px;
-  border-radius: 10px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: #fff;
   font-size: 0.9rem;
