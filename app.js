@@ -3566,8 +3566,34 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                 ` : null}
               </div>
               <div className="field">
-                <label>ID da conta do Instagram <span className="muted small">— opcional</span></label>
-                <input type="text" value=${igActorId} onInput=${(e) => setIgActorId(e.target.value)} placeholder="Ex: 17841400000000000" />
+                <label>
+                  Conta do Instagram <span className="muted small">— opcional</span>
+                  ${pagesLoading ? html`<span className="muted small"> carregando...</span>` : null}
+                </label>
+                ${(() => {
+                  const igAccounts = (pages || []).flatMap((p) =>
+                    p.instagram_business_account ? [{ id: p.instagram_business_account.id, label: `@${p.instagram_business_account.username || p.instagram_business_account.name} (${p.name})` }] : []
+                  );
+                  if (igAccounts.length > 0) {
+                    return html`
+                      <select value=${igActorId} onChange=${(e) => setIgActorId(e.target.value)}>
+                        <option value="">Não vincular conta IG</option>
+                        ${igAccounts.map((a) => html`<option key=${a.id} value=${a.id}>${a.label}</option>`)}
+                      </select>
+                    `;
+                  }
+                  return html`
+                    <div style=${{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <input type="text" value=${igActorId} onInput=${(e) => setIgActorId(e.target.value)} placeholder="Ex: 17841400000000000" style=${{ flex: 1 }} />
+                      ${(!pages || pages.length === 0) && !pagesLoading ? html`
+                        <button className="ghost small" onClick=${onLoadPages}>Carregar páginas</button>
+                      ` : null}
+                    </div>
+                    ${(!pages || pages.length === 0) && !pagesLoading ? html`
+                      <span className="muted small">Carregue as páginas acima para selecionar a conta IG.</span>
+                    ` : null}
+                  `;
+                })()}
               </div>
               <div className="field" style=${{ gridColumn: "1 / -1" }}>
                 <label>Formato do criativo</label>
@@ -3735,7 +3761,11 @@ ${(() => {
               ${skipAd ? html`<p className="muted small">Não incluído — adicionar depois.</p>` : html`
                 <p><strong>Nome:</strong> ${adName || `${campName} — Anúncio`}</p>
                 <p><strong>Formato:</strong> ${adFormat === "image" ? "Imagem" : "Vídeo"}</p>
-                ${igActorId ? html`<p><strong>Conta IG:</strong> ${igActorId}</p>` : null}
+                ${igActorId ? html`<p><strong>Conta IG:</strong> ${(() => {
+                  const igAccounts = (pages || []).flatMap((p) => p.instagram_business_account ? [{ id: p.instagram_business_account.id, username: p.instagram_business_account.username || p.instagram_business_account.name }] : []);
+                  const found = igAccounts.find((a) => a.id === igActorId);
+                  return found ? `@${found.username}` : igActorId;
+                })()}</p>` : null}
                 <p><strong>Título:</strong> ${headline}</p>
                 <p><strong>CTA:</strong> ${CTA_TYPES.find((c) => c.value === ctaType)?.label}</p>
                 <p style=${{ wordBreak: "break-all", fontSize: "0.82rem" }}><strong>URL:</strong> ${destUrl}</p>

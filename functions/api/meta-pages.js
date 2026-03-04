@@ -14,7 +14,7 @@ export async function onRequest({ request, env }) {
 
   try {
     const response = await fetch(
-      `${API_BASE}/me/accounts?fields=id,name,category,access_token&limit=200&access_token=${token}`
+      `${API_BASE}/me/accounts?fields=id,name,category,access_token,instagram_business_account{id,name,username}&limit=200&access_token=${token}`
     );
     const data = await safeJson(response);
     if (!response.ok) {
