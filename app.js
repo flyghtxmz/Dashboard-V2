@@ -1739,9 +1739,6 @@ function EditarView({
                   <th style=${{ width: "36px" }}></th>
                   <th>Anúncio</th>
                   <th>Conjunto</th>
-                  <th>URL / Destino</th>
-                  <th>UTM Tags</th>
-                  <th>Status URL</th>
                   <th>Veiculação</th>
                   <th>Valor usado</th>
                   <th>CTR</th>
@@ -1749,6 +1746,7 @@ function EditarView({
                   <th>CPM</th>
                   <th>Frequência</th>
                   <th>Taxa Viz.</th>
+                  <th>URL / Destino</th>
                   <th>Atualizado</th>
                   <th>Ações</th>
                 </tr>
@@ -1762,11 +1760,6 @@ function EditarView({
                   const renameAdKey = "ad:" + row.id;
                   const renamingAd = editRenaming && editRenaming[renameAdKey];
                   const isEditUrl = editingUrlId === row.id;
-                  const urlHasUtm = /\butm_source=/i.test(row.url || "") || /\butm_source=/i.test(row.url_tags || "");
-                  const statusUrl = row.url
-                    ? urlHasUtm ? "OK" : "Sem UTM"
-                    : row.object_story_id ? "Post" : "Sem URL";
-                  const statusTone = statusUrl === "OK" ? "good" : statusUrl === "Post" ? "neutral" : statusUrl === "Sem UTM" ? "warn" : "off";
                   const effStatus = row.effective_status || row.status;
                   const isActive = effStatus === "ACTIVE";
                   return html`<tr key=${row.id || idx} style=${{ opacity: deletingRow ? 0.4 : 1 }}>
@@ -1790,17 +1783,28 @@ function EditarView({
                       </div>
                     </td>
                     <td className="muted small" style=${{ maxWidth: "130px" }}>${row.adset_name || "—"}</td>
-                    <td style=${{ minWidth: "200px" }}>
+                    <td>
+                      <span className=${"status-badge " + (isActive ? "on" : "off")}>
+                        ${effLabel(effStatus)}
+                      </span>
+                    </td>
+                    <td className="muted small">${fmtMoney(row.spend)}</td>
+                    <td className="muted small">${fmtPct(row.ctr)}</td>
+                    <td className="muted small">${fmtMoney(row.cpc)}</td>
+                    <td className="muted small">${fmtMoney(row.cpm)}</td>
+                    <td className="muted small">${fmtFreq(row.frequency)}</td>
+                    <td className="muted small">${fmtPct(row.video_thruplay_rate)}</td>
+                    <td style=${{ minWidth: "180px" }}>
                       ${isEditUrl
                         ? html`<div className="inline-actions">
                             <input type="text" value=${row.url || ""}
-                              style=${{ width: "180px", fontSize: "12px" }} placeholder="https://..."
+                              style=${{ width: "160px", fontSize: "12px" }} placeholder="https://..."
                               onInput=${(e) => onUpdateField(row.id, { url: e.target.value })} />
                             <button className="ghost small" onClick=${() => setEditingUrlId(null)}>×</button>
                           </div>`
                         : html`<div className="inline-actions">
                             <span className="muted small"
-                              style=${{ maxWidth: "165px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}
+                              style=${{ maxWidth: "145px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}
                               title=${row.destination_url || row.url || ""}>
                               ${row.destination_url || row.url || (row.object_story_id ? "Post" : "—")}
                             </span>
@@ -1813,33 +1817,12 @@ function EditarView({
                               : null}
                           </div>`}
                     </td>
-                    <td>
-                      <input type="text" value=${row.url_tags || ""} placeholder="utm_source=..."
-                        style=${{ width: "145px", fontSize: "12px" }}
-                        onInput=${(e) => onUpdateField(row.id, { url_tags: e.target.value })} />
-                    </td>
-                    <td><span className=${"status-badge " + statusTone}>${statusUrl}</span></td>
-                    <td>
-                      <span className=${"status-badge " + (isActive ? "on" : "off")}>
-                        ${effLabel(effStatus)}
-                      </span>
-                    </td>
-                    <td className="muted small">${fmtMoney(row.spend)}</td>
-                    <td className="muted small">${fmtPct(row.ctr)}</td>
-                    <td className="muted small">${fmtMoney(row.cpc)}</td>
-                    <td className="muted small">${fmtMoney(row.cpm)}</td>
-                    <td className="muted small">${fmtFreq(row.frequency)}</td>
-                    <td className="muted small">${fmtPct(row.video_thruplay_rate)}</td>
                     <td className="muted small">${formatDateTime(row.updated_time)}</td>
                     <td>
                       <div className="inline-actions" style=${{ gap: "3px" }}>
                         <button className="ghost small" disabled=${verifyingRow}
                           onClick=${() => onVerify?.(row)} title="Verificar URL">
                           ${verifyingRow ? "..." : "🔍"}
-                        </button>
-                        <button className="ghost small" disabled=${busy || !row.url}
-                          onClick=${() => onCleanParams?.(row)} title="Aplicar UTMs">
-                          🧹
                         </button>
                         <button className="ghost small" disabled=${busy}
                           onClick=${() => onSave(row)} title="Duplicar">
