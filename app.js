@@ -3570,9 +3570,13 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const removeDomain = (d) => setDomains(domains.filter((x) => x !== d));
 
   const handleSave = async () => {
-    await onSave({ domains, metaAccountId, reportType, includeAssets, nichos });
-    setSaveMsg("Salvo com sucesso!");
-    setTimeout(() => setSaveMsg(""), 3000);
+    try {
+      await onSave({ domains, metaAccountId, reportType, includeAssets, nichos });
+      setSaveMsg("✓ Salvo com sucesso!");
+    } catch (err) {
+      setSaveMsg("Erro ao salvar: " + (err.message || "tente novamente"));
+    }
+    setTimeout(() => setSaveMsg(""), 5000);
   };
 
   return html`
@@ -3584,7 +3588,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             <h2 className="section-title">Configurações</h2>
           </div>
           <div style=${{ display: "flex", gap: "10px", alignItems: "center" }}>
-            ${saveMsg ? html`<span style=${{ color: "#198a76", fontWeight: 600, fontSize: "0.88rem" }}>${saveMsg}</span>` : null}
+            ${saveMsg ? html`<span style=${{ color: saveMsg.startsWith("Erro") ? "#c0392b" : "#198a76", fontWeight: 600, fontSize: "0.88rem" }}>${saveMsg}</span>` : null}
             <button className="primary" onClick=${handleSave} disabled=${saving}>
               ${saving ? "Salvando..." : "Salvar configurações"}
             </button>
@@ -3911,9 +3915,15 @@ function App() {
           reportType: s.reportType || p.reportType,
           includeAssets: !!s.includeAssets,
         }));
+        setSettingsSaving(false);
+        return true;
+      } else {
+        throw new Error(d.message || "Erro ao salvar");
       }
-    } catch { /* ignore */ }
-    setSettingsSaving(false);
+    } catch (err) {
+      setSettingsSaving(false);
+      throw err;
+    }
   };
 
   const mergedDomains = useMemo(() => {

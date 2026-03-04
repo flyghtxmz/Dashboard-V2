@@ -29,11 +29,10 @@ function getSettings(raw) {
 }
 
 export async function onRequest({ request, env }) {
-  const kv = env.DASHBOARD_KV;
+  const kv = env.CPA_RULES_KV || env.DASHBOARD_KV;
 
   if (!kv) {
-    // KV not configured — return defaults so the app still works
-    return Response.json({ code: "success", data: { ...DEFAULT_SETTINGS } });
+    return Response.json({ code: "error", message: "KV nao configurado" }, { status: 500 });
   }
 
   if (request.method === "GET") {
