@@ -5324,20 +5324,8 @@ function App() {
       setSuperKey(superKeyUsed || "utm_content");
       setSuperTermRows(Array.isArray(superTermRes?.data) ? superTermRes.data : []);
       setTopUrls(Array.isArray(topRes?.data) ? topRes.data : []);
-      const filterEarningsByDate = (rows) => {
-        const ds = filters.startDate;
-        const de = filters.endDate;
-        if (!ds && !de) return rows;
-        return rows.filter((r) => {
-          if (!r.date) return true;
-          // Trunca para YYYY-MM-DD para lidar com datas ISO com horário ("2026-03-05T00:00:00Z")
-          const d = typeof r.date === "string" ? r.date.slice(0, 10) : "";
-          if (!d) return true;
-          return (!ds || d >= ds) && (!de || d <= de);
-        });
-      };
-      setEarnings(filterEarningsByDate(Array.isArray(earningsRes?.data) ? earningsRes.data : []));
-      setEarningsAll(filterEarningsByDate(Array.isArray(earningsAllRes?.data) ? earningsAllRes.data : []));
+      setEarnings(Array.isArray(earningsRes?.data) ? earningsRes.data : []);
+      setEarningsAll(Array.isArray(earningsAllRes?.data) ? earningsAllRes.data : []);
       setKeyValueContent(Array.isArray(keyValueContentRes?.data) ? keyValueContentRes.data : []);
       const targetDomain = normalizeKey(filters.domain || "");
       const sourceRows =
@@ -7288,7 +7276,7 @@ function App() {
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
               ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} brlRate=${brlRate} />`}
               ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
-              ${html`<${EarningsTable} rows=${earningsAll} />`}
+              ${html`<${EarningsTable} rows=${earningsAll.filter((r) => { const d = typeof r.date === "string" ? r.date.slice(0, 10) : ""; return !d || ((!filters.startDate || d >= filters.startDate) && (!filters.endDate || d <= filters.endDate)); })} />`}
             </main>
           `
         : activeTab === "duplicar"
