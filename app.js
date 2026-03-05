@@ -5324,8 +5324,17 @@ function App() {
       setSuperKey(superKeyUsed || "utm_content");
       setSuperTermRows(Array.isArray(superTermRes?.data) ? superTermRes.data : []);
       setTopUrls(Array.isArray(topRes?.data) ? topRes.data : []);
-      setEarnings(Array.isArray(earningsRes?.data) ? earningsRes.data : []);
-      setEarningsAll(Array.isArray(earningsAllRes?.data) ? earningsAllRes.data : []);
+      const filterEarningsByDate = (rows) => {
+        const ds = filters.startDate;
+        const de = filters.endDate;
+        if (!ds && !de) return rows;
+        return rows.filter((r) => {
+          if (!r.date) return true;
+          return (!ds || r.date >= ds) && (!de || r.date <= de);
+        });
+      };
+      setEarnings(filterEarningsByDate(Array.isArray(earningsRes?.data) ? earningsRes.data : []));
+      setEarningsAll(filterEarningsByDate(Array.isArray(earningsAllRes?.data) ? earningsAllRes.data : []));
       setKeyValueContent(Array.isArray(keyValueContentRes?.data) ? keyValueContentRes.data : []);
       const targetDomain = normalizeKey(filters.domain || "");
       const sourceRows =
