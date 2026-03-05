@@ -70,7 +70,7 @@ export async function onRequest({ request, env }) {
         const age = Date.now() - (parsed._cachedAt || 0);
         if (age < CACHE_TTL_MS) {
           delete parsed._cachedAt;
-          return jsonResponse(200, { code: "success", cached: true, data: parsed.rows });
+          return jsonResponse(200, { code: "success", cached: true, data: parsed.rows, campaigns: parsed.campaigns || [] });
         }
       }
     } catch { /* fall through */ }
@@ -159,13 +159,13 @@ export async function onRequest({ request, env }) {
       try {
         await kv.put(
           cacheKey,
-          JSON.stringify({ rows, _cachedAt: Date.now() }),
+          JSON.stringify({ rows, campaigns, _cachedAt: Date.now() }),
           { expirationTtl: Math.ceil((CACHE_TTL_MS * 2) / 1000) }
         );
       } catch { /* non-fatal */ }
     }
 
-    return jsonResponse(200, { code: "success", cached: false, data: rows });
+    return jsonResponse(200, { code: "success", cached: false, data: rows, campaigns });
   } catch (error) {
     return jsonResponse(500, {
       error: "Erro ao consultar Meta",

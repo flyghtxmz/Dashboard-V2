@@ -1405,6 +1405,7 @@ function DuplicarView({
 function EditarView({
   ads,
   allAds,
+  campaigns,
   loading,
   error,
   onLoad,
@@ -1457,27 +1458,48 @@ function EditarView({
   };
 
   const campaignsData = useMemo(() => {
-    const map = new Map();
+    // Conta adsets e ads por campanha a partir dos anúncios carregados
+    const adsetsByCamp = new Map();
+    const adCountByCamp = new Map();
     for (const ad of ads) {
       const cid = ad.campaign_id;
       if (!cid) continue;
-      if (!map.has(cid)) {
+      if (!adsetsByCamp.has(cid)) adsetsByCamp.set(cid, new Set());
+      if (ad.adset_id) adsetsByCamp.get(cid).add(ad.adset_id);
+      adCountByCamp.set(cid, (adCountByCamp.get(cid) || 0) + 1);
+    }
+    // Base: todas as campanhas retornadas pela API (com ou sem anúncios)
+    const base = (campaigns && campaigns.length > 0) ? campaigns : [];
+    // Fallback: constrói a partir dos próprios anúncios se campaigns não vier
+    const fromAds = [];
+    if (base.length === 0) {
+      const map = new Map();
+      for (const ad of ads) {
+        const cid = ad.campaign_id;
+        if (!cid || map.has(cid)) continue;
         map.set(cid, {
           id: cid,
           name: ad.campaign_name || cid,
           status: ad.campaign_status || "PAUSED",
+          effective_status: ad.campaign_status || "PAUSED",
           daily_budget: ad.campaign_daily_budget || "",
           lifetime_budget: ad.campaign_lifetime_budget || "",
-          adsetIds: new Set(),
-          adCount: 0,
         });
       }
-      const c = map.get(cid);
-      if (ad.adset_id) c.adsetIds.add(ad.adset_id);
-      c.adCount++;
+      fromAds.push(...map.values());
     }
-    return [...map.values()].map((c) => ({ ...c, adsetCount: c.adsetIds.size }));
-  }, [ads]);
+    return (base.length > 0 ? base : fromAds)
+      .filter((c) => !hiddenCampaigns || !hiddenCampaigns.has(c.id))
+      .map((c) => ({
+      id: c.id,
+      name: c.name || c.id,
+      status: c.effective_status || c.status || "PAUSED",
+      daily_budget: c.daily_budget || "",
+      lifetime_budget: c.lifetime_budget || "",
+      adsetCount: (adsetsByCamp.get(c.id) || new Set()).size,
+      adCount: adCountByCamp.get(c.id) || 0,
+    }));
+  }, [ads, campaigns, hiddenCampaigns]);
 
   const adsetsData = useMemo(() => {
     const map = new Map();
@@ -1501,13 +1523,17 @@ function EditarView({
 
   const hiddenList = useMemo(() => {
     const nameMap = new Map();
+    // Nomes das campanhas vem preferencialmente de campaigns, fallback em allAds
+    for (const c of (campaigns || [])) {
+      if (c.id) nameMap.set(c.id, c.name || c.id);
+    }
     for (const ad of (allAds || [])) {
       if (ad.campaign_id && !nameMap.has(ad.campaign_id)) {
         nameMap.set(ad.campaign_id, ad.campaign_name || ad.campaign_id);
       }
     }
     return [...(hiddenCampaigns || [])].map((id) => ({ id, name: nameMap.get(id) || id }));
-  }, [allAds, hiddenCampaigns]);
+  }, [campaigns, allAds, hiddenCampaigns]);
 
   return html`
     <main className="dup-grid">
@@ -4910,6 +4936,7 @@ function App() {
   const [tokenError, setTokenError] = useState("");
   const [adsetStatusLoading, setAdsetStatusLoading] = useState({});
   const [editAds, setEditAds] = useState([]);
+  const [editCampaigns, setEditCampaigns] = useState([]);
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
   const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -5584,10 +5611,12 @@ function App() {
         return cached ? { ...row, destination_url: cached } : row;
       });
       setEditAds(rows);
+      setEditCampaigns(res.campaigns || []);
     } catch (err) {
       setEditError(formatError(err));
       pushLog("meta-structure", err);
       setEditAds([]);
+      setEditCampaigns([]);
     } finally {
       setEditLoading(false);
     }
@@ -7220,6 +7249,7 @@ function App() {
             <${EditarView}
               ads=${filteredEditAds}
               allAds=${editAds}
+              campaigns=${editCampaigns}
               loading=${editLoading}
               error=${editError}
               onLoad=${handleLoadEditar}

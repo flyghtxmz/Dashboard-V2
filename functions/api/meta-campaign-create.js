@@ -61,9 +61,10 @@ async function createAdset(adset, campaignId, isCBO, account_id, token) {
     if (instagramPositions.length > 0) targeting.instagram_positions = instagramPositions;
   }
 
-  ap.set("targeting", JSON.stringify(targeting));
-  // Advantage Audience obrigatorio: 1=ativado, 0=desativado
-  ap.set("targeting_automation", JSON.stringify({ advantage_audience: adset.advantage_audience === 1 ? 1 : 0 }));
+  ap.set("targeting", JSON.stringify({
+    ...targeting,
+    targeting_automation: { advantage_audience: adset.advantage_audience === 1 ? 1 : 0 },
+  }));
   ap.set("access_token", token);
 
   const res = await fetch(`${API_BASE}/${encodeURIComponent(account_id)}/adsets`, { method: "POST", body: ap });
