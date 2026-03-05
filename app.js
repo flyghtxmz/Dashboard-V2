@@ -1431,6 +1431,7 @@ function EditarView({
   hiddenCampaigns,
   onHideCampaign,
   onUnhideCampaign,
+  onDeleteCampaigns,
   dateStart,
   dateEnd,
   onDateChange,
@@ -1438,6 +1439,7 @@ function EditarView({
   const [managerTab, setManagerTab] = useState("campaigns");
   const [editingUrlId, setEditingUrlId] = useState(null);
   const [showHiddenPanel, setShowHiddenPanel] = useState(false);
+  const [selectedCampaigns, setSelectedCampaigns] = useState(new Set());
 
   const fmtMoney = (v) => v ? "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
   const fmtPct = (v) => v ? Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%" : "—";
@@ -1632,12 +1634,28 @@ function EditarView({
               : "Clique em \"↻ Atualizar\" para carregar as campanhas."}
           </div>` : null}
 
-        ${(managerTab === "campaigns" && ads.length > 0) ? html`
+        ${(managerTab === "campaigns" && (campaignsData.length > 0 || ads.length > 0)) ? html`
+          ${selectedCampaigns.size > 0 ? html`
+            <div style=${{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderBottom: "1px solid var(--border)", marginBottom: "4px" }}>
+              <span className="muted small">${selectedCampaigns.size} campanha${selectedCampaigns.size > 1 ? "s" : ""} selecionada${selectedCampaigns.size > 1 ? "s" : ""}</span>
+              <button className="ghost small btn-danger"
+                onClick=${() => onDeleteCampaigns?.([...selectedCampaigns], () => setSelectedCampaigns(new Set()))}>
+                🗑 Excluir selecionadas
+              </button>
+              <button className="ghost small" onClick=${() => setSelectedCampaigns(new Set())}>Limpar seleção</button>
+            </div>` : null}
           <div className="table-wrapper scroll-x">
             <table className="manager-table">
               <thead>
                 <tr>
-                  <th style=${{ width: "36px" }}></th>
+                  <th style=${{ width: "28px" }}>
+                    <input type="checkbox"
+                      checked=${campaignsData.length > 0 && selectedCampaigns.size === campaignsData.length}
+                      onChange=${(e) => setSelectedCampaigns(e.target.checked ? new Set(campaignsData.map((c) => c.id)) : new Set())}
+                      title="Selecionar todas"
+                    />
+                  </th>
+                  <th style=${{ width: "46px" }}></th>
                   <th>Campanha</th>
                   <th>Veiculação</th>
                   <th>Orçamento</th>
@@ -1655,7 +1673,19 @@ function EditarView({
                     : c.lifetime_budget
                     ? fmtBudget(c.lifetime_budget) + " (vit.)"
                     : "—";
-                  return html`<tr key=${c.id}>
+                  return html`<tr key=${c.id} style=${{ background: selectedCampaigns.has(c.id) ? "rgba(99,102,241,0.07)" : "" }}>
+                    <td>
+                      <input type="checkbox"
+                        checked=${selectedCampaigns.has(c.id)}
+                        onChange=${(e) => {
+                          setSelectedCampaigns((prev) => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(c.id) : next.delete(c.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </td>
                     <td>
                       <label className="toggle-switch" title=${isActive ? "Pausar campanha" : "Ativar campanha"}>
                         <input type="checkbox" checked=${isActive} disabled=${toggling}
@@ -5916,6 +5946,35 @@ function App() {
     }
   };
 
+  const handleDeleteCampaigns = async (ids, onDone) => {
+    if (!ids || ids.length === 0) return;
+    const plural = ids.length > 1 ? `${ids.length} campanhas` : "esta campanha";
+    if (!window.confirm(`Apagar ${plural} permanentemente? Todos os conjuntos e anúncios vinculados também serão excluídos. Esta ação não pode ser desfeita.`)) return;
+    const loading = {};
+    ids.forEach((id) => (loading[id] = true));
+    setEditDeleting((prev) => ({ ...prev, ...loading }));
+    let deleted = [];
+    for (const id of ids) {
+      try {
+        await fetchJson(`${API_BASE}/meta-campaign-delete`, {
+          method: "POST",
+          body: JSON.stringify({ campaign_id: id }),
+        });
+        deleted.push(id);
+        pushLog("meta-campaign-delete", { message: `Campanha apagada: ${id}` });
+      } catch (err) {
+        pushLog("meta-campaign-delete", err);
+      }
+    }
+    if (deleted.length > 0) {
+      const deletedSet = new Set(deleted);
+      setEditAds((prev) => (prev || []).filter((r) => !deletedSet.has(r.campaign_id)));
+      setEditCampaigns((prev) => (prev || []).filter((c) => !deletedSet.has(c.id)));
+    }
+    setEditDeleting((prev) => { const n = { ...prev }; ids.forEach((id) => delete n[id]); return n; });
+    onDone?.();
+  };
+
   const handleDeleteEditAdset = async (adsetId, adsetName) => {
     if (!adsetId) return;
     if (!window.confirm(`Apagar conjunto "${adsetName || adsetId}" e todos os seus anúncios? Esta ação não pode ser desfeita.`)) return;
@@ -7270,6 +7329,7 @@ function App() {
               onToggleAdsetStatus=${handleToggleAdsetStatus}
               onDeleteAdset=${handleDeleteEditAdset}
               onToggleCampaignStatus=${handleToggleCampaignStatus}
+              onDeleteCampaigns=${handleDeleteCampaigns}
               deleting=${editDeleting}
               togglingStatus=${editTogglingStatus}
               hiddenCampaigns=${hiddenCampaigns}
