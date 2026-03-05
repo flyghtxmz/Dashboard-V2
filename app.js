@@ -5330,7 +5330,10 @@ function App() {
         if (!ds && !de) return rows;
         return rows.filter((r) => {
           if (!r.date) return true;
-          return (!ds || r.date >= ds) && (!de || r.date <= de);
+          // Trunca para YYYY-MM-DD para lidar com datas ISO com horário ("2026-03-05T00:00:00Z")
+          const d = typeof r.date === "string" ? r.date.slice(0, 10) : "";
+          if (!d) return true;
+          return (!ds || d >= ds) && (!de || d <= de);
         });
       };
       setEarnings(filterEarningsByDate(Array.isArray(earningsRes?.data) ? earningsRes.data : []));
