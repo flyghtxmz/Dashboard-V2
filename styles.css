@@ -259,6 +259,9 @@ button.small {
 /* wide = ocupa sempre TODAS as colunas do grid, seja 2 ou 1 */
 .card.wide {
   grid-column: 1 / -1;
+  width: 100%;
+  max-width: 1180px;
+  justify-self: center;
 }
 
 .card-head {
