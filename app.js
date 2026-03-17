@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 75;
+const APP_VERSION_BUILD = 76;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -1754,7 +1754,7 @@ function EditarView({
                         onClick=${() => onHideCampaign?.(c.id)}
                         title="Ocultar do Dashboard e desta lista"
                       >
-                        👁 Ocultar
+                        ðŸ‘ Ocultar
                       </button>
                     </td>
                   </tr>`;
@@ -1814,7 +1814,7 @@ function EditarView({
                         />
                         <button className="ghost small" disabled=${renaming}
                           onClick=${() => onRenameAdset?.(as.id, currentName, renameKey)}>
-                          ${renaming ? "..." : "✏"}
+                          ${renaming ? "..." : "âœ"}
                         </button>
                       </div>
                     </td>
@@ -1880,7 +1880,7 @@ function EditarView({
                         <button className="ghost small" disabled=${renamingAd}
                           onClick=${() => onRenameAd?.(row.id, row.name, renameAdKey)}
                           title="Renomear">
-                          ${renamingAd ? "..." : "✏"}
+                          ${renamingAd ? "..." : "âœ"}
                         </button>
                       </div>
                     </td>
@@ -1910,7 +1910,7 @@ function EditarView({
                               title=${row.destination_url || row.url || ""}>
                               ${row.destination_url || row.url || (row.object_story_id ? "Post" : "—")}
                             </span>
-                            <button className="ghost small" onClick=${() => setEditingUrlId(row.id)} title="Editar URL">✏</button>
+                            <button className="ghost small" onClick=${() => setEditingUrlId(row.id)} title="Editar URL">âœ</button>
                             ${(row.object_story_id && !row.destination_url)
                               ? html`<button className="ghost small" disabled=${verifyingRow}
                                   onClick=${() => onResolveDestination?.(row)} title="Resolver destino">
@@ -1924,7 +1924,7 @@ function EditarView({
                       <div className="inline-actions compact">
                         <button className="ghost small" disabled=${verifyingRow}
                           onClick=${() => onVerify?.(row)} title="Verificar URL">
-                          ${verifyingRow ? "..." : "🔍"}
+                          ${verifyingRow ? "..." : "ðŸ”"}
                         </button>
                         <button className="ghost small" disabled=${busy}
                           onClick=${() => onSave(row)} title="Duplicar">
@@ -1958,6 +1958,7 @@ function MetaJoinTable({
   onBidUpdate,
   bidLoading,
   isMultiDay,
+  allowCampaignOps = true,
   usePmLabels = false,
 }) {
   const asText = (value) => {
@@ -2111,43 +2112,45 @@ function MetaJoinTable({
                                 row.adset_daily_budget_brl != null
                                   ? row.adset_daily_budget_brl.toFixed(2)
                                   : "";
-                              return html`<div className="budget-cell">
-                                <div className="budget-meta">
-                                  <span className="muted small">Atual: ${currentBudget}</span>
-                                </div>
-                                <div className="budget-actions">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="R$"
-                                    value=${getBudget(row.adset_id, fallbackBudgetValue)}
-                                    onChange=${(e) =>
-                                      setBudget(row.adset_id, e.target.value)}
-                                    onKeyDown=${(e) => {
-                                      if (e.key === "Enter") {
-                                        onBudgetUpdate?.(
-                                          row.adset_id,
-                                          getBudget(row.adset_id, fallbackBudgetValue)
-                                        );
-                                      }
-                                    }}
-                                  />
-                                  <button
-                                    className="ghost small"
-                                    disabled=${budgetLoading && budgetLoading[row.adset_id]}
-                                    onClick=${() =>
-                                      onBudgetUpdate?.(
-                                        row.adset_id,
-                                        getBudget(row.adset_id, fallbackBudgetValue)
-                                      )}
-                                  >
-                                    ${budgetLoading && budgetLoading[row.adset_id]
-                                      ? "..."
-                                      : "Salvar"}
-                                  </button>
-                                </div>
-                              </div>`;
+                              return allowCampaignOps
+                                ? html`<div className="budget-cell">
+                                    <div className="budget-meta">
+                                      <span className="muted small">Atual: ${currentBudget}</span>
+                                    </div>
+                                    <div className="budget-actions">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        placeholder="R$"
+                                        value=${getBudget(row.adset_id, fallbackBudgetValue)}
+                                        onChange=${(e) =>
+                                          setBudget(row.adset_id, e.target.value)}
+                                        onKeyDown=${(e) => {
+                                          if (e.key === "Enter") {
+                                            onBudgetUpdate?.(
+                                              row.adset_id,
+                                              getBudget(row.adset_id, fallbackBudgetValue)
+                                            );
+                                          }
+                                        }}
+                                      />
+                                      <button
+                                        className="ghost small"
+                                        disabled=${budgetLoading && budgetLoading[row.adset_id]}
+                                        onClick=${() =>
+                                          onBudgetUpdate?.(
+                                            row.adset_id,
+                                            getBudget(row.adset_id, fallbackBudgetValue)
+                                          )}
+                                      >
+                                        ${budgetLoading && budgetLoading[row.adset_id]
+                                          ? "..."
+                                          : "Salvar"}
+                                      </button>
+                                    </div>
+                                  </div>`
+                                : html`<span>${currentBudget}</span>`;
                             })()
                           : "-"}
                       </td>
@@ -2173,57 +2176,62 @@ function MetaJoinTable({
                                 row.adset_bid_amount_brl != null
                                   ? row.adset_bid_amount_brl.toFixed(2)
                                   : "";
-                              return html`<div className="budget-cell">
-                                <div className="budget-meta">
-                                  <span className="muted small">Atual: ${currentBid}</span>
-                                  <span className="muted small">Status: ${modeLabel}</span>
-                                </div>
-                                <div className="budget-actions">
-                                  <select
-                                    value=${currentMode}
-                                    onChange=${(e) =>
-                                      setBidMode(row.adset_id, e.target.value)}
-                                  >
-                                    <option value="with_bid">Com limite (limite de lance)</option>
-                                    <option value="without_bid">Sem limite (menor custo)</option>
-                                  </select>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="R$"
-                                    disabled=${!requiresBidValue}
-                                    value=${getBid(row.adset_id, fallbackBidValue)}
-                                    onChange=${(e) =>
-                                      setBid(row.adset_id, e.target.value)}
-                                    onKeyDown=${(e) => {
-                                      if (requiresBidValue && e.key === "Enter") {
-                                        onBidUpdate?.(
-                                          row.adset_id,
-                                          getBid(row.adset_id, fallbackBidValue),
-                                          currentMode
-                                        );
-                                      }
-                                    }}
-                                  />
-                                  <button
-                                    className="ghost small"
-                                    disabled=${bidLoading && bidLoading[row.adset_id]}
-                                    onClick=${() =>
-                                      onBidUpdate?.(
-                                        row.adset_id,
-                                        requiresBidValue
-                                          ? getBid(row.adset_id, fallbackBidValue)
-                                          : "",
-                                        currentMode
-                                      )}
-                                  >
-                                    ${bidLoading && bidLoading[row.adset_id]
-                                      ? "..."
-                                      : "Salvar"}
-                                  </button>
-                                </div>
-                              </div>`;
+                              return allowCampaignOps
+                                ? html`<div className="budget-cell">
+                                    <div className="budget-meta">
+                                      <span className="muted small">Atual: ${currentBid}</span>
+                                      <span className="muted small">Status: ${modeLabel}</span>
+                                    </div>
+                                    <div className="budget-actions">
+                                      <select
+                                        value=${currentMode}
+                                        onChange=${(e) =>
+                                          setBidMode(row.adset_id, e.target.value)}
+                                      >
+                                        <option value="with_bid">Com limite (limite de lance)</option>
+                                        <option value="without_bid">Sem limite (menor custo)</option>
+                                      </select>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        placeholder="R$"
+                                        disabled=${!requiresBidValue}
+                                        value=${getBid(row.adset_id, fallbackBidValue)}
+                                        onChange=${(e) =>
+                                          setBid(row.adset_id, e.target.value)}
+                                        onKeyDown=${(e) => {
+                                          if (requiresBidValue && e.key === "Enter") {
+                                            onBidUpdate?.(
+                                              row.adset_id,
+                                              getBid(row.adset_id, fallbackBidValue),
+                                              currentMode
+                                            );
+                                          }
+                                        }}
+                                      />
+                                      <button
+                                        className="ghost small"
+                                        disabled=${bidLoading && bidLoading[row.adset_id]}
+                                        onClick=${() =>
+                                          onBidUpdate?.(
+                                            row.adset_id,
+                                            requiresBidValue
+                                              ? getBid(row.adset_id, fallbackBidValue)
+                                              : "",
+                                            currentMode
+                                          )}
+                                      >
+                                        ${bidLoading && bidLoading[row.adset_id]
+                                          ? "..."
+                                          : "Salvar"}
+                                      </button>
+                                    </div>
+                                  </div>`
+                                : html`<div className="budget-meta">
+                                    <span>${currentBid}</span>
+                                    <span className="muted small">${modeLabel}</span>
+                                  </div>`;
                             })()
                           : "-"}
                       </td>
@@ -2253,7 +2261,7 @@ function MetaJoinTable({
                               >
                                 ${statusLabel}
                               </span>
-                              ${canToggle
+                              ${canToggle && allowCampaignOps
                                 ? html`<button
                                     className=${`toggle ${isActive ? "on" : "off"}`}
                                     disabled=${busy}
@@ -2268,8 +2276,10 @@ function MetaJoinTable({
                                       : isActive
                                       ? "Ligado"
                                       : "Desligado"}
-                                  </button>`
-                                : html`<span className="muted small">Indisponível</span>`}
+                                  </button>
+                                : html`<span className="muted small">
+                                    ${allowCampaignOps ? "Indisponível" : "Somente leitura"}
+                                  </span>`}
                             </div>`
                           : "-"}
                       </td>
@@ -2938,23 +2948,23 @@ const COUNTRY_LIST = [
   { code: "PL", name: "Polônia",          region: "europe",        lat:  51.92,  lng:  19.15 },
   { code: "RO", name: "Romênia",          region: "europe",        lat:  45.94,  lng:  24.97 },
   { code: "GR", name: "Grécia",           region: "europe",        lat:  39.07,  lng:  21.82 },
-  { code: "AT", name: "Áustria",          region: "europe",        lat:  47.52,  lng:  14.55 },
+  { code: "AT", name: "Ãustria",          region: "europe",        lat:  47.52,  lng:  14.55 },
   { code: "US", name: "Estados Unidos",   region: "north-america", lat:  37.09,  lng: -95.71 },
   { code: "CA", name: "Canadá",           region: "north-america", lat:  56.13,  lng: -106.35 },
   { code: "AU", name: "Austrália",        region: "asia-oceania",  lat: -25.27,  lng: 133.78 },
   { code: "NZ", name: "Nova Zelândia",    region: "asia-oceania",  lat: -40.90,  lng: 174.89 },
   { code: "JP", name: "Japão",            region: "asia-oceania",  lat:  36.20,  lng: 138.25 },
-  { code: "IN", name: "Índia",            region: "asia-oceania",  lat:  20.59,  lng:  78.96 },
+  { code: "IN", name: "Ãndia",            region: "asia-oceania",  lat:  20.59,  lng:  78.96 },
   { code: "PH", name: "Filipinas",        region: "asia-oceania",  lat:  12.88,  lng: 121.77 },
   { code: "ID", name: "Indonésia",        region: "asia-oceania",  lat:  -0.79,  lng: 113.92 },
   { code: "TH", name: "Tailândia",        region: "asia-oceania",  lat:  15.87,  lng: 100.99 },
   { code: "SG", name: "Singapura",        region: "asia-oceania",  lat:   1.35,  lng: 103.82 },
   { code: "MY", name: "Malásia",          region: "asia-oceania",  lat:   4.21,  lng: 101.98 },
   { code: "NG", name: "Nigéria",          region: "africa-me",     lat:   9.08,  lng:   8.68 },
-  { code: "ZA", name: "África do Sul",    region: "africa-me",     lat: -30.56,  lng:  22.94 },
+  { code: "ZA", name: "Ãfrica do Sul",    region: "africa-me",     lat: -30.56,  lng:  22.94 },
   { code: "EG", name: "Egito",            region: "africa-me",     lat:  26.82,  lng:  30.80 },
   { code: "MA", name: "Marrocos",         region: "africa-me",     lat:  31.79,  lng:  -7.09 },
-  { code: "AE", name: "Emirados Árabes",  region: "africa-me",     lat:  23.42,  lng:  53.85 },
+  { code: "AE", name: "Emirados Ãrabes",  region: "africa-me",     lat:  23.42,  lng:  53.85 },
   { code: "SA", name: "Arábia Saudita",   region: "africa-me",     lat:  23.89,  lng:  45.08 },
   { code: "IL", name: "Israel",           region: "africa-me",     lat:  31.05,  lng:  34.85 },
 ];
@@ -2963,8 +2973,8 @@ const COUNTRY_REGIONS = {
   latam: "América Latina",
   europe: "Europa",
   "north-america": "América do Norte",
-  "asia-oceania": "Ásia / Oceania",
-  "africa-me": "África / Oriente Médio",
+  "asia-oceania": "Ãsia / Oceania",
+  "africa-me": "Ãfrica / Oriente Médio",
 };
 
 const COUNTRY_MAP = Object.fromEntries(COUNTRY_LIST.map((c) => [c.code, c]));
@@ -2985,14 +2995,14 @@ const LANGUAGE_LIST = [
   { id: 23,  label: "Coreano" },
   { id: 27,  label: "Chinês (Simplificado)" },
   { id: 28,  label: "Chinês (Tradicional)" },
-  { id: 4,   label: "Árabe" },
+  { id: 4,   label: "Ãrabe" },
   { id: 16,  label: "Hindi" },
   { id: 39,  label: "Indonésio" },
   { id: 34,  label: "Tailandês" },
 ];
 
 function flagEmoji(code) {
-  if (!code || code.length !== 2) return "🌐";
+  if (!code || code.length !== 2) return "ðŸŒ";
   return [...code.toUpperCase()].map((c) =>
     String.fromCodePoint(c.charCodeAt(0) + 127397)
   ).join("");
@@ -3418,7 +3428,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     const ok = result?.code === "success";
     return html`
       <section className="card wide result-card">
-        <div className="result-icon">${ok ? "✅" : "⚠️"}</div>
+        <div className="result-icon">${ok ? "✅" : "âš ï¸"}</div>
         <h2 className="section-title" style=${{ marginBottom: "8px" }}>
           ${ok ? "Campanha criada com sucesso!" : "Criação parcial — verifique abaixo"}
         </h2>
@@ -3434,7 +3444,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                 `}
                 ${r.ads && r.ads.map((a, j) => html`
                   <div key=${j} className="result-subitem">
-                    ${a.error ? html`❌ ${a.name} — ${typeof a.error === "string" ? a.error : JSON.stringify(a.error)}` : html`✅ ${a.name} <code className="result-code">${a.ad_id}</code>`}
+                    ${a.error ? html`âŒ ${a.name} — ${typeof a.error === "string" ? a.error : JSON.stringify(a.error)}` : html`✅ ${a.name} <code className="result-code">${a.ad_id}</code>`}
                   </div>
                 `)}
               </div>
@@ -3805,7 +3815,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           ` : null}
 
           <div className="action-row-between">
-            <button onClick=${() => setStep(1)}>← Voltar</button>
+            <button onClick=${() => setStep(1)}>â† Voltar</button>
             <div className="action-group">
               <button className="ghost" disabled=${!step2Valid} onClick=${() => {
                 setSavedAdsets((prev) => [...prev, snapshotCurrentAdset()]);
@@ -3924,7 +3934,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                   ${["image", "video"].map((fmt) => html`
                     <label key=${fmt} className="checkbox checkbox-row" style=${{ fontWeight: adFormat === fmt ? 700 : 400 }}>
                       <input type="radio" name="adFormat" checked=${adFormat === fmt} onChange=${() => setAdFormat(fmt)} />
-                      ${fmt === "image" ? "🖼️ Imagem" : "🎬 Vídeo"}
+                      ${fmt === "image" ? "ðŸ–¼ï¸ Imagem" : "🎬 Vídeo"}
                     </label>
                   `)}
                 </div>
@@ -4022,7 +4032,7 @@ ${(() => {
           ` : null}
 
           <div className="action-row-between">
-            <button onClick=${() => setStep(2)}>← Voltar</button>
+            <button onClick=${() => setStep(2)}>â† Voltar</button>
             <div className="action-group">
               ${!skipAd ? html`
                 <button className="ghost" disabled=${!step3Valid} onClick=${() => {
@@ -4109,11 +4119,11 @@ ${(() => {
             </div>
           ` : null}
           <div className="soft-panel warn">
-            <strong>⚠️ Atenção:</strong> tudo será criado com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
+            <strong>âš ï¸ Atenção:</strong> tudo será criado com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
             ${campStatus === "ACTIVE" ? html` <span className="muted small">Isso significa que os anúncios entrarão em veiculação imediatamente após aprovação do Meta.</span>` : null}
           </div>
           <div className="action-row-between">
-            <button onClick=${() => setStep(3)} disabled=${publishing}>← Voltar</button>
+            <button onClick=${() => setStep(3)} disabled=${publishing}>â† Voltar</button>
             <button className="primary publish-btn" onClick=${handlePublish} disabled=${publishing}>
               ${publishing ? "Criando..." : "🚀 Publicar campanha"}
             </button>
@@ -4141,7 +4151,7 @@ const PAISES_NICHOS = [
   // Europa
   "Alemanha", "França", "Espanha", "Portugal", "Itália", "Reino Unido",
   "Países Baixos", "Bélgica", "Suécia", "Noruega", "Dinamarca", "Finlândia",
-  "Suíça", "Áustria", "Polônia", "República Tcheca", "Hungria", "Romênia",
+  "Suíça", "Ãustria", "Polônia", "República Tcheca", "Hungria", "Romênia",
   "Grécia", "Croácia", "Irlanda", "Ucrânia",
 ];
 
@@ -4900,7 +4910,7 @@ function MediaLibrarySection({ accountId }) {
       <div className="media-thumb">
         ${item.url
           ? html`<img src=${item.url} alt=${item.name} />`
-          : html`<div className="media-thumb-fallback">${item.type === "video" ? "🎬" : "🖼️"}</div>`
+          : html`<div className="media-thumb-fallback">${item.type === "video" ? "🎬" : "ðŸ–¼ï¸"}</div>`
         }
         <span className=${`media-badge ${item.type === "video" ? "video" : "image"}`}>${item.type === "video" ? "VID" : "IMG"}</span>
       </div>
@@ -4916,10 +4926,10 @@ function MediaLibrarySection({ accountId }) {
         ` : html`
           <p className="media-card-title">${getDisplayName(item)}</p>
           ${isHidden ? html`
-            <button onClick=${() => unhideItem(item.key)} className="media-mini-btn full">👁️ Mostrar</button>
+            <button onClick=${() => unhideItem(item.key)} className="media-mini-btn full">ðŸ‘ï¸ Mostrar</button>
           ` : html`
             <div className="media-card-actions">
-              <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" className="media-mini-btn">✏️</button>
+              <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" className="media-mini-btn">âœï¸</button>
               <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover para pasta" className="media-mini-btn">📂</button>
               <button onClick=${() => hideItem(item.key)} title="Ocultar" className="media-mini-btn">🙈</button>
             </div>
@@ -4968,10 +4978,10 @@ function MediaLibrarySection({ accountId }) {
             <button
               onClick=${() => { setCurrentFolder(null); setEditingKey(null); setMovingKey(null); setHidingFolder(null); }}
               className="media-back-btn"
-            >← Pastas</button>
+            >â† Pastas</button>
             <span className="media-statustext">/</span>
             <span className="media-statustext" style=${{ fontWeight: 700, color: "var(--ink)" }}>
-              ${currentFolder === "__hidden__" ? "🙈 Arquivos Ocultos" : html`📁 ${currentFolder}`}
+              ${currentFolder === "__hidden__" ? "🙈 Arquivos Ocultos" : html`ðŸ“ ${currentFolder}`}
             </span>
           ` : html`<span className="media-statustext">${media.length} mídias em ${folderNames.length} pasta${folderNames.length !== 1 ? "s" : ""}${saving ? " — salvando..." : ""}</span>`}
         </div>
@@ -7505,6 +7515,135 @@ function App() {
     return html`<${EditorPlaceholderView} session=${session} onLogout=${handleLogout} />`;
   }
 
+  if (session?.role === "gestor") {
+    return html`
+      <div className="layout">
+        <header className="topbar">
+          <div>
+            <h1>Painel do Gestor</h1>
+            <p className="subtitle">
+              Visao operacional por dominio.
+              <span className="muted small"> | Versao ${APP_VERSION}</span>
+            </p>
+          </div>
+          <div className="actions">
+            ${activeTab === "dashboard"
+              ? html`<div className="muted small">
+                  ${fxInfo?.rate
+                    ? `USD/BRL ref. ${formatFxDate(fxInfo.effectiveDate)}: R$ ${fxRateNumber.format(
+                        fxInfo.rate
+                      )}`
+                    : "Atualizando cotacao USD/BRL..."}
+                </div>`
+              : null}
+            ${activeTab === "dashboard"
+              ? html`<div className="muted small">
+                  Ultima atualizacao: ${formatDateTime(lastRefreshed)}
+                </div>`
+              : null}
+            ${activeTab === "dashboard"
+              ? html`<button
+                  className="ghost"
+                  onClick=${handleLoad}
+                  disabled=${loading || !filters.domain}
+                >
+                  ${loading ? "Atualizando..." : "Atualizar"}
+                </button>`
+              : null}
+            <div className="login-topbar-user">
+              <span className="login-topbar-email">${getSessionName(session)}</span>
+              <button className="ghost" style=${{ fontSize: "0.8rem", padding: "5px 12px" }} onClick=${handleLogout}>
+                Sair
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="tabs">
+          <button
+            className=${`tab ${activeTab === "dashboard" ? "active" : ""}`}
+            onClick=${() => setActiveTab("dashboard")}
+          >
+            Dashboard
+          </button>
+          <button
+            className=${`tab ${activeTab === "criar" ? "active" : ""}`}
+            onClick=${() => setActiveTab("criar")}
+            style=${{
+              background: activeTab === "criar" ? "var(--accent)" : "#e8f5e9",
+              borderColor: activeTab === "criar" ? "transparent" : "#a5d6a7",
+              color: activeTab === "criar" ? "#fff" : "#1b5e20",
+            }}
+          >
+            + Criar campanha
+          </button>
+        </div>
+
+        ${activeTab === "dashboard" ? html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />` : null}
+
+        ${activeTab === "dashboard" ? html`
+          <${Filters}
+            filters=${filters}
+            setFilters=${setFilters}
+            onSubmit=${handleLoad}
+            loading=${loading}
+            domains=${mergedDomains}
+            domainsLoading=${domainsLoading}
+          />
+        ` : null}
+
+        ${activeTab === "dashboard"
+          ? html`
+              <main className="grid">
+                ${html`<${Metrics}
+                  totals=${totals}
+                  usdToBrl=${brlRate}
+                  metaSpendBrl=${metaTotals.spendBrl}
+                  fxDateLabel=${fxInfo?.effectiveDate ? formatFxDate(fxInfo.effectiveDate) : ""}
+                  usePmLabels=${true}
+                />`}
+                ${html`
+                  <${MetaJoinTable}
+                    rows=${filteredMeta}
+                    adsetFilter=${filters.adsetFilter}
+                    onFilterChange=${(value) =>
+                      setFilters((prev) => ({ ...prev, adsetFilter: value }))}
+                    onToggleAd=${handleToggleAd}
+                    statusLoading=${adStatusLoading}
+                    onBudgetUpdate=${handleUpdateBudget}
+                    budgetLoading=${budgetLoading}
+                    onBidUpdate=${handleUpdateBid}
+                    bidLoading=${bidLoading}
+                    isMultiDay=${isMultiDay}
+                    allowCampaignOps=${false}
+                    usePmLabels=${true}
+                  />
+                `}
+                ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} usePmLabels=${true} />`}
+                ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} brlRate=${brlRate} usePmLabels=${true} />`}
+                ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} usePmLabels=${true} />`}
+                ${html`<${EarningsTable} rows=${earningsAll.filter((r) => { const d = typeof r.date === "string" ? r.date.slice(0, 10) : ""; return !d || ((!filters.startDate || d >= filters.startDate) && (!filters.endDate || d <= filters.endDate)); })} usePmLabels=${true} />`}
+              </main>
+            `
+          : html`
+              <main className="grid">
+                <${CriarCampanhaView}
+                  accountId=${filters.metaAccountId.trim()}
+                  pages=${pagesList}
+                  pagesLoading=${pagesLoading}
+                  onLoadPages=${handleLoadPages}
+                  pixels=${pixelsList}
+                  pixelsLoading=${pixelsLoading}
+                  onLoadPixels=${handleLoadPixels}
+                  nichos=${settingsData.nichos}
+                  savedUrls=${settingsData.urls || []}
+                />
+              </main>
+            `}
+      </div>
+    `;
+  }
+
   return html`
     <div className="layout">
       <header className="topbar">
@@ -7841,9 +7980,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
-
 
 
 
