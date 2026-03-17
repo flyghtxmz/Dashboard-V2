@@ -1,4 +1,5 @@
 import { jsonResponse, readJson, getMetaToken, safeJson } from "../_utils.js";
+import { canAccessDomain, getSession } from "../_auth.js";
 
 const API_BASE = "https://graph.facebook.com/v24.0";
 
@@ -119,6 +120,10 @@ async function createAd(ad, adsetId, account_id, token) {
 }
 
 export async function onRequest({ request, env }) {
+  const session = await getSession(request, env);
+  if (!session) {
+    return jsonResponse(401, { code: "error", message: "Sessao invalida ou expirada." });
+  }
   const token = getMetaToken(env);
   if (!token) return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
   if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
@@ -133,6 +138,20 @@ export async function onRequest({ request, env }) {
   const adsetsToCreate = Array.isArray(adsets) && adsets.length > 0
     ? adsets
     : adset ? [{ ...adset, ads: ad && ad.page_id ? [ad] : [] }] : [];
+
+  if (session.role !== "admin") {
+    for (const adsetDef of adsetsToCreate) {
+      const adsToValidate = Array.isArray(adsetDef?.ads) ? adsetDef.ads : [];
+      for (const adDef of adsToValidate) {
+        if (adDef?.destination_url && !canAccessDomain(session, adDef.destination_url)) {
+          return jsonResponse(403, {
+            code: "error",
+            message: "URL de destino fora dos dominios permitidos para este usuario.",
+          });
+        }
+      }
+    }
+  }
 
   let campaignId = null;
   try {

@@ -1,3 +1,5 @@
+import { getSession, sessionDisplay } from "../_auth.js";
+
 function parseCookies(header) {
   return Object.fromEntries(
     (header || "")
@@ -9,6 +11,12 @@ function parseCookies(header) {
 }
 
 export async function onRequestGet(ctx) {
+  const session = await getSession(ctx.request, ctx.env);
+  if (!session) {
+    return Response.json({ ok: false }, { status: 401 });
+  }
+  return Response.json({ ok: true, session: sessionDisplay(session) });
+
   const { request, env } = ctx;
   const secret = env.AUTH_SECRET || "dashboard-secret-change-me-32ch!";
 

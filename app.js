@@ -61,6 +61,34 @@ const formatFxDate = (value) => {
   return `${d}/${m}/${y}`;
 };
 
+const ROLE_TABS = {
+  admin: ["dashboard", "duplicar", "editar", "urls", "meta", "diag", "token", "pages", "configuracoes", "criar"],
+  gestor: ["dashboard", "criar"],
+  editor: [],
+};
+
+const TAB_LABELS = {
+  dashboard: "Dashboard",
+  duplicar: "Duplicar",
+  editar: "Editar",
+  urls: "URLs com Parametros",
+  meta: "Fontes",
+  diag: "Diagnostico JoinAds",
+  token: "Token Meta",
+  pages: "Paginas",
+  configuracoes: "Configuracoes",
+  criar: "+ Criar campanha",
+};
+
+function getSessionName(session) {
+  if (!session) return "";
+  return session.nome || session.username || session.email || "";
+}
+
+function isGestorSession(session) {
+  return session?.role === "gestor";
+}
+
 const defaultDates = () => {
   const today = new Date();
   return {
@@ -96,13 +124,17 @@ async function fetchJson(path, options = {}) {
   const {
     cacheTtlMs,
     cacheKey: cacheKeyOverride,
+    cacheScope,
     force,
     cacheMode,
     ...fetchOptions
   } = options || {};
   const method = (fetchOptions.method || "GET").toUpperCase();
   const cacheTtl = cacheTtlMs || 0;
-  const cacheKey = cacheKeyOverride || path;
+  const scope =
+    cacheScope ||
+    (typeof window !== "undefined" ? window.__cd_session_scope__ || "anon" : "anon");
+  const cacheKey = `${scope}:${cacheKeyOverride || path}`;
 
   let isLiveTodayQuery = false;
   if (method === "GET") {
@@ -297,7 +329,7 @@ function formatStatusLabel(status) {
   return statusLabelMap[status] || status;
 }
 
-function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel }) {
+function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = false }) {
   const revenueClientBrl =
     usdToBrl && totals.revenueClient != null
       ? (totals.revenueClient || 0) * usdToBrl
@@ -364,14 +396,14 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel }) {
       helper: "Cliques / Impressoes",
     },
     {
-      label: "eCPM cliente",
+      label: usePmLabels ? "PM cliente" : "eCPM cliente",
       value: currencyUSD.format(totals.ecpmClient || 0),
-      helper: "Receita por mil",
+      helper: usePmLabels ? "Pontos Medios" : "Receita por mil",
     },
     {
-      label: "eCPM bruto",
+      label: usePmLabels ? "PM bruto" : "eCPM bruto",
       value: currencyUSD.format(totals.ecpm || 0),
-      helper: "Antes do revshare",
+      helper: usePmLabels ? "Pontos Medios antes do revshare" : "Antes do revshare",
     },
     {
       label: "Active view",
@@ -492,7 +524,7 @@ function getHostname(value) {
   }
 }
 
-function EarningsTable({ rows }) {
+function EarningsTable({ rows, usePmLabels = false }) {
   return html`
     <section className="card wide">
       <div className="card-head">
@@ -511,7 +543,7 @@ function EarningsTable({ rows }) {
               <th>Impressoes</th>
               <th>Cliques</th>
               <th>CTR</th>
-              <th>eCPM</th>
+              <th>${usePmLabels ? "PM" : "eCPM"}</th>
               <th>Receita cliente</th>
               <th>Active view</th>
             </tr>
@@ -1926,6 +1958,7 @@ function MetaJoinTable({
   onBidUpdate,
   bidLoading,
   isMultiDay,
+  usePmLabels = false,
 }) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
@@ -2021,7 +2054,7 @@ function MetaJoinTable({
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
-              <th>eCPM JoinAds (cliente)</th>
+              <th>${usePmLabels ? "PM JoinAds (cliente)" : "eCPM JoinAds (cliente)"}</th>
               <th>Impressoes JoinAds</th>
               <th>Status</th>
             </tr>
@@ -2284,7 +2317,7 @@ function MetaJoinTable({
   `;
 }
 
-function MetaJoinGroupedTable({ rows }) {
+function MetaJoinGroupedTable({ rows, usePmLabels = false }) {
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
@@ -2373,7 +2406,7 @@ function MetaJoinGroupedTable({ rows }) {
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
-              <th>eCPM JoinAds (cliente)</th>
+              <th>${usePmLabels ? "PM JoinAds (cliente)" : "eCPM JoinAds (cliente)"}</th>
               <th>Impressoes JoinAds</th>
             </tr>
           </thead>
@@ -2420,7 +2453,7 @@ function MetaJoinGroupedTable({ rows }) {
   `;
 }
 
-function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
+function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLabels = false }) {
   const rows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const metaList = Array.isArray(metaRows) ? metaRows : [];
   const semImps = toNumber(semUtmRow?.impressions);
@@ -2531,7 +2564,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
     criterionValue = currencyBRL.format(top.spend || 0);
   } else if (hasEcpm) {
     leader = list.reduce((best, row) => (row.ecpm > best.ecpm ? row : best));
-    criterionLabel = "eCPM";
+    criterionLabel = usePmLabels ? "PM" : "eCPM";
     criterionValue = currencyUSD.format(leader.ecpm || 0);
   } else if (hasCtr) {
     leader = list.reduce((best, row) => (row.ctr > best.ctr ? row : best));
@@ -2591,7 +2624,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
               <th>Impressões</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
-              <th>eCPM cliente</th>
+              <th>${usePmLabels ? "PM cliente" : "eCPM cliente"}</th>
               <th>ROAS</th>
             </tr>
           </thead>
@@ -2636,7 +2669,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate }) {
   `;
 }
 
-function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
+function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false }) {
   const safeJoinadsRows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
@@ -2724,7 +2757,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate }) {
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
-              <th>eCPM JoinAds (cliente)</th>
+              <th>${usePmLabels ? "PM JoinAds (cliente)" : "eCPM JoinAds (cliente)"}</th>
               <th>Impressoes JoinAds</th>
             </tr>
           </thead>
@@ -4186,6 +4219,16 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [includeAssets, setIncludeAssets] = useState(!!settings.includeAssets);
   const [nichos, setNichos] = useState(Array.isArray(settings.nichos) ? settings.nichos : []);
   const [urls, setUrls] = useState(Array.isArray(settings.urls) ? settings.urls : []);
+  const [users, setUsers] = useState(
+    Array.isArray(settings.users)
+      ? settings.users.map((user) => ({
+          ...user,
+          password: "",
+          allowedDomains: Array.isArray(user.allowedDomains) ? user.allowedDomains : [],
+          active: user.active !== false,
+        }))
+      : []
+  );
   const [newUrlNome, setNewUrlNome] = useState("");
   const [newUrlValue, setNewUrlValue] = useState("");
   const [newUrlNicho, setNewUrlNicho] = useState("");
@@ -4265,11 +4308,73 @@ function ConfiguracoesView({ settings, onSave, saving }) {
     setNewDomain("");
   };
 
-  const removeDomain = (d) => setDomains(domains.filter((x) => x !== d));
+  const removeDomain = (d) => {
+    setDomains(domains.filter((x) => x !== d));
+    setUsers((prev) =>
+      prev.map((user) => ({
+        ...user,
+        allowedDomains: (user.allowedDomains || []).filter((item) => item !== d),
+      }))
+    );
+  };
+
+  const addUser = () => {
+    setUsers((prev) => [
+      ...prev,
+      {
+        id: `tmp-${Date.now()}-${prev.length}`,
+        nome: "",
+        username: "",
+        password: "",
+        role: "gestor",
+        allowedDomains: domains[0] ? [domains[0]] : [],
+        active: true,
+        lastLoginAt: null,
+      },
+    ]);
+  };
+
+  const updateUser = (id, patch) => {
+    setUsers((prev) =>
+      prev.map((user) => (user.id === id ? { ...user, ...patch } : user))
+    );
+  };
+
+  const removeUser = (id) => {
+    setUsers((prev) => prev.filter((user) => user.id !== id));
+  };
+
+  const toggleUserDomain = (id, domain) => {
+    setUsers((prev) =>
+      prev.map((user) => {
+        if (user.id !== id) return user;
+        const current = new Set(user.allowedDomains || []);
+        if (current.has(domain)) current.delete(domain);
+        else current.add(domain);
+        return { ...user, allowedDomains: Array.from(current) };
+      })
+    );
+  };
 
   const handleSave = async () => {
     try {
-      await onSave({ domains, metaAccountId, reportType, includeAssets, nichos, urls });
+      await onSave({
+        domains,
+        metaAccountId,
+        reportType,
+        includeAssets,
+        nichos,
+        urls,
+        users: users.map((user) => ({
+          id: user.id,
+          nome: user.nome,
+          username: user.username,
+          password: user.password || "",
+          role: user.role,
+          allowedDomains: user.allowedDomains || [],
+          active: user.active !== false,
+        })),
+      });
       setSaveMsg("✓ Salvo com sucesso!");
     } catch (err) {
       setSaveMsg("Erro ao salvar: " + (err.message || "tente novamente"));
@@ -4352,6 +4457,107 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             </button>
           </div>
           <p className="muted small" style=${{ marginTop: "8px" }}>Esses domínios ficam disponíveis no seletor de Domínio dos filtros.</p>
+        </div>
+
+        <div className="settings-section">
+          <div className="card-head">
+            <div>
+              <h3 className="settings-title">UsuÃ¡rios</h3>
+              <p className="muted small settings-lead">
+                Cadastre gestores e editores direto pelo dashboard. O admin principal continua separado.
+              </p>
+            </div>
+            <button className="ghost" onClick=${addUser} disabled=${!domains.length}>
+              + Adicionar usuÃ¡rio
+            </button>
+          </div>
+          ${users.length === 0
+            ? html`<p className="muted small">Nenhum usuÃ¡rio cadastrado ainda.</p>`
+            : html`
+                <div className="settings-user-grid">
+                  ${users.map((user, index) => html`
+                    <div key=${user.id || index} className="settings-user-card">
+                      <div className="settings-user-head">
+                        <div>
+                          <strong>${user.nome || `UsuÃ¡rio ${index + 1}`}</strong>
+                          <div className="muted small">
+                            ${user.username || "sem username"} â€¢ ${user.role === "editor" ? "Editor" : "Gestor"}
+                          </div>
+                        </div>
+                        <button className="icon-danger-btn" onClick=${() => removeUser(user.id)}>âœ•</button>
+                      </div>
+                      <div className="settings-user-form">
+                        <div className="field-stack">
+                          <label className="field-label">Nome</label>
+                          <input
+                            type="text"
+                            value=${user.nome || ""}
+                            onInput=${(e) => updateUser(user.id, { nome: e.target.value })}
+                            placeholder="Nome do usuÃ¡rio"
+                          />
+                        </div>
+                        <div className="field-stack">
+                          <label className="field-label">Username</label>
+                          <input
+                            type="text"
+                            value=${user.username || ""}
+                            onInput=${(e) => updateUser(user.id, { username: e.target.value.toLowerCase() })}
+                            placeholder="usuario"
+                          />
+                        </div>
+                        <div className="field-stack">
+                          <label className="field-label">Senha</label>
+                          <input
+                            type="password"
+                            value=${user.password || ""}
+                            onInput=${(e) => updateUser(user.id, { password: e.target.value })}
+                            placeholder=${user.lastLoginAt ? "Deixe em branco para manter" : "Defina uma senha"}
+                          />
+                        </div>
+                        <div className="field-stack">
+                          <label className="field-label">Papel</label>
+                          <select
+                            value=${user.role || "gestor"}
+                            onChange=${(e) => updateUser(user.id, { role: e.target.value })}
+                          >
+                            <option value="gestor">Gestor</option>
+                            <option value="editor">Editor</option>
+                          </select>
+                        </div>
+                      </div>
+                      <label className="checkbox checkbox-row settings-user-active">
+                        <input
+                          type="checkbox"
+                          checked=${user.active !== false}
+                          onChange=${(e) => updateUser(user.id, { active: e.target.checked })}
+                        />
+                        <span>UsuÃ¡rio ativo</span>
+                      </label>
+                      <div className="field-stack">
+                        <label className="field-label">DomÃ­nios permitidos</label>
+                        <div className="settings-user-domains">
+                          ${domains.map((domain) => html`
+                            <label key=${domain} className="checkbox checkbox-row settings-user-domain">
+                              <input
+                                type="checkbox"
+                                checked=${(user.allowedDomains || []).includes(domain)}
+                                onChange=${() => toggleUserDomain(user.id, domain)}
+                              />
+                              <span>${domain}</span>
+                            </label>
+                          `)}
+                        </div>
+                      </div>
+                      <div className="muted small">
+                        Ãšltimo login: ${user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "nunca"}
+                      </div>
+                    </div>
+                  `)}
+                </div>
+              `}
+          <p className="muted small" style=${{ marginTop: "8px" }}>
+            Gestor acessa dashboard e cria campanhas. Editor entra em uma area separada.
+          </p>
         </div>
 
         <div className="settings-section">
@@ -4830,7 +5036,7 @@ function MediaLibrarySection({ accountId }) {
 }
 
 function LoginView({ onAuthed }) {
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -4844,11 +5050,11 @@ function LoginView({ onAuthed }) {
       const res = await fetch("/api/auth-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ login: login.trim(), password }),
       });
       const data = await res.json();
       if (data.code === "success") {
-        onAuthed(email.trim());
+        onAuthed(data.session || null);
       } else {
         setError(data.message || "Erro ao fazer login.");
       }
@@ -4869,14 +5075,14 @@ function LoginView({ onAuthed }) {
         <form onSubmit=${handleSubmit} className="login-form">
           ${error ? html`<div className="login-error">${error}</div>` : null}
           <div className="field">
-            <label>E-mail</label>
+            <label>UsuÃ¡rio ou e-mail</label>
             <input
-              type="email"
-              value=${email}
-              onInput=${(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
+              type="text"
+              value=${login}
+              onInput=${(e) => setLogin(e.target.value)}
+              placeholder="usuario ou seu@email.com"
               required
-              autoComplete="email"
+              autoComplete="username"
             />
           </div>
           <div className="field">
@@ -4903,11 +5109,50 @@ function LoginView({ onAuthed }) {
               >${showPwd ? "Ocultar" : "Ver"}</button>
             </div>
           </div>
-          <button type="submit" className="primary login-btn" disabled=${loading || !email || !password}>
+          <button type="submit" className="primary login-btn" disabled=${loading || !login || !password}>
             ${loading ? "Entrando..." : "Entrar"}
           </button>
         </form>
       </div>
+    </div>
+  `;
+}
+
+function EditorPlaceholderView({ session, onLogout }) {
+  return html`
+    <div className="layout">
+      <header className="topbar">
+        <div>
+          <h1>Painel do Editor</h1>
+          <p className="subtitle">
+            Ãrea reservada para o editor de vÃ­deo.
+            <span className="muted small"> â€¢ Em construÃ§Ã£o</span>
+          </p>
+        </div>
+        <div className="actions">
+          <div className="login-topbar-user">
+            <span className="login-topbar-email">${getSessionName(session)}</span>
+            <button className="ghost" style=${{ fontSize: "0.8rem", padding: "5px 12px" }} onClick=${onLogout}>
+              Sair
+            </button>
+          </div>
+        </div>
+      </header>
+      <main className="grid">
+        <section className="card wide">
+          <div className="card-head">
+            <div>
+              <span className="eyebrow">Editor</span>
+              <h2 className="section-title">Painel em construÃ§Ã£o</h2>
+            </div>
+            <span className="chip neutral">${session?.role || "editor"}</span>
+          </div>
+          <p className="muted">
+            Este acesso jÃ¡ estÃ¡ separado do dashboard operacional. Quando o fluxo do editor for definido,
+            esta Ã¡rea pode receber tarefas, fila de criativos, status e entregas.
+          </p>
+        </section>
+      </main>
     </div>
   `;
 }
@@ -4980,22 +5225,77 @@ function App() {
   const [pixelsList, setPixelsList] = useState([]);
   const [adDestMap, setAdDestMap] = useState({});
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
+  const resetScopedState = () => {
+    setSuperFilter([]);
+    setTopUrls([]);
+    setEarnings([]);
+    setEarningsAll([]);
+    setKeyValueContent([]);
+    setError("");
+    setLastRefreshed(null);
+    setDomains([]);
+    setLogs([]);
+    setMetaRows([]);
+    setFxInfo(null);
+    setParamPairs([]);
+    setMetaSourceRows([]);
+    setSuperTermRows([]);
+    setDupCampaigns([]);
+    setDupError("");
+    setDrafts([]);
+    setPagesError("");
+    setPagesList([]);
+    setPixelsList([]);
+    setTokenInfo(null);
+    setTokenError("");
+    setEditAds([]);
+    setEditCampaigns([]);
+    setEditError("");
+    setActiveTab("dashboard");
+    setAppliedFilters(null);
+  };
 
   // ── Auth ──────────────────────────────────────────────────
-  const [authed, setAuthed]       = useState(null);
-  const [authEmail, setAuthEmail] = useState("");
+  const [authed, setAuthed] = useState(null);
+  const [session, setSession] = useState(null);
 
   useEffect(() => {
     fetch("/api/auth-check")
       .then((r) => r.json())
-      .then((d) => { if (d.ok) { setAuthed(true); setAuthEmail(d.email || ""); } else setAuthed(false); })
-      .catch(() => setAuthed(false));
+      .then((d) => {
+        if (d.ok && d.session) {
+          if (typeof window !== "undefined") {
+            window.__cd_session_scope__ = `${d.session.role}:${d.session.username || d.session.email || "user"}`;
+          }
+          setAuthed(true);
+          setSession(d.session);
+        } else {
+          resetScopedState();
+          if (typeof window !== "undefined") {
+            window.__cd_session_scope__ = "anon";
+          }
+          setAuthed(false);
+          setSession(null);
+        }
+      })
+      .catch(() => {
+        resetScopedState();
+        if (typeof window !== "undefined") {
+          window.__cd_session_scope__ = "anon";
+        }
+        setAuthed(false);
+        setSession(null);
+      });
   }, []);
 
   const handleLogout = async () => {
     await fetch("/api/auth-logout", { method: "POST" }).catch(() => {});
+    resetScopedState();
+    if (typeof window !== "undefined") {
+      window.__cd_session_scope__ = "anon";
+    }
     setAuthed(false);
-    setAuthEmail("");
+    setSession(null);
   };
   // ─────────────────────────────────────────────────────────
 
@@ -5003,10 +5303,11 @@ function App() {
   const [settingsDomains, setSettingsDomains] = useState([...DEFAULT_DOMAINS]);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsData, setSettingsData] = useState({
-    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false, nichos: [],
+    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false, nichos: [], urls: [], users: [],
   });
 
   useEffect(() => {
+    if (!authed) return;
     fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => {
@@ -5019,11 +5320,14 @@ function App() {
             ...(s.metaAccountId ? { metaAccountId: s.metaAccountId } : {}),
             ...(s.reportType    ? { reportType: s.reportType }         : {}),
             includeAssets: !!s.includeAssets,
+            ...(session?.role === "gestor" && Array.isArray(s.domains) && s.domains.length
+              ? { domain: p.domain && s.domains.includes(p.domain) ? p.domain : s.domains[0] }
+              : {}),
           }));
         }
       })
       .catch(() => {});
-  }, []);
+  }, [authed, session?.role]);
 
   const handleSaveSettings = async (payload) => {
     setSettingsSaving(true);
@@ -5059,6 +5363,32 @@ function App() {
     const all = [...settingsDomains, ...domains];
     return all.filter((d, i) => all.indexOf(d) === i);
   }, [settingsDomains, domains]);
+
+  const availableTabs = useMemo(
+    () => ROLE_TABS[session?.role || "admin"] || ROLE_TABS.admin,
+    [session?.role]
+  );
+  const usePmLabels = isGestorSession(session);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.__cd_session_scope__ = session
+      ? `${session.role}:${session.username || session.email || "user"}`
+      : "anon";
+  }, [session]);
+
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab(availableTabs[0] || "dashboard");
+    }
+  }, [activeTab, availableTabs]);
+
+  useEffect(() => {
+    if (!isGestorSession(session) || !mergedDomains.length) return;
+    if (!filters.domain || !mergedDomains.includes(filters.domain)) {
+      setFilters((prev) => ({ ...prev, domain: mergedDomains[0] }));
+    }
+  }, [filters.domain, mergedDomains, session]);
   // ─────────────────────────────────────────────────────────
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
@@ -6597,9 +6927,10 @@ function App() {
   };
 
   useEffect(() => {
+    if (!authed || session?.role === "editor") return;
     handleLoadDomains();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authed, session?.role]);
 
 
   const mergedMeta = useMemo(() => {
@@ -7159,8 +7490,20 @@ function App() {
   `;
 
   if (!authed) return html`
-    <${LoginView} onAuthed=${(em) => { setAuthed(true); setAuthEmail(em); }} />
+    <${LoginView} onAuthed=${(nextSession) => {
+      if (typeof window !== "undefined") {
+        window.__cd_session_scope__ = nextSession
+          ? `${nextSession.role}:${nextSession.username || nextSession.email || "user"}`
+          : "anon";
+      }
+      setAuthed(true);
+      setSession(nextSession);
+    }} />
   `;
+
+  if (session?.role === "editor") {
+    return html`<${EditorPlaceholderView} session=${session} onLogout=${handleLogout} />`;
+  }
 
   return html`
     <div className="layout">
@@ -7183,15 +7526,17 @@ function App() {
           <div className="muted small">
             Ultima atualizacao: ${formatDateTime(lastRefreshed)}
           </div>
-          <button
-            className="ghost"
-            onClick=${handleLoad}
-            disabled=${loading || !filters.domain}
-          >
-            ${loading ? "Atualizando..." : "Atualizar"}
-          </button>
+          ${availableTabs.includes("dashboard")
+            ? html`<button
+                className="ghost"
+                onClick=${handleLoad}
+                disabled=${loading || !filters.domain}
+              >
+                ${loading ? "Atualizando..." : "Atualizar"}
+              </button>`
+            : null}
           <div className="login-topbar-user">
-            <span className="login-topbar-email">${authEmail}</span>
+            <span className="login-topbar-email">${getSessionName(session)}</span>
             <button className="ghost" style=${{ fontSize: "0.8rem", padding: "5px 12px" }} onClick=${handleLogout}>
               Sair
             </button>
@@ -7201,60 +7546,70 @@ function App() {
 
       <div className="tabs">
         <button
+          hidden=${!availableTabs.includes("dashboard")}
           className=${`tab ${activeTab === "dashboard" ? "active" : ""}`}
           onClick=${() => setActiveTab("dashboard")}
         >
           Dashboard
         </button>
         <button
+          hidden=${!availableTabs.includes("duplicar")}
           className=${`tab ${activeTab === "duplicar" ? "active" : ""}`}
           onClick=${() => setActiveTab("duplicar")}
         >
           Duplicar
         </button>
         <button
+          hidden=${!availableTabs.includes("editar")}
           className=${`tab ${activeTab === "editar" ? "active" : ""}`}
           onClick=${() => setActiveTab("editar")}
         >
           Editar
         </button>
         <button
+          hidden=${!availableTabs.includes("urls")}
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
         >
           URLs com Parâmetros
         </button>
         <button
+          hidden=${!availableTabs.includes("meta")}
           className=${`tab ${activeTab === "meta" ? "active" : ""}`}
           onClick=${() => setActiveTab("meta")}
         >
           Fontes
         </button>
         <button
+          hidden=${!availableTabs.includes("diag")}
           className=${`tab ${activeTab === "diag" ? "active" : ""}`}
           onClick=${() => setActiveTab("diag")}
         >
           Diagnóstico JoinAds
         </button>
         <button
+          hidden=${!availableTabs.includes("token")}
           className=${`tab ${activeTab === "token" ? "active" : ""}`}
           onClick=${() => setActiveTab("token")}
         >
           Token Meta
         </button>
         <button
+          hidden=${!availableTabs.includes("pages")}
           className=${`tab ${activeTab === "pages" ? "active" : ""}`}
           onClick=${() => setActiveTab("pages")}
         >
           Páginas
         </button>
         <button
+          hidden=${!availableTabs.includes("configuracoes")}
           className=${`tab ${activeTab === "configuracoes" ? "active" : ""}`}
           onClick=${() => setActiveTab("configuracoes")}
         >
           ⚙ Configurações
         </button>
         <button
+          hidden=${!availableTabs.includes("criar")}
           className=${`tab ${activeTab === "criar" ? "active" : ""}`}
           onClick=${() => setActiveTab("criar")}
           style=${{ background: activeTab === "criar" ? "var(--accent)" : "#e8f5e9", borderColor: activeTab === "criar" ? "transparent" : "#a5d6a7", color: activeTab === "criar" ? "#fff" : "#1b5e20" }}
@@ -7284,6 +7639,7 @@ function App() {
                 usdToBrl=${brlRate}
                 metaSpendBrl=${metaTotals.spendBrl}
                 fxDateLabel=${fxInfo?.effectiveDate ? formatFxDate(fxInfo.effectiveDate) : ""}
+                usePmLabels=${usePmLabels}
               />`}
               ${html`
                 <${MetaJoinTable}
@@ -7298,12 +7654,13 @@ function App() {
                   onBidUpdate=${handleUpdateBid}
                   bidLoading=${bidLoading}
                   isMultiDay=${isMultiDay}
+                  usePmLabels=${usePmLabels}
                 />
               `}
-              ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} />`}
-              ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} brlRate=${brlRate} />`}
-              ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} />`}
-              ${html`<${EarningsTable} rows=${earningsAll.filter((r) => { const d = typeof r.date === "string" ? r.date.slice(0, 10) : ""; return !d || ((!filters.startDate || d >= filters.startDate) && (!filters.endDate || d <= filters.endDate)); })} />`}
+              ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} usePmLabels=${usePmLabels} />`}
+              ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} brlRate=${brlRate} usePmLabels=${usePmLabels} />`}
+              ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} usePmLabels=${usePmLabels} />`}
+              ${html`<${EarningsTable} rows=${earningsAll.filter((r) => { const d = typeof r.date === "string" ? r.date.slice(0, 10) : ""; return !d || ((!filters.startDate || d >= filters.startDate) && (!filters.endDate || d <= filters.endDate)); })} usePmLabels=${usePmLabels} />`}
             </main>
           `
         : activeTab === "duplicar"

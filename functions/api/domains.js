@@ -4,10 +4,24 @@ import {
   getJoinadsToken,
   safeJson,
 } from "../_utils.js";
+import { getSession } from "../_auth.js";
+import { loadSettings, normalizeDomain } from "../_settings.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
 export async function onRequest({ request, env }) {
+  const session = await getSession(request, env);
+  if (!session) {
+    return jsonResponse(401, { code: "error", message: "Sessao invalida ou expirada." });
+  }
+
+  if (session.role !== "admin") {
+    const settings = await loadSettings(env);
+    const configured = new Set((settings.domains || []).map(normalizeDomain));
+    const allowed = (session.allowedDomains || []).filter((domain) => configured.has(normalizeDomain(domain)));
+    return jsonResponse(200, { code: "success", data: allowed });
+  }
+
   if (request.method !== "GET") {
     return jsonResponse(405, { error: "Method not allowed" });
   }

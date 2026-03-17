@@ -4,10 +4,16 @@ import {
   getJoinadsToken,
   safeJson,
 } from "../_utils.js";
+import { getSession, requireDomainAccess } from "../_auth.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
 export async function onRequest({ request, env }) {
+  const session = await getSession(request, env);
+  if (!session) {
+    return jsonResponse(401, { code: "error", message: "Sessao invalida ou expirada." });
+  }
+
   if (request.method !== "GET") {
     return jsonResponse(405, { error: "Method not allowed" });
   }
@@ -21,6 +27,8 @@ export async function onRequest({ request, env }) {
   const start_date = params.get("start_date");
   const end_date = params.get("end_date");
   const domain = params.get("domain");
+  const access = requireDomainAccess(session, domain);
+  if (!access.ok) return access.response;
   const report_type = params.get("report_type");
   const custom_key = params.get("custom_key");
   const custom_value = params.get("custom_value");
@@ -28,7 +36,7 @@ export async function onRequest({ request, env }) {
   const missing = [];
   if (!start_date) missing.push("start_date");
   if (!end_date) missing.push("end_date");
-  if (!domain) missing.push("domain");
+  if (!access.domains[0]) missing.push("domain");
   if (!report_type) missing.push("report_type");
   if (!custom_key) missing.push("custom_key");
   if (missing.length) {
@@ -40,7 +48,7 @@ export async function onRequest({ request, env }) {
   const q = new URLSearchParams();
   q.set("start_date", start_date);
   q.set("end_date", end_date);
-  q.set("domain", domain);
+  q.set("domain", access.domains[0]);
   q.set("report_type", report_type);
   q.set("custom_key", custom_key);
   if (custom_value) q.set("custom_value", custom_value);

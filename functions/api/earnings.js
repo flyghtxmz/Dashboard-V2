@@ -5,10 +5,39 @@ import {
   readJson,
   safeJson,
 } from "../_utils.js";
+import { getSession, requireDomainAccess } from "../_auth.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
+async function fetchEarnings(token, start_date, end_date, domain) {
+  const params = new URLSearchParams();
+  params.set("start_date", start_date);
+  params.set("end_date", end_date);
+  if (domain) params.set("domain", domain);
+
+  const response = await fetch(`${API_BASE}/earnings?${params.toString()}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+  });
+  const data = await safeJson(response);
+  if (!response.ok) {
+    const error = new Error("Erro JoinAds");
+    error.status = response.status;
+    error.details = data;
+    throw error;
+  }
+  return data;
+}
+
 export async function onRequest({ request, env }) {
+  const session = await getSession(request, env);
+  if (!session) {
+    return jsonResponse(401, { code: "error", message: "Sessao invalida ou expirada." });
+  }
+
   const token = getJoinadsToken(env);
   if (!token) {
     return jsonResponse(500, { error: "JOINADS_ACCESS_TOKEN nao configurado" });
@@ -35,30 +64,29 @@ export async function onRequest({ request, env }) {
     });
   }
 
-  const params = new URLSearchParams();
-  params.set("start_date", start_date);
-  params.set("end_date", end_date);
-  if (domain) params.set("domain", domain);
-
   try {
-    const response = await fetch(`${API_BASE}/earnings?${params.toString()}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-    });
-
-    const data = await safeJson(response);
-    if (!response.ok) {
-      return jsonResponse(response.status, { error: "Erro JoinAds", details: data });
+    if (domain) {
+      const access = requireDomainAccess(session, domain);
+      if (!access.ok) return access.response;
+      const data = await fetchEarnings(token, start_date, end_date, access.domains[0]);
+      return jsonResponse(200, data);
     }
 
+    if (session.role !== "admin") {
+      const allowedDomains = Array.isArray(session.allowedDomains) ? session.allowedDomains : [];
+      const results = await Promise.all(
+        allowedDomains.map((item) => fetchEarnings(token, start_date, end_date, item))
+      );
+      const data = results.flatMap((item) => (Array.isArray(item?.data) ? item.data : []));
+      return jsonResponse(200, { data });
+    }
+
+    const data = await fetchEarnings(token, start_date, end_date, null);
     return jsonResponse(200, data);
   } catch (error) {
     return jsonResponse(500, {
       error: "Erro ao consultar JoinAds",
-      details: error.message,
+      details: error.details || error.message,
     });
   }
 }

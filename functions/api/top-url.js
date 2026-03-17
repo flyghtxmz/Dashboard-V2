@@ -4,10 +4,16 @@ import {
   getJoinadsToken,
   safeJson,
 } from "../_utils.js";
+import { getSession, requireDomainAccess } from "../_auth.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
 export async function onRequest({ request, env }) {
+  const session = await getSession(request, env);
+  if (!session) {
+    return jsonResponse(401, { code: "error", message: "Sessao invalida ou expirada." });
+  }
+
   if (request.method !== "GET") {
     return jsonResponse(405, { error: "Method not allowed" });
   }
@@ -25,11 +31,13 @@ export async function onRequest({ request, env }) {
   const domains = params.getAll("domain[]");
   const domainAlt = params.getAll("domain");
   const allDomains = domains.length ? domains : domainAlt;
+  const access = requireDomainAccess(session, allDomains);
+  if (!access.ok) return access.response;
 
   const missing = [];
   if (!start_date) missing.push("start_date");
   if (!end_date) missing.push("end_date");
-  if (!allDomains.length) missing.push("domain[]");
+  if (!access.domains.length) missing.push("domain[]");
   if (missing.length) {
     return jsonResponse(400, {
       error: `Parametros obrigatorios: ${missing.join(", ")}`,
@@ -39,7 +47,7 @@ export async function onRequest({ request, env }) {
   const q = new URLSearchParams();
   q.set("start_date", start_date);
   q.set("end_date", end_date);
-  allDomains.forEach((d) => q.append("domain[]", d));
+  access.domains.forEach((d) => q.append("domain[]", d));
   if (limit) q.set("limit", limit);
   if (sort) q.set("sort", sort);
 

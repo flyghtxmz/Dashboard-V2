@@ -4,10 +4,16 @@ import {
   readJson,
   safeJson,
 } from "../_utils.js";
+import { getSession, requireDomainAccess } from "../_auth.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
 export async function onRequest({ request, env }) {
+  const session = await getSession(request, env);
+  if (!session) {
+    return jsonResponse(401, { code: "error", message: "Sessao invalida ou expirada." });
+  }
+
   if (request.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed" });
   }
@@ -31,6 +37,22 @@ export async function onRequest({ request, env }) {
   const payload = { ...body };
   if (payload.domain && !Array.isArray(payload.domain)) {
     payload.domain = [payload.domain];
+  }
+  const requestedDomains = Array.isArray(payload["domain[]"])
+    ? payload["domain[]"]
+    : Array.isArray(payload.domain)
+    ? payload.domain
+    : payload.domain
+    ? [payload.domain]
+    : [];
+  const access = requireDomainAccess(session, requestedDomains, { allowEmpty: true });
+  if (!access.ok) return access.response;
+  if (access.domains.length) {
+    payload["domain[]"] = access.domains;
+    delete payload.domain;
+  } else if (session.role !== "admin") {
+    payload["domain[]"] = session.allowedDomains || [];
+    delete payload.domain;
   }
   if (!payload.group) {
     payload.group = [];
