@@ -29,6 +29,11 @@ const number = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 0,
 });
 
+const fxRateNumber = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
+});
+
 const formatDate = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -47,6 +52,13 @@ const formatDateTime = (value) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const formatFxDate = (value) => {
+  if (!value) return "-";
+  const [y, m, d] = String(value).split("-");
+  if (!y || !m || !d) return String(value);
+  return `${d}/${m}/${y}`;
 };
 
 const defaultDates = () => {
@@ -285,7 +297,7 @@ function formatStatusLabel(status) {
   return statusLabelMap[status] || status;
 }
 
-function Metrics({ totals, usdToBrl, metaSpendBrl }) {
+function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel }) {
   const revenueClientBrl =
     usdToBrl && totals.revenueClient != null
       ? (totals.revenueClient || 0) * usdToBrl
@@ -309,7 +321,9 @@ function Metrics({ totals, usdToBrl, metaSpendBrl }) {
     {
       label: "Receita cliente (BRL)",
       value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
-      helper: usdToBrl ? "Conversão USD->BRL" : "Aguardando cotação",
+      helper: usdToBrl
+        ? `Conversão USD->BRL${fxDateLabel ? ` (${fxDateLabel})` : ""}`
+        : "Aguardando cotação",
       tone: "primary",
     },
     {
@@ -4943,7 +4957,7 @@ function App() {
   const [domainsLoading, setDomainsLoading] = useState(false);
   const [logs, setLogs] = useState([]);
   const [metaRows, setMetaRows] = useState([]);
-  const [usdBrl, setUsdBrl] = useState(null);
+  const [fxInfo, setFxInfo] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
   const [paramPairs, setParamPairs] = useState([]);
   const [superKey, setSuperKey] = useState("utm_content");
@@ -5072,7 +5086,9 @@ function App() {
   // ─────────────────────────────────────────────────────────
 
   const totals = useTotalsFromEarnings(earnings, superFilter);
-  const brlRate = usdBrl || 0;
+  const fxTargetDate =
+    appliedFilters?.endDate || filters.endDate || formatDate(new Date());
+  const brlRate = fxInfo?.rate || 0;
 
   const pushLog = (source, err) => {
     const detail =
@@ -7100,14 +7116,44 @@ function App() {
   }, [topUrls, paramPairs]);
 
   useEffect(() => {
-    fetch("https://open.er-api.com/v6/latest/USD")
-      .then((r) => r.json())
-      .then((data) => {
-        const rate = data?.rates?.BRL;
-        if (rate) setUsdBrl(rate);
+    const today = formatDate(new Date());
+    const requestedDate = fxTargetDate || today;
+    const url =
+      requestedDate === today
+        ? "https://api.frankfurter.dev/v1/latest?base=USD&symbols=BRL"
+        : `https://api.frankfurter.dev/v1/${encodeURIComponent(
+            requestedDate
+          )}?base=USD&symbols=BRL`;
+    const controller = new AbortController();
+
+    fetch(url, { signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(`Erro ao consultar cotação (${response.status})`);
+          error.data = data;
+          throw error;
+        }
+        return data;
       })
-      .catch((err) => pushLog("dollar", err));
-  }, []);
+      .then((data) => {
+        const rate = Number(data?.rates?.BRL);
+        if (!Number.isFinite(rate) || rate <= 0) {
+          throw new Error("Cotação USD/BRL indisponível");
+        }
+        setFxInfo({
+          rate,
+          requestedDate,
+          effectiveDate: data?.date || requestedDate,
+        });
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        pushLog("dollar", err);
+      });
+
+    return () => controller.abort();
+  }, [fxTargetDate]);
 
   useEffect(() => {
     try {
@@ -7152,7 +7198,11 @@ function App() {
         </div>
         <div className="actions">
           <div className="muted small">
-            ${usdBrl ? `USD hoje: R$ ${usdBrl.toFixed(2)}` : "Atualizando cotação..."}
+            ${fxInfo?.rate
+              ? `USD/BRL ref. ${formatFxDate(fxInfo.effectiveDate)}: R$ ${fxRateNumber.format(
+                  fxInfo.rate
+                )}`
+              : "Atualizando cotação USD/BRL..."}
           </div>
           <div className="muted small">
             Ultima atualizacao: ${formatDateTime(lastRefreshed)}
@@ -7257,6 +7307,7 @@ function App() {
                 totals=${totals}
                 usdToBrl=${brlRate}
                 metaSpendBrl=${metaTotals.spendBrl}
+                fxDateLabel=${fxInfo?.effectiveDate ? formatFxDate(fxInfo.effectiveDate) : ""}
               />`}
               ${html`
                 <${MetaJoinTable}
