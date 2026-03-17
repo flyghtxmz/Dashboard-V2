@@ -1,4 +1,4 @@
-import {
+﻿import {
   SESSION_MAX_AGE_MS,
   SESSION_MAX_AGE_SECONDS,
   createSessionToken,
@@ -61,11 +61,13 @@ async function loginAdmin(login, password, request, env) {
 async function migrateLegacyPasswords(settings) {
   let changed = false;
   const users = [];
+
   for (const user of settings.users) {
     if (user.passwordHash || !user.password) {
       users.push(user);
       continue;
     }
+
     const hashed = await hashPassword(user.password);
     users.push({
       ...user,
@@ -77,6 +79,7 @@ async function migrateLegacyPasswords(settings) {
     delete users[users.length - 1].password;
     changed = true;
   }
+
   return changed ? { ...settings, users } : settings;
 }
 
@@ -148,49 +151,4 @@ export async function onRequestPost(ctx) {
   );
 
   return successResponse(session, token, request);
-
-  if (!validEmail || !validPassword) {
-    return Response.json(
-      { code: "error", message: "Servidor não configurado. Defina AUTH_EMAIL, AUTH_PASSWORD e AUTH_SECRET nas variáveis de ambiente do Cloudflare Pages." },
-      { status: 500 }
-    );
-  }
-
-  if (email.trim() !== validEmail || password !== validPassword) {
-    return Response.json({ code: "error", message: "E-mail ou senha incorretos." }, { status: 401 });
-  }
-
-  // Build HMAC-SHA256 signed token: base64(payload).base64(signature)
-  const payload   = JSON.stringify({ email: validEmail, exp: Date.now() + 8 * 60 * 60 * 1000 }); // 8 h
-  const payloadB64 = btoa(payload);
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sigBuf = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadB64));
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
-
-  const token = `${payloadB64}.${sigB64}`;
-  const isSecure = new URL(request.url).protocol === "https:";
-
-  const cookie = [
-    `__session=${encodeURIComponent(token)}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Strict",
-    `Max-Age=${8 * 60 * 60}`,
-    ...(isSecure ? ["Secure"] : []),
-  ].join("; ");
-
-  return new Response(JSON.stringify({ code: "success" }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Set-Cookie": cookie,
-    },
-  });
 }
