@@ -3362,18 +3362,9 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     const current = n === step;
     const done = n < step;
     return html`
-      <div style=${{
-        display: "flex", alignItems: "center", gap: "6px",
-        opacity: n > step ? 0.4 : 1,
-      }}>
-        <div style=${{
-          width: "28px", height: "28px", borderRadius: "50%", flexShrink: 0,
-          background: current ? "var(--accent)" : done ? "var(--accent-2)" : "var(--border)",
-          color: current || done ? "#fff" : "var(--muted)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "0.8rem", fontWeight: "700",
-        }}>${done ? "✓" : n}</div>
-        <span style=${{ fontSize: "0.85rem", fontWeight: current ? 700 : 500, color: current ? "var(--ink)" : "var(--muted)", whiteSpace: "nowrap" }}>
+      <div className=${`stepper-item${n > step ? " pending" : ""}`}>
+        <div className=${`stepper-dot${current ? " current" : done ? " done" : ""}`}>${done ? "✓" : n}</div>
+        <span className=${`stepper-label${current ? " current" : ""}`}>
           ${["", "Campanha", "Conjunto", "Anúncio", "Revisão"][n]}
         </span>
       </div>
@@ -3381,10 +3372,10 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   };
 
   const StepBar = () => html`
-    <div style=${{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "24px", flexWrap: "wrap" }}>
+    <div className="stepper">
       ${[1, 2, 3, 4].map((n) => html`
         <${StepDot} key=${n} n=${n} />
-        ${n < 4 ? html`<div style=${{ flex: "1 1 16px", height: "1px", background: "var(--border)", minWidth: "12px" }}></div>` : null}
+        ${n < 4 ? html`<div className="stepper-line"></div>` : null}
       `)}
     </div>
   `;
@@ -3393,35 +3384,35 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   if (step === 5) {
     const ok = result?.code === "success";
     return html`
-      <section className="card wide" style=${{ textAlign: "center", padding: "48px 24px" }}>
-        <div style=${{ fontSize: "3rem", marginBottom: "12px" }}>${ok ? "✅" : "⚠️"}</div>
+      <section className="card wide result-card">
+        <div className="result-icon">${ok ? "✅" : "⚠️"}</div>
         <h2 className="section-title" style=${{ marginBottom: "8px" }}>
           ${ok ? "Campanha criada com sucesso!" : "Criação parcial — verifique abaixo"}
         </h2>
         ${result?.error ? html`<p className="muted small" style=${{ margin: "8px 0" }}>${result.error}</p>` : null}
-        <div style=${{ display: "inline-flex", flexDirection: "column", gap: "6px", margin: "20px auto", fontSize: "0.92rem", textAlign: "left" }}>
-          ${result?.campaign_id ? html`<div>🎯 Campanha: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.campaign_id}</code></div>` : null}
+        <div className="result-stack">
+          ${result?.campaign_id ? html`<div>🎯 Campanha: <code className="result-code">${result.campaign_id}</code></div>` : null}
           ${Array.isArray(result?.results) && result.results.length > 0 ? html`
             ${result.results.map((r, i) => html`
-              <div key=${i} style=${{ marginTop: "6px", padding: "8px 12px", border: "1px solid var(--border)", borderRadius: "8px", background: r.error ? "#fff4f4" : "#f0f4ff" }}>
-                <div style=${{ fontWeight: 700 }}>📦 ${r.name}</div>
+              <div key=${i} className=${`result-block ${r.error ? "error" : "success"}`}>
+                <div className="result-block-title">📦 ${r.name}</div>
                 ${r.error ? html`<div style=${{ color: "var(--danger)", fontSize: "0.8rem" }}>Erro: ${typeof r.error === "string" ? r.error : JSON.stringify(r.error)}</div>` : html`
-                  <div style=${{ fontSize: "0.8rem", color: "var(--muted)" }}>ID: ${r.adset_id}</div>
+                  <div className="helper-text-inline">ID: ${r.adset_id}</div>
                 `}
                 ${r.ads && r.ads.map((a, j) => html`
-                  <div key=${j} style=${{ paddingLeft: "12px", fontSize: "0.82rem" }}>
-                    ${a.error ? html`❌ ${a.name} — ${typeof a.error === "string" ? a.error : JSON.stringify(a.error)}` : html`✅ ${a.name} <code style=${{ background: "#f0f1ff", padding: "1px 4px", borderRadius: "4px" }}>${a.ad_id}</code>`}
+                  <div key=${j} className="result-subitem">
+                    ${a.error ? html`❌ ${a.name} — ${typeof a.error === "string" ? a.error : JSON.stringify(a.error)}` : html`✅ ${a.name} <code className="result-code">${a.ad_id}</code>`}
                   </div>
                 `)}
               </div>
             `)}
           ` : html`
-            ${result?.adset_id ? html`<div>📦 Conjunto: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.adset_id}</code></div>` : null}
-            ${result?.ad_id ? html`<div>📣 Anúncio: <code style=${{ background: "#f0f1ff", padding: "2px 6px", borderRadius: "6px" }}>${result.ad_id}</code></div>` : null}
+            ${result?.adset_id ? html`<div>📦 Conjunto: <code className="result-code">${result.adset_id}</code></div>` : null}
+            ${result?.ad_id ? html`<div>📣 Anúncio: <code className="result-code">${result.ad_id}</code></div>` : null}
           `}
         </div>
         <p className="muted small">Tudo criado com status <strong>Pausado</strong>. Revise e ative no Gerenciador de Anúncios quando pronto.</p>
-        <button className="primary" onClick=${resetForm} style=${{ marginTop: "20px" }}>
+        <button className="primary result-action" onClick=${resetForm}>
           + Criar outra campanha
         </button>
       </section>
@@ -3429,7 +3420,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   }
 
   return html`
-    <div style=${{ gridColumn: "1 / -1" }}>
+    <div className="full-span">
       <${StepBar} />
       ${formError ? html`<div className="status error" style=${{ marginBottom: "16px" }}><strong>Erro:</strong> ${formError}</div>` : null}
 
@@ -3442,7 +3433,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
           </div>
           <div className="filters">
-            <div className="field" style=${{ gridColumn: "1 / -1" }}>
+            <div className="field full-span">
               <label>Nicho <span className="muted small">(opcional)</span></label>
               ${nichos && nichos.length > 0 ? html`
                 <select value=${nicho ? nicho.slug : ""} onChange=${(e) => {
@@ -3463,28 +3454,29 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
             <div className="field">
               <label>Nome da campanha *</label>
-              <div style=${{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                <span style=${{ fontSize: "0.8rem", color: "var(--muted)", whiteSpace: "nowrap" }}>Cmp nº</span>
+              <div className="form-inline" style=${{ marginBottom: "6px" }}>
+                <span className="micro-label">Cmp nº</span>
                 <input
                   type="text" value=${campNum}
                   onInput=${(e) => { setCampNum(e.target.value); setCampNameManual(false); }}
                   placeholder="01"
                   disabled=${campNumLoading}
-                  style=${{ width: "48px", textAlign: "center", opacity: campNumLoading ? .5 : 1 }}
+                  className="number-mini"
+                  style=${{ opacity: campNumLoading ? .5 : 1 }}
                 />
                 ${campNumLoading
-                  ? html`<span style=${{ fontSize: "0.78rem", color: "var(--muted)" }}>verificando...</span>`
-                  : html`<span style=${{ fontSize: "0.78rem", color: "var(--muted)", marginLeft: "4px" }}>${nicho ? buildCampName(nicho, objective, campNum) : ""}</span>`
+                  ? html`<span className="helper-text-inline">verificando...</span>`
+                  : html`<span className="helper-text-inline">${nicho ? buildCampName(nicho, objective, campNum) : ""}</span>`
                 }
               </div>
-              <div style=${{ display: "flex", gap: "6px" }}>
+              <div className="form-inline-tight">
                 <input
                   type="text" value=${campName}
                   onInput=${(e) => { setCampName(e.target.value); setCampNameManual(true); }}
                   placeholder="cmp-01-cnl-nicho"
-                  style=${{ flex: 1 }}
+                  className="grow-input"
                 />
-                <button title="Sugerir nome" onClick=${() => { const v = buildCampName(nicho, objective, campNum); if (v) { setCampName(v); setCampNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem", whiteSpace: "nowrap" }}>↺</button>
+                <button title="Sugerir nome" onClick=${() => { const v = buildCampName(nicho, objective, campNum); if (v) { setCampName(v); setCampNameManual(false); } }} className="suggest-btn">↺</button>
               </div>
             </div>
             <div className="field">
@@ -3515,12 +3507,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               <input type="number" min="1" step="0.01" value=${spendingLimit} onInput=${(e) => setSpendingLimit(e.target.value)} placeholder="Ex: 500.00 (sem limite = vazio)" />
             </div>
           </div>
-          <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
-            <label className="checkbox" style=${{ cursor: "pointer", marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
+          <div className="soft-panel">
+            <label className="checkbox checkbox-row" style=${{ marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
               <input type="checkbox" checked=${cbo} onChange=${(e) => setCbo(e.target.checked)} />
               <strong>CBO — Otimização de orçamento da campanha</strong>
             </label>
-            <p className="muted small" style=${{ margin: "0 0 0 24px" }}>
+            <p className="muted small soft-panel-note indent">
               O Meta distribui automaticamente o orçamento entre os conjuntos conforme performance.
             </p>
             ${cbo ? html`
@@ -3539,7 +3531,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               </div>
             ` : null}
           </div>
-          <div style=${{ display: "flex", justifyContent: "flex-end" }}>
+          <div className="action-row-end">
             <button className="primary" disabled=${!step1Valid} onClick=${() => setStep(2)}>
               Próximo: Conjunto →
             </button>
@@ -3558,36 +3550,31 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           <div className="filters">
             <div className="field">
               <label>Nome do conjunto</label>
-              <div style=${{ display: "flex", gap: "6px" }}>
+              <div className="form-inline-tight">
                 <input
                   type="text" value=${adsetName}
                   onInput=${(e) => { setAdsetName(e.target.value); setAdsetNameManual(true); }}
                   placeholder="nicho-cnl-br-cj01"
-                  style=${{ flex: 1 }}
+                  className="grow-input"
                 />
-                <button title="Sugerir nome" onClick=${() => { const v = buildAdsetName(nicho, objective, countries, cjNum); if (v) { setAdsetName(v); setAdsetNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem" }}>↺</button>
+                <button title="Sugerir nome" onClick=${() => { const v = buildAdsetName(nicho, objective, countries, cjNum); if (v) { setAdsetName(v); setAdsetNameManual(false); } }} className="suggest-btn">↺</button>
               </div>
             </div>
-            <div className="field" style=${{ gridColumn: "1 / -1" }}>
+            <div className="field full-span">
               <label>Locais de segmentação</label>
               <${LocationPicker} selected=${countries} onChange=${setCountries} />
             </div>
-            <div className="field" style=${{ gridColumn: "1 / -1" }}>
+            <div className="field full-span">
               <label>Idiomas <span className="muted small">(vazio = todos)</span></label>
-              <div style=${{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+              <div className="tag-list" style=${{ marginBottom: "8px" }}>
                 ${locLanguages.map((id) => {
                   const lang = LANGUAGE_LIST.find((l) => l.id === id);
                   return html`
-                    <span key=${id} style=${{
-                      display: "inline-flex", alignItems: "center", gap: "5px",
-                      padding: "4px 10px 4px 10px", borderRadius: "999px",
-                      background: "#e8f5e9", border: "1px solid #b2dfdb",
-                      fontSize: "0.83rem", fontWeight: 600, color: "#198a76",
-                    }}>
+                    <span key=${id} className="tag-chip success">
                       ${lang?.label || id}
                       <button
                         onClick=${() => setLocLanguages(locLanguages.filter((x) => x !== id))}
-                        style=${{ background: "none", border: "none", cursor: "pointer", color: "#198a76", fontSize: "0.75rem", padding: "0 0 0 2px", lineHeight: 1 }}
+                        className="tag-chip-remove success"
                       >✕</button>
                     </span>
                   `;
@@ -3653,11 +3640,11 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
           </div>
 
-          <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
-            <strong style=${{ display: "block", marginBottom: "10px", fontSize: "0.9rem" }}>Dispositivos</strong>
-            <div style=${{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
+          <div className="soft-panel">
+            <strong className="soft-panel-title">Dispositivos</strong>
+            <div className="option-list">
               ${["mobile", "desktop"].map((d) => html`
-                <label key=${d} className="checkbox" style=${{ cursor: "pointer" }}>
+                <label key=${d} className="checkbox checkbox-row">
                   <input type="checkbox"
                     checked=${devicePlatforms.includes(d)}
                     onChange=${(e) => {
@@ -3671,16 +3658,16 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
           </div>
 
-          <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
-            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-              <strong style=${{ fontSize: "0.9rem" }}>
+          <div className="soft-panel">
+            <div className="soft-panel-header">
+              <strong className="soft-panel-title" style=${{ marginBottom: 0 }}>
                 Pixel de conversão <span className="muted small">— opcional</span>
               </strong>
               <button className="ghost small" onClick=${() => onLoadPixels(accountId)} disabled=${pixelsLoading || !accountId}>
                 ${pixelsLoading ? "Carregando..." : pixels.length ? `↺ Recarregar (${pixels.length})` : "Carregar pixels"}
               </button>
             </div>
-            <p className="muted small" style=${{ margin: "0 0 12px" }}>
+            <p className="muted small soft-panel-note">
               Necessário para objetivos de Vendas / Cadastros. Vincula o pixel da conta ao conjunto.
             </p>
             <div className="filters">
@@ -3714,8 +3701,8 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           </div>
 
           ${!cbo ? html`
-            <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
-              <strong style=${{ display: "block", marginBottom: "12px", fontSize: "0.9rem" }}>Orçamento do conjunto *</strong>
+            <div className="soft-panel">
+              <strong className="soft-panel-title">Orçamento do conjunto *</strong>
               <div className="filters">
                 <div className="field">
                   <label>Tipo</label>
@@ -3732,14 +3719,14 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
           ` : null}
 
-          <div style=${{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
-            <strong style=${{ display: "block", marginBottom: "10px", fontSize: "0.9rem" }}>Posicionamentos</strong>
-            <div style=${{ display: "flex", gap: "20px", marginBottom: "12px", flexWrap: "wrap" }}>
-              <label className="checkbox" style=${{ cursor: "pointer" }}>
+          <div className="soft-panel">
+            <strong className="soft-panel-title">Posicionamentos</strong>
+            <div className="option-list" style=${{ marginBottom: "12px" }}>
+              <label className="checkbox checkbox-row">
                 <input type="radio" name="placement" checked=${placementMode === "auto"} onChange=${() => setPlacementMode("auto")} />
                 Automático (recomendado pelo Meta)
               </label>
-              <label className="checkbox" style=${{ cursor: "pointer" }}>
+              <label className="checkbox checkbox-row">
                 <input type="radio" name="placement" checked=${placementMode === "manual"} onChange=${() => setPlacementMode("manual")} />
                 Manual
               </label>
@@ -3758,13 +3745,13 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               </div>
             ` : null}
             <div style=${{ marginTop: "14px", paddingTop: "12px", borderTop: "1px solid var(--border-light)" }}>
-              <strong style=${{ display: "block", marginBottom: "8px", fontSize: "0.85rem" }}>Público Advantage+</strong>
-              <div style=${{ display: "flex", gap: "20px" }}>
-                <label className="checkbox" style=${{ cursor: "pointer" }}>
+              <strong className="soft-panel-title subtle">Público Advantage+</strong>
+              <div className="option-list">
+                <label className="checkbox checkbox-row">
                   <input type="radio" name="advantageAudience" checked=${advantageAudience === 0} onChange=${() => setAdvantageAudience(0)} />
                   Desativado — usar meu públio definido
                 </label>
-                <label className="checkbox" style=${{ cursor: "pointer" }}>
+                <label className="checkbox checkbox-row">
                   <input type="radio" name="advantageAudience" checked=${advantageAudience === 1} onChange=${() => setAdvantageAudience(1)} />
                   Ativado — Meta pode expandir o público
                 </label>
@@ -3773,20 +3760,20 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           </div>
 
           ${savedAdsets.length > 0 ? html`
-            <div style=${{ border: "1px solid var(--accent-2)", borderRadius: "10px", padding: "10px 14px", background: "#f0f4ff", marginBottom: "4px" }}>
-              <p style=${{ fontSize: "0.8rem", color: "var(--muted)", marginBottom: "8px" }}>Conjuntos já salvos (${savedAdsets.length}):</p>
+            <div className="soft-panel accent compact" style=${{ marginBottom: "4px" }}>
+              <p className="helper-text-inline" style=${{ marginBottom: "8px" }}>Conjuntos já salvos (${savedAdsets.length}):</p>
               ${savedAdsets.map((s, i) => html`
-                <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: i < savedAdsets.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <span style=${{ fontSize: "0.85rem" }}><strong>CJ${s._cjNum}</strong> — ${s.name || "(sem nome)"} · ${(Array.isArray(s.countries) ? s.countries : [s.countries]).join(", ")}</span>
+                <div key=${i} className="action-row-between" style=${{ padding: "4px 0", borderBottom: i < savedAdsets.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <span><strong>CJ${s._cjNum}</strong> — ${s.name || "(sem nome)"} · ${(Array.isArray(s.countries) ? s.countries : [s.countries]).join(", ")}</span>
                   <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => setSavedAdsets((prev) => prev.filter((_, j) => j !== i))}>✕</button>
                 </div>
               `)}
             </div>
           ` : null}
 
-          <div style=${{ display: "flex", justifyContent: "space-between" }}>
+          <div className="action-row-between">
             <button onClick=${() => setStep(1)}>← Voltar</button>
-            <div style=${{ display: "flex", gap: "8px" }}>
+            <div className="action-group">
               <button className="ghost" disabled=${!step2Valid} onClick=${() => {
                 setSavedAdsets((prev) => [...prev, snapshotCurrentAdset()]);
                 const nextCj = String(savedAdsets.length + 2).padStart(2, "0");
@@ -3812,8 +3799,8 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               <h2 className="section-title">Anúncio</h2>
             </div>
           </div>
-          <div style=${{ padding: "12px 16px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff", marginBottom: "4px" }}>
-            <label className="checkbox" style=${{ cursor: "pointer" }}>
+          <div className="soft-panel compact" style=${{ marginBottom: "4px" }}>
+            <label className="checkbox checkbox-row">
               <input type="checkbox" checked=${skipAd} onChange=${(e) => setSkipAd(e.target.checked)} />
               <strong>Pular anúncio agora</strong> — criar somente campanha + conjunto, adicionar anúncio depois no Gerenciador
             </label>
@@ -3822,35 +3809,35 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             <div className="filters">
               <div className="field">
                 <label>Nome do anúncio</label>
-                <div style=${{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "8px" }}>
-                  <div style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style=${{ fontSize: "0.8rem", color: "var(--muted)", whiteSpace: "nowrap" }}>CJ nº</span>
+                <div className="form-inline" style=${{ marginBottom: "8px" }}>
+                  <div className="form-inline-tight">
+                    <span className="micro-label">CJ nº</span>
                     <input
                       type="text" value=${cjNum}
                       onInput=${(e) => { setCjNum(e.target.value); setAdNameManual(false); }}
                       placeholder="01"
-                      style=${{ width: "48px", textAlign: "center" }}
+                      className="number-mini"
                     />
                   </div>
-                  <div style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style=${{ fontSize: "0.8rem", color: "var(--muted)", whiteSpace: "nowrap" }}>AN nº</span>
+                  <div className="form-inline-tight">
+                    <span className="micro-label">AN nº</span>
                     <input
                       type="text" value=${anNum}
                       onInput=${(e) => { setAnNum(e.target.value); setAdNameManual(false); }}
                       placeholder="01"
-                      style=${{ width: "48px", textAlign: "center" }}
+                      className="number-mini"
                     />
                   </div>
-                  <span style=${{ fontSize: "0.78rem", color: "var(--muted)", marginLeft: "auto" }}>${nicho && countries.length ? buildAdName(nicho, countries, cjNum, anNum) : ""}</span>
+                  <span className="helper-text-inline push">${nicho && countries.length ? buildAdName(nicho, countries, cjNum, anNum) : ""}</span>
                 </div>
-                <div style=${{ display: "flex", gap: "6px" }}>
+                <div className="form-inline-tight">
                   <input
                     type="text" value=${adName}
                     onInput=${(e) => { setAdName(e.target.value); setAdNameManual(true); }}
                     placeholder="nicho-país-cj01-an01"
-                    style=${{ flex: 1 }}
+                    className="grow-input"
                   />
-                  <button title="Sugerir nome" onClick=${() => { const v = buildAdName(nicho, countries, cjNum, anNum); if (v) { setAdName(v); setAdNameManual(false); } }} style=${{ padding: "0 10px", borderRadius: "10px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", cursor: "pointer", fontSize: "1rem" }}>↺</button>
+                  <button title="Sugerir nome" onClick=${() => { const v = buildAdName(nicho, countries, cjNum, anNum); if (v) { setAdName(v); setAdNameManual(false); } }} className="suggest-btn">↺</button>
                 </div>
               </div>
               <div className="field">
@@ -3886,8 +3873,8 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                     `;
                   }
                   return html`
-                    <div style=${{ display: "flex", gap: "8px", alignItems: "center" }}>
-                      <input type="text" value=${igActorId} onInput=${(e) => setIgActorId(e.target.value)} placeholder="Ex: 17841400000000000" style=${{ flex: 1 }} />
+                    <div className="form-inline">
+                      <input type="text" value=${igActorId} onInput=${(e) => setIgActorId(e.target.value)} placeholder="Ex: 17841400000000000" className="grow-input" />
                       ${(!pages || pages.length === 0) && !pagesLoading ? html`
                         <button className="ghost small" onClick=${onLoadPages}>Carregar páginas</button>
                       ` : null}
@@ -3898,11 +3885,11 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                   `;
                 })()}
               </div>
-              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+              <div className="field full-span">
                 <label>Formato do criativo</label>
-                <div style=${{ display: "flex", gap: "12px", marginTop: "4px" }}>
+                <div className="option-list compact" style=${{ marginTop: "4px" }}>
                   ${["image", "video"].map((fmt) => html`
-                    <label key=${fmt} className="checkbox" style=${{ cursor: "pointer", fontWeight: adFormat === fmt ? 700 : 400 }}>
+                    <label key=${fmt} className="checkbox checkbox-row" style=${{ fontWeight: adFormat === fmt ? 700 : 400 }}>
                       <input type="radio" name="adFormat" checked=${adFormat === fmt} onChange=${() => setAdFormat(fmt)} />
                       ${fmt === "image" ? "🖼️ Imagem" : "🎬 Vídeo"}
                     </label>
@@ -3910,38 +3897,38 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                 </div>
               </div>
               ${adFormat === "image" ? html`
-                <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <div className="field full-span">
                   <label>URL da imagem * (.jpg, .png — mín. 1080×1080 recomendado)</label>
                   <input type="url" value=${imageUrl} onInput=${(e) => setImageUrl(e.target.value)} placeholder="https://seusite.com/imagem.jpg" />
                 </div>
                 ${imageUrl ? html`
-                  <div style=${{ gridColumn: "1 / -1", padding: "12px", border: "1px solid var(--border)", borderRadius: "12px", background: "#f8f9ff" }}>
+                  <div className="soft-panel preview-panel full-span">
                     <p className="muted small" style=${{ margin: "0 0 8px" }}>Pré-visualização:</p>
-                    <img src=${imageUrl} alt="preview" style=${{ maxWidth: "320px", maxHeight: "180px", borderRadius: "8px", objectFit: "contain", display: "block" }}
+                    <img src=${imageUrl} alt="preview" className="preview-image"
                       onError=${(e) => { e.target.style.display = "none"; }} />
                   </div>
                 ` : null}
               ` : html`
-                <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <div className="field full-span">
                   <label>ID do vídeo no Facebook *</label>
                   <input type="text" value=${videoId} onInput=${(e) => setVideoId(e.target.value)} placeholder="ID do vídeo (ex: 123456789) — já deve estar na biblioteca de mídia da página" />
                 </div>
-                <div className="field" style=${{ gridColumn: "1 / -1" }}>
+                <div className="field full-span">
                   <label>URL da thumbnail <span className="muted small">— opcional</span></label>
                   <input type="url" value=${thumbUrl} onInput=${(e) => setThumbUrl(e.target.value)} placeholder="https://seusite.com/thumb.jpg" />
                 </div>
               `}
-              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+              <div className="field full-span">
                 <label>Título (headline) * — máx. 40 caracteres</label>
                 <input type="text" value=${headline} onInput=${(e) => setHeadline(e.target.value)} placeholder="Ex: Você precisa ler isso!" maxLength="40" />
                 <span className="muted small">${headline.length}/40</span>
               </div>
-              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+              <div className="field full-span">
                 <label>Texto principal — máx. 125 caracteres</label>
                 <textarea value=${adBody} onInput=${(e) => setAdBody(e.target.value)}
                   placeholder="Texto que aparece acima do criativo..."
                   rows="3" maxLength="125"
-                  style=${{ width: "100%", padding: "9px 12px", borderRadius: "10px", border: "1px solid var(--border)", background: "#fbfbff", fontSize: "0.9rem", resize: "vertical", fontFamily: "inherit" }}
+                  className="field-textarea"
                 ></textarea>
                 <span className="muted small">${adBody.length}/125</span>
               </div>
@@ -3956,7 +3943,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                   ${CTA_TYPES.map((c) => html`<option key=${c.value} value=${c.value}>${c.label}</option>`)}
                 </select>
               </div>
-              <div className="field" style=${{ gridColumn: "1 / -1" }}>
+              <div className="field full-span">
                 <label>URL de destino * (inclua UTMs!)</label>
 ${(() => {
                   const UTM_SUFFIX = `utm_source=fb&utm_medium=cpc&utm_campaign=${encodeURIComponent(campName)}&utm_term=${encodeURIComponent(adsetName)}&utm_content=${encodeURIComponent(adName)}&ad_id={{ad.id}}`;
@@ -3976,8 +3963,8 @@ ${(() => {
                   ` : null;
                 })()}
                 <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo?utm_source=fb&utm_medium=cpc&utm_content={{ad.name}}" />
-                <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
-                  <span className="muted small" style=${{ alignSelf: "center" }}>Macros:</span>
+                <div className="action-row" style=${{ marginTop: "6px" }}>
+                  <span className="muted small">Macros:</span>
                   ${UTM_MACROS.map((m) => html`
                     <button key=${m.label} className="ghost small" title=${m.tip}
                       onClick=${(e) => { e.preventDefault(); setDestUrl((prev) => prev + m.label); }}
@@ -3990,20 +3977,20 @@ ${(() => {
             </div>
           ` : null}
           ${!skipAd && savedAds.length > 0 ? html`
-            <div style=${{ border: "1px solid var(--accent-2)", borderRadius: "10px", padding: "10px 14px", background: "#f0f4ff", marginBottom: "4px" }}>
-              <p style=${{ fontSize: "0.8rem", color: "var(--muted)", marginBottom: "8px" }}>Anúncios já salvos (${savedAds.length}):</p>
+            <div className="soft-panel accent compact" style=${{ marginBottom: "4px" }}>
+              <p className="helper-text-inline" style=${{ marginBottom: "8px" }}>Anúncios já salvos (${savedAds.length}):</p>
               ${savedAds.map((a, i) => html`
-                <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: i < savedAds.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <span style=${{ fontSize: "0.85rem" }}><strong>AN${a._anNum}</strong> — ${a.name || "(sem nome)"} · ${a.ad_format === "video" ? "Vídeo" : "Imagem"}</span>
+                <div key=${i} className="action-row-between" style=${{ padding: "4px 0", borderBottom: i < savedAds.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <span><strong>AN${a._anNum}</strong> — ${a.name || "(sem nome)"} · ${a.ad_format === "video" ? "Vídeo" : "Imagem"}</span>
                   <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => setSavedAds((prev) => prev.filter((_, j) => j !== i))}>✕</button>
                 </div>
               `)}
             </div>
           ` : null}
 
-          <div style=${{ display: "flex", justifyContent: "space-between" }}>
+          <div className="action-row-between">
             <button onClick=${() => setStep(2)}>← Voltar</button>
-            <div style=${{ display: "flex", gap: "8px" }}>
+            <div className="action-group">
               ${!skipAd ? html`
                 <button className="ghost" disabled=${!step3Valid} onClick=${() => {
                   setSavedAds((prev) => [...prev, snapshotCurrentAd()]);
@@ -4032,8 +4019,8 @@ ${(() => {
               <h2 className="section-title">Revisão final</h2>
             </div>
           </div>
-          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" }}>
-            <div style=${{ padding: "16px", border: "2px solid var(--accent)", borderRadius: "14px", background: "#f3f4ff" }}>
+          <div className="review-grid">
+            <div className="review-card primary">
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>🎯 Campanha</p>
               <p><strong>Nome:</strong> ${campName}</p>
               <p><strong>Objetivo:</strong> ${OBJECTIVES.find((o) => o.value === objective)?.label}</p>
@@ -4042,7 +4029,7 @@ ${(() => {
               ${cbo ? html`<p><strong>CBO:</strong> R$ ${campBudget} (${campBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
               ${spendingLimit ? html`<p><strong>Limite de gastos:</strong> R$ ${spendingLimit}</p>` : null}
             </div>
-            <div style=${{ padding: "16px", border: "1px solid var(--border)", borderRadius: "14px", background: "#f8f9ff" }}>
+            <div className="review-card">
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>📦 Conjunto</p>
               <p><strong>Nome:</strong> ${adsetName || `${campName} — Conjunto`}</p>
               ${!cbo ? html`<p><strong>Orçamento:</strong> R$ ${adsetBudget} (${adsetBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
@@ -4059,7 +4046,7 @@ ${(() => {
               <p><strong>Posicionamentos:</strong> ${placementMode === "auto" ? "Automático" : "Manual"}</p>
               ${pixelId ? html`<p><strong>Pixel:</strong> ${pixels.find((px) => px.id === pixelId)?.name || pixelId} — ${CONVERSION_EVENTS.find((e) => e.value === conversionEvent)?.label}</p>` : null}
             </div>
-            <div style=${{ padding: "16px", border: "1px solid var(--border)", borderRadius: "14px", background: "#f8f9ff" }}>
+            <div className="review-card">
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>📣 Anúncio</p>
               ${skipAd ? html`<p className="muted small">Não incluído — adicionar depois.</p>` : html`
                 <p><strong>Nome:</strong> ${adName || `${campName} — Anúncio`}</p>
@@ -4071,12 +4058,12 @@ ${(() => {
                 })()}</p>` : null}
                 <p><strong>Título:</strong> ${headline}</p>
                 <p><strong>CTA:</strong> ${CTA_TYPES.find((c) => c.value === ctaType)?.label}</p>
-                <p style=${{ wordBreak: "break-all", fontSize: "0.82rem" }}><strong>URL:</strong> ${destUrl}</p>
+                <p className="review-url"><strong>URL:</strong> ${destUrl}</p>
               `}
             </div>
           </div>
           ${(savedAdsets.length > 0 || savedAds.length > 0) ? html`
-            <div style=${{ padding: "12px 16px", border: "1px solid var(--accent-2)", borderRadius: "12px", background: "#f0f4ff" }}>
+            <div className="soft-panel accent">
               <strong>📊 Estrutura a criar:</strong>
               ${' '}${savedAdsets.length + 1} conjunto(s) × ${skipAd ? 0 : savedAds.length + 1} anúncio(s)
               ${' '}= <strong>${skipAd ? savedAdsets.length + 1 : (savedAdsets.length + 1) * (savedAds.length + 1)} combinação(ões)</strong>
@@ -4088,13 +4075,13 @@ ${(() => {
               ` : null}
             </div>
           ` : null}
-          <div style=${{ padding: "14px 16px", border: "1px solid #f1c27d", borderRadius: "12px", background: "#fff4e5" }}>
+          <div className="soft-panel warn">
             <strong>⚠️ Atenção:</strong> tudo será criado com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
             ${campStatus === "ACTIVE" ? html` <span className="muted small">Isso significa que os anúncios entrarão em veiculação imediatamente após aprovação do Meta.</span>` : null}
           </div>
-          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="action-row-between">
             <button onClick=${() => setStep(3)} disabled=${publishing}>← Voltar</button>
-            <button className="primary" onClick=${handlePublish} disabled=${publishing} style=${{ minWidth: "180px" }}>
+            <button className="primary publish-btn" onClick=${handlePublish} disabled=${publishing}>
               ${publishing ? "Criando..." : "🚀 Publicar campanha"}
             </button>
           </div>
@@ -4298,15 +4285,15 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             <span className="eyebrow">Dashboard</span>
             <h2 className="section-title">Configurações</h2>
           </div>
-          <div style=${{ display: "flex", gap: "10px", alignItems: "center" }}>
-            ${saveMsg ? html`<span style=${{ color: saveMsg.startsWith("Erro") ? "#c0392b" : "#198a76", fontWeight: 600, fontSize: "0.88rem" }}>${saveMsg}</span>` : null}
+          <div className="settings-toolbar">
+            ${saveMsg ? html`<span className=${`settings-save-msg ${saveMsg.startsWith("Erro") ? "error" : "success"}`}>${saveMsg}</span>` : null}
             <button className="primary" onClick=${handleSave} disabled=${saving}>
               ${saving ? "Salvando..." : "Salvar configurações"}
             </button>
           </div>
         </div>
 
-        <div className="filters" style=${{ marginBottom: "28px" }}>
+        <div className="filters section-gap">
           <div className="field">
             <label>ID da conta Meta</label>
             <input
@@ -4326,7 +4313,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
           </div>
           <div className="field">
             <label>Carregar criativos (Meta)</label>
-            <label className="checkbox" style=${{ marginTop: "4px" }}>
+            <label className="checkbox checkbox-row" style=${{ marginTop: "4px" }}>
               <input
                 type="checkbox"
                 checked=${!!includeAssets}
@@ -4338,32 +4325,27 @@ function ConfiguracoesView({ settings, onSave, saving }) {
           </div>
         </div>
 
-        <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px" }}>
-          <h3 style=${{ margin: "0 0 16px", fontSize: "1rem", fontWeight: 700 }}>Domínios</h3>
-          <div style=${{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "16px" }}>
+        <div className="settings-section first">
+          <h3 className="settings-title spacious">Domínios</h3>
+          <div className="pill-list">
             ${domains.map((d) => html`
-              <span key=${d} style=${{
-                display: "inline-flex", alignItems: "center", gap: "6px",
-                padding: "5px 12px 5px 14px", borderRadius: "999px",
-                background: "#eef0ff", border: "1px solid #d0d3f8",
-                fontSize: "0.85rem", fontWeight: 600, color: "var(--ink)",
-              }}>
+              <span key=${d} className="pill">
                 ${d}
                 <button
                   onClick=${() => removeDomain(d)}
-                  style=${{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "0.75rem", padding: "0", lineHeight: 1, display: "flex" }}
+                  className="pill-remove"
                 >✕</button>
               </span>
             `)}
           </div>
-          <div style=${{ display: "flex", gap: "8px", maxWidth: "480px" }}>
+          <div className="inline-form-row compact">
             <input
               type="text"
               value=${newDomain}
               onInput=${(e) => setNewDomain(e.target.value)}
               onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addDomain(); } }}
               placeholder="ex.: meudominio.com.br"
-              style=${{ flex: 1 }}
+              className="grow-input"
             />
             <button className="ghost" onClick=${addDomain} disabled=${!newDomain.trim()}>
               + Adicionar
@@ -4372,45 +4354,44 @@ function ConfiguracoesView({ settings, onSave, saving }) {
           <p className="muted small" style=${{ marginTop: "8px" }}>Esses domínios ficam disponíveis no seletor de Domínio dos filtros.</p>
         </div>
 
-        <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
-
-          <h3 style=${{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 700 }}>Nichos</h3>
-          <p className="muted small" style=${{ marginBottom: "16px" }}>Nichos cadastrados aparecem no Passo 1 da criação de campanhas e serão usados para padronizar nomes, URLs e UTMs.</p>
+        <div className="settings-section">
+          <h3 className="settings-title">Nichos</h3>
+          <p className="muted small settings-lead">Nichos cadastrados aparecem no Passo 1 da criação de campanhas e serão usados para padronizar nomes, URLs e UTMs.</p>
           ${nichos.length === 0
               ? html`<p className="muted small" style=${{ marginBottom: "12px" }}>Nenhum nicho cadastrado ainda.</p>`
               : html`
-                <div style=${{ border: "1px solid var(--border-light)", borderRadius: "14px", overflow: "hidden", marginBottom: "16px" }}>
-                  <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
+                <div className="table-card">
+                  <table className="simple-table">
                     <thead>
-                      <tr style=${{ background: "var(--surface-2, #f5f5fb)" }}>
-                        <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Nome</th>
-                        <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>ID</th>
-                        <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>País</th>
+                      <tr>
+                        <th>Nome</th>
+                        <th>ID</th>
+                        <th>País</th>
                         <th style=${{ width: "120px" }}></th>
                       </tr>
                     </thead>
                     <tbody>
-                      ${nichos.map((n, i) => html`
-                        <tr key=${n.slug} style=${{ borderTop: i === 0 ? "none" : "1px solid var(--border-light)", background: editingSlug === n.slug ? "#f0f4ff" : "#fff" }}>
+                      ${nichos.map((n) => html`
+                        <tr key=${n.slug} className=${editingSlug === n.slug ? "is-editing" : ""}>
                           ${editingSlug === n.slug ? html`
-                            <td style=${{ padding: "8px 10px" }}>
+                            <td className="table-cell-tight">
                               <input type="text" value=${editNome} onInput=${(e) => setEditNome(e.target.value)}
-                                style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box" }} />
+                                className="table-input" />
                             </td>
-                            <td style=${{ padding: "8px 10px" }}>
+                            <td className="table-cell-tight">
                               <input type="text" value=${editSlug} onInput=${(e) => setEditSlug(e.target.value)} placeholder=${toSlug(editNome)}
-                                style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box", fontFamily: "monospace" }} />
+                                className="table-input mono" />
                             </td>
-                            <td style=${{ padding: "8px 10px", verticalAlign: "top" }}>
-                              <div style=${{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: editPaises.length ? "6px" : 0 }}>
+                            <td className="table-cell-tight">
+                              <div className="tag-list sm" style=${{ marginBottom: editPaises.length ? "6px" : 0 }}>
                                 ${editPaises.map((p) => html`
-                                  <span key=${p} style=${{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "2px 8px", borderRadius: "999px", background: "#eef0ff", border: "1px solid #d0d3f8", fontSize: "0.78rem", fontWeight: 600, color: "var(--ink)" }}>
+                                  <span key=${p} className="tag-chip sm">
                                     ${p}
-                                    <button onMouseDown=${(e) => { e.preventDefault(); setEditPaises(editPaises.filter((x) => x !== p)); }} style=${{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "0.7rem", padding: 0, lineHeight: 1 }}>✕</button>
+                                    <button onMouseDown=${(e) => { e.preventDefault(); setEditPaises(editPaises.filter((x) => x !== p)); }} className="tag-chip-remove">✕</button>
                                   </span>
                                 `)}
                               </div>
-                              <div style=${{ display: "flex", gap: "4px" }}>
+                              <div className="form-inline-tight">
                                 <${PaisSelect}
                                   value=${editPaisInput}
                                   onChange=${(v) => setEditPaisInput(v)}
@@ -4418,29 +4399,29 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                                   placeholder="Adicionar país..."
                                   inputStyle=${{ padding: "5px 8px", borderRadius: "8px", border: "1px solid var(--accent)", fontSize: "0.82rem", minWidth: 0 }}
                                 />
-                                <button onClick=${addEditPais} disabled=${!editPaisInput.trim()} style=${{ padding: "4px 8px", borderRadius: "8px", border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff", fontSize: "0.78rem", cursor: "pointer", whiteSpace: "nowrap" }}>+</button>
+                                <button onClick=${addEditPais} disabled=${!editPaisInput.trim()} className="primary small">+</button>
                               </div>
                             </td>
-                            <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                            <td className="table-cell-actions">
                               <button className="primary" onClick=${() => saveEditNicho(n.slug)} style=${{ padding: "4px 12px", fontSize: "0.82rem", marginRight: "4px" }}>✓</button>
                               <button className="ghost" onClick=${cancelEditNicho} style=${{ padding: "4px 10px", fontSize: "0.82rem" }}>✕</button>
                             </td>
                           ` : html`
-                            <td style=${{ padding: "10px 14px", fontWeight: 600, color: "var(--ink)" }}>${n.nome}</td>
-                            <td style=${{ padding: "10px 14px", color: "var(--muted)", fontFamily: "monospace", fontSize: "0.82rem" }}>${n.slug}</td>
-                            <td style=${{ padding: "10px 14px" }}>
+                            <td><strong>${n.nome}</strong></td>
+                            <td className="table-cell-mono">${n.slug}</td>
+                            <td>
                               ${(() => {
                                 const lista = Array.isArray(n.paises) ? n.paises : (n.pais ? [n.pais] : []);
                                 return lista.length
-                                  ? html`<div style=${{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                                      ${lista.map((p) => html`<span key=${p} style=${{ padding: "2px 8px", borderRadius: "999px", background: "#eef0ff", border: "1px solid #d0d3f8", fontSize: "0.78rem", fontWeight: 600, color: "var(--ink)" }}>${p}</span>`)}
+                                  ? html`<div className="tag-list sm">
+                                      ${lista.map((p) => html`<span key=${p} className="tag-chip sm">${p}</span>`)}
                                     </div>`
                                   : html`<span className="muted">—</span>`;
                               })()}
                             </td>
-                            <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                            <td className="table-cell-actions">
                               <button className="ghost" onClick=${() => startEditNicho(n)} style=${{ padding: "3px 10px", fontSize: "0.8rem", marginRight: "4px" }}>Editar</button>
-                              <button onClick=${() => removeNicho(n.slug)} style=${{ background: "none", border: "none", cursor: "pointer", color: "#c0392b", fontSize: "1rem", lineHeight: 1 }}>✕</button>
+                              <button onClick=${() => removeNicho(n.slug)} className="icon-danger-btn">✕</button>
                             </td>
                           `}
                         </tr>
@@ -4450,40 +4431,39 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                 </div>
               `
             }
-          <div style=${{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 2, minWidth: "150px" }}>
-              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Nome *</label>
+          <div className="inline-form-row">
+            <div className="field-stack field-grow-wide">
+              <label className="field-label">Nome *</label>
               <input
                 type="text"
                 value=${newNichoNome}
                 onInput=${(e) => { setNewNichoNome(e.target.value); setNewNichoSlug(toSlug(e.target.value)); }}
                 onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
                 placeholder="ex: Saúde"
-                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
               />
             </div>
-            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "120px" }}>
-              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>ID</label>
+            <div className="field-stack field-grow">
+              <label className="field-label">ID</label>
               <input
                 type="text"
                 value=${newNichoSlug}
                 onInput=${(e) => setNewNichoSlug(e.target.value)}
                 onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addNicho(); } }}
                 placeholder="ex: saude"
-                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem", fontFamily: "monospace" }}
+                style=${{ fontFamily: "monospace" }}
               />
             </div>
-            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 2, minWidth: "150px" }}>
-              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Países</label>
-              <div style=${{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: newNichoPaises.length ? "6px" : 0 }}>
+            <div className="field-stack field-grow-wide">
+              <label className="field-label">Países</label>
+              <div className="tag-list sm" style=${{ marginBottom: newNichoPaises.length ? "6px" : 0 }}>
                 ${newNichoPaises.map((p) => html`
-                  <span key=${p} style=${{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 9px", borderRadius: "999px", background: "#eef0ff", border: "1px solid #d0d3f8", fontSize: "0.8rem", fontWeight: 600, color: "var(--ink)" }}>
+                  <span key=${p} className="tag-chip">
                     ${p}
-                    <button onMouseDown=${(e) => { e.preventDefault(); setNewNichoPaises(newNichoPaises.filter((x) => x !== p)); }} style=${{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "0.7rem", padding: 0, lineHeight: 1 }}>✕</button>
+                    <button onMouseDown=${(e) => { e.preventDefault(); setNewNichoPaises(newNichoPaises.filter((x) => x !== p)); }} className="tag-chip-remove">✕</button>
                   </span>
                 `)}
               </div>
-              <div style=${{ display: "flex", gap: "6px" }}>
+              <div className="form-inline-tight">
                 <${PaisSelect}
                   value=${newNichoPaisInput}
                   onChange=${(v) => setNewNichoPaisInput(v)}
@@ -4491,65 +4471,65 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                   placeholder="Digite para buscar..."
                   inputStyle=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}
                 />
-                <button onClick=${addNewPais} disabled=${!newNichoPaisInput.trim()} style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--surface-2,#f5f5fb)", fontSize: "0.88rem", cursor: "pointer", whiteSpace: "nowrap" }}>+ País</button>
+                <button onClick=${addNewPais} disabled=${!newNichoPaisInput.trim()} className="ghost">+ País</button>
               </div>
             </div>
-            <button className="ghost" onClick=${addNicho} disabled=${!newNichoNome.trim()} style=${{ whiteSpace: "nowrap", alignSelf: "flex-end" }}>+ Adicionar</button>
+            <button className="ghost" onClick=${addNicho} disabled=${!newNichoNome.trim()} style=${{ whiteSpace: "nowrap" }}>+ Adicionar</button>
           </div>
           <p className="muted small" style=${{ marginTop: "8px" }}>O ID é gerado automaticamente a partir do nome — pode ser editado manualmente.</p>
         </div>
 
-        <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
-          <h3 style=${{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 700 }}>URLs cadastradas</h3>
-          <p className="muted small" style=${{ marginBottom: "16px" }}>Cadastre a URL base (sem UTMs). As UTMs serão adicionadas diretamente no campo de URL ao criar o anúncio.</p>
+        <div className="settings-section">
+          <h3 className="settings-title">URLs cadastradas</h3>
+          <p className="muted small settings-lead">Cadastre a URL base (sem UTMs). As UTMs serão adicionadas diretamente no campo de URL ao criar o anúncio.</p>
           ${urls.length === 0
             ? html`<p className="muted small" style=${{ marginBottom: "12px" }}>Nenhuma URL cadastrada ainda.</p>`
             : html`
-              <div style=${{ border: "1px solid var(--border-light)", borderRadius: "14px", overflow: "hidden", marginBottom: "16px" }}>
-                <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
+              <div className="table-card">
+                <table className="simple-table">
                   <thead>
-                    <tr style=${{ background: "var(--surface-2, #f5f5fb)" }}>
-                      <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Nome</th>
-                      <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>Nicho</th>
-                      <th style=${{ padding: "8px 14px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>URL</th>
+                    <tr>
+                      <th>Nome</th>
+                      <th>Nicho</th>
+                      <th>URL</th>
                       <th style=${{ width: "110px" }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     ${urls.map((u, i) => html`
-                      <tr key=${i} style=${{ borderTop: i === 0 ? "none" : "1px solid var(--border-light)", background: editingUrlIdx === i ? "#f0f4ff" : "#fff" }}>
+                      <tr key=${i} className=${editingUrlIdx === i ? "is-editing" : ""}>
                         ${editingUrlIdx === i ? html`
-                          <td style=${{ padding: "8px 10px", minWidth: "130px" }}>
+                          <td className="table-cell-tight" style=${{ minWidth: "130px" }}>
                             <input type="text" value=${editUrlNome} onInput=${(e) => setEditUrlNome(e.target.value)}
-                              style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.88rem", boxSizing: "border-box" }} />
+                              className="table-input" />
                           </td>
-                          <td style=${{ padding: "8px 10px", minWidth: "120px" }}>
+                          <td className="table-cell-tight" style=${{ minWidth: "120px" }}>
                             <select value=${editUrlNicho} onChange=${(e) => setEditUrlNicho(e.target.value)}
-                              style=${{ width: "100%", padding: "6px 8px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.85rem" }}>
+                              className="table-input sm">
                               <option value="">Todos</option>
                               ${nichos.map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}</option>`)}
                             </select>
                           </td>
-                          <td style=${{ padding: "8px 10px" }}>
+                          <td className="table-cell-tight">
                             <input type="url" value=${editUrlValue} onInput=${(e) => setEditUrlValue(e.target.value)}
-                              style=${{ width: "100%", padding: "6px 10px", borderRadius: "10px", border: "1px solid var(--accent)", fontSize: "0.82rem", boxSizing: "border-box", fontFamily: "monospace" }} />
+                              className="table-input sm mono" />
                           </td>
-                          <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                          <td className="table-cell-actions">
                             <button className="primary" onClick=${() => saveEditUrl(i)} style=${{ padding: "4px 12px", fontSize: "0.82rem", marginRight: "4px" }}>✓</button>
                             <button className="ghost" onClick=${() => setEditingUrlIdx(null)} style=${{ padding: "4px 10px", fontSize: "0.82rem" }}>✕</button>
                           </td>
                         ` : html`
-                          <td style=${{ padding: "10px 14px", fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>${u.nome}</td>
-                          <td style=${{ padding: "10px 14px" }}>
+                          <td style=${{ whiteSpace: "nowrap" }}><strong>${u.nome}</strong></td>
+                          <td>
                             ${u.nicho
-                              ? html`<span style=${{ padding: "2px 8px", borderRadius: "999px", background: "#eef0ff", border: "1px solid #d0d3f8", fontSize: "0.78rem", fontWeight: 600, color: "var(--ink)" }}>${nichos.find((n) => n.slug === u.nicho)?.nome || u.nicho}</span>`
+                              ? html`<span className="tag-chip sm">${nichos.find((n) => n.slug === u.nicho)?.nome || u.nicho}</span>`
                               : html`<span className="muted" style=${{ fontSize: "0.8rem" }}>Todos</span>`
                             }
                           </td>
-                          <td style=${{ padding: "10px 14px", color: "var(--muted)", fontFamily: "monospace", fontSize: "0.78rem", wordBreak: "break-all" }}>${u.url}</td>
-                          <td style=${{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                          <td className="table-cell-url">${u.url}</td>
+                          <td className="table-cell-actions">
                             <button className="ghost" onClick=${() => startEditUrl(i)} style=${{ padding: "3px 10px", fontSize: "0.8rem", marginRight: "4px" }}>Editar</button>
-                            <button onClick=${() => removeUrl(i)} style=${{ background: "none", border: "none", cursor: "pointer", color: "#c0392b", fontSize: "1rem", lineHeight: 1 }}>✕</button>
+                            <button onClick=${() => removeUrl(i)} className="icon-danger-btn">✕</button>
                           </td>
                         `}
                       </tr>
@@ -4559,30 +4539,28 @@ function ConfiguracoesView({ settings, onSave, saving }) {
               </div>
             `
           }
-          <div style=${{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "150px" }}>
-              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Nome *</label>
+          <div className="inline-form-row">
+            <div className="field-stack field-grow">
+              <label className="field-label">Nome *</label>
               <input type="text" value=${newUrlNome} onInput=${(e) => setNewUrlNome(e.target.value)}
                 placeholder="ex: Oferta principal"
-                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
-                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }} />
+                onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }} />
             </div>
-            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "140px" }}>
-              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Nicho</label>
-              <select value=${newUrlNicho} onChange=${(e) => setNewUrlNicho(e.target.value)}
-                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.88rem" }}>
+            <div className="field-stack field-grow">
+              <label className="field-label">Nicho</label>
+              <select value=${newUrlNicho} onChange=${(e) => setNewUrlNicho(e.target.value)}>
                 <option value="">Todos</option>
                 ${nichos.map((n) => html`<option key=${n.slug} value=${n.slug}>${n.nome}</option>`)}
               </select>
             </div>
-            <div style=${{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "260px" }}>
-              <label style=${{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>URL *</label>
+            <div className="field-stack field-grow-url">
+              <label className="field-label">URL *</label>
               <input type="url" value=${newUrlValue} onInput=${(e) => setNewUrlValue(e.target.value)}
                 placeholder="https://seusite.com/artigo"
                 onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
-                style=${{ padding: "8px 12px", borderRadius: "12px", border: "1px solid var(--border)", fontSize: "0.85rem", fontFamily: "monospace" }} />
+                style=${{ fontFamily: "monospace" }} />
             </div>
-            <button className="ghost" onClick=${addUrl} disabled=${!newUrlNome.trim() || !newUrlValue.trim()} style=${{ whiteSpace: "nowrap", alignSelf: "flex-end" }}>+ Adicionar</button>
+            <button className="ghost" onClick=${addUrl} disabled=${!newUrlNome.trim() || !newUrlValue.trim()} style=${{ whiteSpace: "nowrap" }}>+ Adicionar</button>
           </div>
         </div>
 
@@ -4712,45 +4690,45 @@ function MediaLibrarySection({ accountId }) {
   `;
 
   const MediaCard = (item, isHidden) => html`
-    <div key=${item.key} style=${{ width: "130px", border: "1px solid var(--border-light)", borderRadius: "12px", overflow: "hidden", background: "#fff", flexShrink: 0, opacity: isHidden ? .6 : 1 }}>
-      <div style=${{ width: "130px", height: "90px", background: "#eee", overflow: "hidden", position: "relative" }}>
+    <div key=${item.key} className=${`media-card${isHidden ? " is-hidden" : ""}`}>
+      <div className="media-thumb">
         ${item.url
-          ? html`<img src=${item.url} alt=${item.name} style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />`
-          : html`<div style=${{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>${item.type === "video" ? "🎬" : "🖼️"}</div>`
+          ? html`<img src=${item.url} alt=${item.name} />`
+          : html`<div className="media-thumb-fallback">${item.type === "video" ? "🎬" : "🖼️"}</div>`
         }
-        <span style=${{ position: "absolute", top: "4px", right: "4px", background: item.type === "video" ? "#1a1a2e" : "#5758e8", color: "#fff", fontSize: "0.62rem", fontWeight: 700, padding: "2px 5px", borderRadius: "6px", textTransform: "uppercase" }}>${item.type === "video" ? "VID" : "IMG"}</span>
+        <span className=${`media-badge ${item.type === "video" ? "video" : "image"}`}>${item.type === "video" ? "VID" : "IMG"}</span>
       </div>
-      <div style=${{ padding: "8px 8px 6px" }}>
+      <div className="media-card-body">
         ${editingKey === item.key ? html`
           <input
             type="text" value=${editValue}
             onInput=${(e) => setEditValue(e.target.value)}
             onKeyDown=${(e) => { if (e.key === "Enter") commitRename(item.key); if (e.key === "Escape") setEditingKey(null); }}
-            style=${{ width: "100%", boxSizing: "border-box", padding: "3px 6px", borderRadius: "7px", border: "1px solid var(--accent)", fontSize: "0.75rem" }}
+            className="media-input"
           />
-          <button onClick=${() => commitRename(item.key)} style=${{ marginTop: "4px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "var(--accent)", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>✓ Salvar</button>
+          <button onClick=${() => commitRename(item.key)} className="media-save-btn">✓ Salvar</button>
         ` : html`
-          <p style=${{ margin: "0 0 5px", fontSize: "0.74rem", fontWeight: 600, color: "var(--ink)", wordBreak: "break-all", lineHeight: 1.3 }}>${getDisplayName(item)}</p>
+          <p className="media-card-title">${getDisplayName(item)}</p>
           ${isHidden ? html`
-            <button onClick=${() => unhideItem(item.key)} style=${{ width: "100%", padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.73rem", color: "var(--muted)" }}>👁️ Mostrar</button>
+            <button onClick=${() => unhideItem(item.key)} className="media-mini-btn full">👁️ Mostrar</button>
           ` : html`
-            <div style=${{ display: "flex", gap: "4px" }}>
-              <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>✏️</button>
-              <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover para pasta" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>📂</button>
-              <button onClick=${() => hideItem(item.key)} title="Ocultar" style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", cursor: "pointer", fontSize: "0.75rem", color: "var(--muted)" }}>🙈</button>
+            <div className="media-card-actions">
+              <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" className="media-mini-btn">✏️</button>
+              <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover para pasta" className="media-mini-btn">📂</button>
+              <button onClick=${() => hideItem(item.key)} title="Ocultar" className="media-mini-btn">🙈</button>
             </div>
           `}
         `}
         ${movingKey === item.key && editingKey !== item.key ? html`
-          <div style=${{ marginTop: "5px" }}>
+          <div className="media-inline-editor">
             <input
               type="text" value=${moveValue}
               onInput=${(e) => setMoveValue(e.target.value)}
               onKeyDown=${(e) => { if (e.key === "Enter") commitMove(item.key); if (e.key === "Escape") setMovingKey(null); }}
               placeholder="nome-da-pasta"
-              style=${{ width: "100%", boxSizing: "border-box", padding: "3px 6px", borderRadius: "7px", border: "1px solid #f0a500", fontSize: "0.72rem" }}
+              className="media-input folder"
             />
-            <button onClick=${() => commitMove(item.key)} style=${{ marginTop: "3px", width: "100%", padding: "3px", borderRadius: "7px", border: "none", background: "#f0a500", color: "#fff", fontSize: "0.72rem", cursor: "pointer" }}>Mover</button>
+            <button onClick=${() => commitMove(item.key)} className="media-move-btn">Mover</button>
           </div>
         ` : null}
       </div>
@@ -4758,13 +4736,13 @@ function MediaLibrarySection({ accountId }) {
   `;
 
   return html`
-    <div style=${{ borderTop: "1px solid var(--border-light)", paddingTop: "24px", marginTop: "24px" }}>
-      <div style=${{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "14px", gap: "12px" }}>
+    <div className="media-section">
+      <div className="media-toolbar">
         <div>
-          <h3 style=${{ margin: "0 0 2px", fontSize: "1rem", fontWeight: 700 }}>Biblioteca de Mídia</h3>
+          <h3 className="settings-title" style=${{ marginBottom: "2px" }}>Biblioteca de Mídia</h3>
           <p className="muted small" style=${{ margin: 0 }}>Imagens e vídeos da conta Meta. Organize por pastas e renomeie os criativos localmente.</p>
         </div>
-        <div style=${{ display: "flex", gap: "8px", flexShrink: 0 }}>
+        <div className="media-toolbar-actions">
           ${hiddenCount > 0 ? html`
             <button className="ghost" onClick=${() => { setCurrentFolder("__hidden__"); setEditingKey(null); setMovingKey(null); }} style=${{ whiteSpace: "nowrap", fontSize: "0.82rem" }}>
               🙈 Ocultos (${hiddenCount})
@@ -4779,63 +4757,61 @@ function MediaLibrarySection({ accountId }) {
       ${error ? html`<div className="status error" style=${{ marginBottom: "12px" }}>${error}</div>` : null}
 
       ${media.length > 0 ? html`
-        <div style=${{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+        <div className="media-statusbar">
           ${currentFolder !== null ? html`
             <button
               onClick=${() => { setCurrentFolder(null); setEditingKey(null); setMovingKey(null); setHidingFolder(null); }}
-              style=${{ display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px", borderRadius: "20px", border: "1px solid var(--border)", background: "var(--surface-2, #f5f5fb)", cursor: "pointer", fontSize: "0.82rem", color: "var(--ink)", fontWeight: 600 }}
+              className="media-back-btn"
             >← Pastas</button>
-            <span style=${{ color: "var(--muted)", fontSize: "0.82rem" }}>/</span>
-            <span style=${{ fontSize: "0.82rem", fontWeight: 700, color: "var(--ink)" }}>
+            <span className="media-statustext">/</span>
+            <span className="media-statustext" style=${{ fontWeight: 700, color: "var(--ink)" }}>
               ${currentFolder === "__hidden__" ? "🙈 Arquivos Ocultos" : html`📁 ${currentFolder}`}
             </span>
-          ` : html`<span style=${{ fontSize: "0.82rem", color: "var(--muted)" }}>${media.length} mídias em ${folderNames.length} pasta${folderNames.length !== 1 ? "s" : ""}${saving ? " — salvando..." : ""}</span>`}
+          ` : html`<span className="media-statustext">${media.length} mídias em ${folderNames.length} pasta${folderNames.length !== 1 ? "s" : ""}${saving ? " — salvando..." : ""}</span>`}
         </div>
       ` : null}
 
       ${currentFolder === "__hidden__" ? html`
         ${hiddenItems.length === 0 ? html`
-          <p className="muted small" style=${{ textAlign: "center", padding: "30px 0" }}>Nenhum arquivo oculto.</p>
+          <p className="muted small media-empty">Nenhum arquivo oculto.</p>
         ` : html`
-          <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+          <div className="media-grid">
             ${hiddenItems.map((item) => MediaCard(item, true))}
           </div>
         `}
       ` : currentFolder !== null ? html`
-        <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+        <div className="media-grid">
           ${(folderMap[currentFolder] || []).map((item) => MediaCard(item, false))}
         </div>
         ${(folderMap[currentFolder] || []).length === 0 ? html`
-          <p className="muted small" style=${{ textAlign: "center", padding: "30px 0" }}>Pasta vazia.</p>
+          <p className="muted small media-empty">Pasta vazia.</p>
         ` : null}
       ` : html`
-        <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+        <div className="folder-grid">
           ${folderNames.map((folder) => {
             const items = folderMap[folder];
             const isConfirming = hidingFolder === folder;
             return html`
-              <div key=${folder} style=${{ width: "140px", flexShrink: 0, position: "relative" }}>
+              <div key=${folder} className="folder-card-wrap">
                 <div
                   onClick=${() => { if (!isConfirming) { setCurrentFolder(folder); setEditingKey(null); setMovingKey(null); } }}
-                  style=${{ border: "1px solid var(--border-light)", borderRadius: "14px", overflow: "hidden", background: "#fff", cursor: isConfirming ? "default" : "pointer", transition: "box-shadow .15s", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}
-                  onMouseEnter=${(e) => { if (!isConfirming) e.currentTarget.style.boxShadow = "0 4px 14px rgba(87,88,232,.18)"; }}
-                  onMouseLeave=${(e) => e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,.04)"}
+                  className=${`folder-card${isConfirming ? " confirming" : ""}`}
                 >
-                  <div style=${{ width: "140px", height: "80px", background: "var(--surface-2, #f5f5fb)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div className="folder-thumb">
                     <${FolderIcon} />
                   </div>
-                  <div style=${{ padding: "8px 10px 10px" }}>
+                  <div className="folder-body">
                     ${isConfirming ? html`
-                      <p style=${{ margin: "0 0 5px", fontSize: "0.72rem", color: "#c44", fontWeight: 700, lineHeight: 1.3 }}>Ocultar todos os ${items.length} itens?</p>
-                      <div style=${{ display: "flex", gap: "4px" }}>
-                        <button onClick=${(e) => { e.stopPropagation(); hideFolderItems(folder); }} style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "none", background: "#c44", color: "#fff", fontSize: "0.7rem", cursor: "pointer", fontWeight: 700 }}>Sim</button>
-                        <button onClick=${(e) => { e.stopPropagation(); setHidingFolder(null); }} style=${{ flex: 1, padding: "3px 0", borderRadius: "7px", border: "1px solid var(--border)", background: "none", fontSize: "0.7rem", cursor: "pointer" }}>Não</button>
+                      <p className="folder-confirm-text">Ocultar todos os ${items.length} itens?</p>
+                      <div className="folder-confirm-actions">
+                        <button onClick=${(e) => { e.stopPropagation(); hideFolderItems(folder); }} className="folder-confirm-primary">Sim</button>
+                        <button onClick=${(e) => { e.stopPropagation(); setHidingFolder(null); }} className="folder-confirm-secondary">Não</button>
                       </div>
                     ` : html`
-                      <p style=${{ margin: "0 0 2px", fontSize: "0.8rem", fontWeight: 700, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${folder}</p>
-                      <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <p style=${{ margin: 0, fontSize: "0.73rem", color: "var(--muted)" }}>${items.length} item${items.length !== 1 ? "s" : ""}</p>
-                        <button onClick=${(e) => { e.stopPropagation(); setHidingFolder(folder); }} title="Ocultar pasta" style=${{ padding: "2px 5px", borderRadius: "6px", border: "none", background: "none", cursor: "pointer", fontSize: "0.72rem", color: "var(--muted)" }}>🙈</button>
+                      <p className="folder-name">${folder}</p>
+                      <div className="folder-meta">
+                        <p className="folder-count">${items.length} item${items.length !== 1 ? "s" : ""}</p>
+                        <button onClick=${(e) => { e.stopPropagation(); setHidingFolder(folder); }} title="Ocultar pasta" className="folder-hide-btn">🙈</button>
                       </div>
                     `}
                   </div>
@@ -4847,7 +4823,7 @@ function MediaLibrarySection({ accountId }) {
       `}
 
       ${media.length === 0 && !loading ? html`
-        <p className="muted small" style=${{ textAlign: "center", padding: "20px 0", color: "var(--muted)" }}>Clique em "↺ Carregar mídias" para visualizar imagens e vídeos da conta Meta.</p>
+        <p className="muted small media-empty">Clique em "↺ Carregar mídias" para visualizar imagens e vídeos da conta Meta.</p>
       ` : null}
     </div>
   `;
