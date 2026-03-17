@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 74;
+const APP_VERSION_BUILD = 75;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -4462,24 +4462,24 @@ function ConfiguracoesView({ settings, onSave, saving }) {
         <div className="settings-section">
           <div className="card-head">
             <div>
-              <h3 className="settings-title">Usu?rios</h3>
+              <h3 className="settings-title">Usu\u00e1rios</h3>
               <p className="muted small settings-lead">
                 Cadastre gestores e editores direto pelo dashboard. O admin principal continua separado.
               </p>
             </div>
             <button className="ghost" onClick=${addUser} disabled=${!domains.length}>
-              + Adicionar usu?rio
+              + Adicionar usu\u00e1rio
             </button>
           </div>
           ${users.length === 0
-            ? html`<p className="muted small">Nenhum usu?rio cadastrado ainda.</p>`
+            ? html`<p className="muted small">Nenhum usu\u00e1rio cadastrado ainda.</p>`
             : html`
                 <div className="settings-user-grid">
                   ${users.map((user, index) => html`
                     <div key=${user.id || index} className="settings-user-card">
                       <div className="settings-user-head">
                         <div>
-                          <strong>${user.nome || `Usu?rio ${index + 1}`}</strong>
+                          <strong>${user.nome || `Usu\u00e1rio ${index + 1}`}</strong>
                           <div className="muted small">
                             ${user.username || "sem username"} | ${user.role === "editor" ? "Editor" : "Gestor"}
                           </div>
@@ -4493,7 +4493,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                             type="text"
                             value=${user.nome || ""}
                             onInput=${(e) => updateUser(user.id, { nome: e.target.value })}
-                            placeholder="Nome do usu?rio"
+                            placeholder="Nome do usu\u00e1rio"
                           />
                         </div>
                         <div className="field-stack">
@@ -4531,10 +4531,10 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                           checked=${user.active !== false}
                           onChange=${(e) => updateUser(user.id, { active: e.target.checked })}
                         />
-                        <span>Usu?rio ativo</span>
+                        <span>Usu\u00e1rio ativo</span>
                       </label>
                       <div className="field-stack">
-                        <label className="field-label">Dom?nios permitidos</label>
+                        <label className="field-label">Dom\u00ednios permitidos</label>
                         <div className="settings-user-domains">
                           ${domains.map((domain) => html`
                             <label key=${domain} className="checkbox checkbox-row settings-user-domain">
@@ -4549,14 +4549,14 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                         </div>
                       </div>
                       <div className="muted small">
-                        ?ltimo login: ${user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "nunca"}
+                        \u00daltimo login: ${user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "nunca"}
                       </div>
                     </div>
                   `)}
                 </div>
               `}
           <p className="muted small" style=${{ marginTop: "8px" }}>
-            Gestor acessa dashboard e cria campanhas. Editor entra em uma area separada.
+            Gestor acessa dashboard e cria campanhas. Editor entra em uma \u00e1rea separada.
           </p>
         </div>
 
@@ -5075,7 +5075,7 @@ function LoginView({ onAuthed }) {
         <form onSubmit=${handleSubmit} className="login-form">
           ${error ? html`<div className="login-error">${error}</div>` : null}
           <div className="field">
-            <label>Usu?rio ou e-mail</label>
+            <label>Usu\u00e1rio ou e-mail</label>
             <input
               type="text"
               value=${login}
@@ -5125,8 +5125,8 @@ function EditorPlaceholderView({ session, onLogout }) {
         <div>
           <h1>Painel do Editor</h1>
           <p className="subtitle">
-            ?rea reservada para o editor de v?deo.
-            <span className="muted small"> | Em constru??o</span>
+            \u00c1rea reservada para o editor de v\u00eddeo.
+            <span className="muted small"> | Em constru\u00e7\u00e3o</span>
           </p>
         </div>
         <div className="actions">
@@ -5143,13 +5143,13 @@ function EditorPlaceholderView({ session, onLogout }) {
           <div className="card-head">
             <div>
               <span className="eyebrow">Editor</span>
-              <h2 className="section-title">Painel em constru??o</h2>
+              <h2 className="section-title">Painel em constru\u00e7\u00e3o</h2>
             </div>
             <span className="chip neutral">${session?.role || "editor"}</span>
           </div>
           <p className="muted">
-            Este acesso j? est? separado do dashboard operacional. Quando o fluxo do editor for definido,
-            esta ?rea pode receber tarefas, fila de criativos, status e entregas.
+            Este acesso j\u00e1 est\u00e1 separado do dashboard operacional. Quando o fluxo do editor for definido,
+            esta \u00e1rea pode receber tarefas, fila de criativos, status e entregas.
           </p>
         </section>
       </main>
@@ -7841,8 +7841,6 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-
 
 
 

@@ -6,7 +6,8 @@ import {
   normalizeUsername,
 } from "./_settings.js";
 
-const PASSWORD_ITERATIONS = 120000;
+const PASSWORD_ITERATIONS = 100000;
+const PASSWORD_ITERATIONS_MAX = 100000;
 const PASSWORD_ALGO = "pbkdf2-sha256";
 export const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 export const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
@@ -204,7 +205,16 @@ export function requireDomainAccess(session, domains, options = {}) {
   return { ok: true, domains: allowed };
 }
 
-export async function hashPassword(password, saltB64 = null) {
+function getStoredPasswordIterations(value) {
+  const iterations = Number(value);
+  if (!Number.isFinite(iterations) || iterations < 1) return PASSWORD_ITERATIONS;
+  return iterations;
+}
+
+export async function hashPassword(password, saltB64 = null, iterations = PASSWORD_ITERATIONS) {
+  if (!Number.isFinite(iterations) || iterations < 1 || iterations > PASSWORD_ITERATIONS_MAX) {
+    throw new Error(`Pbkdf2 failed: iteration counts above ${PASSWORD_ITERATIONS_MAX} are not supported (requested ${iterations}).`);
+  }
   const salt = saltB64 ? bytesFromBase64(saltB64) : crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey(
     "raw",
@@ -218,7 +228,7 @@ export async function hashPassword(password, saltB64 = null) {
       name: "PBKDF2",
       hash: "SHA-256",
       salt,
-      iterations: PASSWORD_ITERATIONS,
+      iterations,
     },
     key,
     256
@@ -227,12 +237,14 @@ export async function hashPassword(password, saltB64 = null) {
     hash: base64FromBytes(new Uint8Array(bits)),
     salt: base64FromBytes(salt),
     algo: PASSWORD_ALGO,
-    iterations: PASSWORD_ITERATIONS,
+    iterations,
   };
 }
 
 export async function verifyPassword(password, user) {
   if (!user?.passwordHash || !user?.passwordSalt) return false;
-  const hashed = await hashPassword(password, user.passwordSalt);
+  const iterations = getStoredPasswordIterations(user.passwordIterations);
+  if (iterations > PASSWORD_ITERATIONS_MAX) return false;
+  const hashed = await hashPassword(password, user.passwordSalt, iterations);
   return hashed.hash === user.passwordHash;
 }
