@@ -1572,8 +1572,8 @@ function EditarView({
           </div>
         </div>
 
-        <div className="filters" style=${{ display: "flex", gap: "12px", marginBottom: "4px", flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label className="field" style=${{ flex: "1 1 220px" }}>
+        <div className="filters manager-filter-row">
+          <label className="field manager-search-field">
             <span>Buscar</span>
             <input
               type="text"
@@ -1582,17 +1582,17 @@ function EditarView({
               onInput=${(e) => onCampaignFilter?.(e.target.value)}
             />
           </label>
-          <label className="field" style=${{ flex: "0 0 140px" }}>
+          <label className="field manager-date-field">
             <span>De</span>
             <input type="date" value=${dateStart || ""}
               onInput=${(e) => onDateChange?.(e.target.value, dateEnd)} />
           </label>
-          <label className="field" style=${{ flex: "0 0 140px" }}>
+          <label className="field manager-date-field">
             <span>Até</span>
             <input type="date" value=${dateEnd || ""}
               onInput=${(e) => onDateChange?.(dateStart, e.target.value)} />
           </label>
-          <button className="btn-primary" style=${{ alignSelf: "flex-end", height: "36px" }}
+          <button className="primary manager-apply"
             onClick=${() => onLoad(true, dateStart, dateEnd)} disabled=${loading}>
             ${loading ? "..." : "Aplicar"}
           </button>
@@ -1604,28 +1604,28 @@ function EditarView({
             onClick=${() => setManagerTab("campaigns")}
           >
             Campanhas
-            ${campaignsData.length > 0 ? html`<span className="chip neutral small" style=${{ marginLeft: "4px" }}>${campaignsData.length}</span>` : null}
+            ${campaignsData.length > 0 ? html`<span className="chip neutral small manager-tab-count">${campaignsData.length}</span>` : null}
           </button>
           <button
             className=${"manager-tab-btn" + (managerTab === "adsets" ? " active" : "")}
             onClick=${() => setManagerTab("adsets")}
           >
             Conjuntos
-            ${adsetsData.length > 0 ? html`<span className="chip neutral small" style=${{ marginLeft: "4px" }}>${adsetsData.length}</span>` : null}
+            ${adsetsData.length > 0 ? html`<span className="chip neutral small manager-tab-count">${adsetsData.length}</span>` : null}
           </button>
           <button
             className=${"manager-tab-btn" + (managerTab === "ads" ? " active" : "")}
             onClick=${() => setManagerTab("ads")}
           >
             Anúncios
-            ${ads.length > 0 ? html`<span className="chip neutral small" style=${{ marginLeft: "4px" }}>${ads.length}</span>` : null}
+            ${ads.length > 0 ? html`<span className="chip neutral small manager-tab-count">${ads.length}</span>` : null}
           </button>
         </div>
 
         ${error ? html`<div className="status error" style=${{ margin: "8px 0" }}><strong>Erro:</strong> ${error}</div>` : null}
 
         ${(showHiddenPanel && hiddenList.length > 0) ? html`
-          <div style=${{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center", padding: "10px 0 12px", borderBottom: "1px solid var(--border)" }}>
+          <div className="manager-hidden-panel">
             ${hiddenList.map((c) => html`
               <span key=${c.id} className="chip neutral" style=${{ fontSize: "11px" }}>
                 ${c.name}
@@ -1642,7 +1642,7 @@ function EditarView({
           </div>` : null}
 
         ${(ads.length === 0 && !loading) ? html`
-          <div className="muted" style=${{ padding: "40px", textAlign: "center" }}>
+          <div className="muted manager-empty-state">
             ${hiddenList.length > 0
               ? html`Todas as campanhas estão ocultas. Clique em <strong>🙈 Ocultas</strong> no topo para restaurar.`
               : "Clique em \"↻ Atualizar\" para carregar as campanhas."}
@@ -1774,7 +1774,7 @@ function EditarView({
                         <input
                           type="text"
                           value=${currentName}
-                          style=${{ width: "155px", fontSize: "12px" }}
+                          className="manager-rename-input"
                           onInput=${(e) => {
                             ads.filter((a) => a.adset_id === as.id)
                               .forEach((a) => onUpdateField(a.id, { adset_name: e.target.value }));
@@ -1889,7 +1889,7 @@ function EditarView({
                     </td>
                     <td className="muted small">${formatDateTime(row.updated_time)}</td>
                     <td>
-                      <div className="inline-actions" style=${{ gap: "3px" }}>
+                      <div className="inline-actions compact">
                         <button className="ghost small" disabled=${verifyingRow}
                           onClick=${() => onVerify?.(row)} title="Verificar URL">
                           ${verifyingRow ? "..." : "🔍"}
