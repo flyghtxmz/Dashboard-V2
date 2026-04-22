@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 77;
+const APP_VERSION_BUILD = 78;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -7980,6 +7980,5 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
 
 
