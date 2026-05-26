@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 80;
+const APP_VERSION_BUILD = 81;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -94,6 +94,10 @@ function normalizeCommissionPercent(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return 0;
   return Math.min(n, 100);
+}
+
+function performanceUnitLabel(useUserLabel) {
+  return useUserLabel ? "GPM" : "eCPM";
 }
 
 const defaultDates = () => {
@@ -337,6 +341,7 @@ function formatStatusLabel(status) {
 }
 
 function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = false }) {
+  const unitLabel = performanceUnitLabel(usePmLabels);
   const revenueClientBrl =
     usdToBrl && totals.revenueClient != null
       ? (totals.revenueClient || 0) * usdToBrl
@@ -403,14 +408,14 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
       helper: "Cliques / Impressoes",
     },
     {
-      label: usePmLabels ? "PM cliente" : "eCPM cliente",
+      label: `${unitLabel} cliente`,
       value: currencyUSD.format(totals.ecpmClient || 0),
-      helper: usePmLabels ? "Pontos Medios" : "Receita por mil",
+      helper: usePmLabels ? "Ganho por mil" : "Receita por mil",
     },
     {
-      label: usePmLabels ? "PM bruto" : "eCPM bruto",
+      label: `${unitLabel} bruto`,
       value: currencyUSD.format(totals.ecpm || 0),
-      helper: usePmLabels ? "Pontos Medios antes do revshare" : "Antes do revshare",
+      helper: usePmLabels ? "Ganho por mil antes do revshare" : "Antes do revshare",
     },
     {
       label: "Active view",
@@ -481,7 +486,37 @@ function UserCommissionOverview({ totals, usdToBrl, commissionPercent, fxDateLab
   `;
 }
 
-function MetricasMensagensView() {
+function isEngagementObjective(value) {
+  const objective = String(value || "").toUpperCase();
+  return objective === "OUTCOME_ENGAGEMENT" || objective === "ENGAGEMENT";
+}
+
+function MetricasMensagensView({ rows = [], usePmLabels = false }) {
+  const label = performanceUnitLabel(usePmLabels);
+  const campaignRows = Array.from(
+    (Array.isArray(rows) ? rows : [])
+      .filter((row) => isEngagementObjective(row.objective))
+      .reduce((map, row) => {
+        const key = row.campaign_name || row.campaign_id || "Sem campanha";
+        const item =
+          map.get(key) || {
+            campaign_name: row.campaign_name || "-",
+            objective: row.objective || "",
+            impressions: 0,
+            clicks: 0,
+            revenue: 0,
+            ads: new Set(),
+          };
+        item.impressions += toNumber(row.impressions_joinads || row.impressions);
+        item.clicks += toNumber(row.clicks);
+        item.revenue += toNumber(row.revenue_client_value);
+        if (row.ad_id || row.ad_name) item.ads.add(row.ad_id || row.ad_name);
+        map.set(key, item);
+        return map;
+      }, new Map())
+      .values()
+  ).sort((a, b) => b.revenue - a.revenue);
+
   return html`
     <main className="grid">
       <section className="card wide">
@@ -490,7 +525,41 @@ function MetricasMensagensView() {
             <span className="eyebrow">Mensagens</span>
             <h2 className="section-title">Metricas Mensagens</h2>
           </div>
-          <span className="chip neutral">Em branco</span>
+          <span className="chip neutral">${campaignRows.length} campanhas de engajamento</span>
+        </div>
+        <div className="table-wrapper scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>Campanha</th>
+                <th>Tipo</th>
+                <th>Anuncios</th>
+                <th>Impressoes</th>
+                <th>Cliques</th>
+                <th>Receita cliente</th>
+                <th>${label}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${campaignRows.length === 0
+                ? html`<tr><td colSpan="7" className="muted">Sem campanhas de engajamento para o periodo.</td></tr>`
+                : campaignRows.map((row) => {
+                  const metricValue =
+                    row.impressions > 0 ? (row.revenue / row.impressions) * 1000 : null;
+                  return html`
+                    <tr key=${row.campaign_name}>
+                      <td>${row.campaign_name || "-"}</td>
+                      <td>${formatObjective(row.objective)}</td>
+                      <td>${number.format(row.ads.size || 0)}</td>
+                      <td>${number.format(row.impressions || 0)}</td>
+                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue || 0)}</td>
+                      <td>${metricValue != null ? currencyUSD.format(metricValue) : "-"}</td>
+                    </tr>
+                  `;
+                })}
+            </tbody>
+          </table>
         </div>
       </section>
     </main>
@@ -586,6 +655,7 @@ function getHostname(value) {
 }
 
 function EarningsTable({ rows, usePmLabels = false }) {
+  const unitLabel = performanceUnitLabel(usePmLabels);
   return html`
     <section className="card wide">
       <div className="card-head">
@@ -604,7 +674,7 @@ function EarningsTable({ rows, usePmLabels = false }) {
               <th>Impressoes</th>
               <th>Cliques</th>
               <th>CTR</th>
-              <th>${usePmLabels ? "PM" : "eCPM"}</th>
+              <th>${unitLabel}</th>
               <th>Receita cliente</th>
               <th>Active view</th>
             </tr>
@@ -2022,6 +2092,7 @@ function MetaJoinTable({
   allowCampaignOps = true,
   usePmLabels = false,
 }) {
+  const unitLabel = performanceUnitLabel(usePmLabels);
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
@@ -2116,7 +2187,7 @@ function MetaJoinTable({
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
-              <th>${usePmLabels ? "PM JoinAds (cliente)" : "eCPM JoinAds (cliente)"}</th>
+              <th>${unitLabel} JoinAds (cliente)</th>
               <th>Impressoes JoinAds</th>
               <th>Status</th>
             </tr>
@@ -2389,6 +2460,7 @@ function MetaJoinTable({
 }
 
 function MetaJoinGroupedTable({ rows, usePmLabels = false }) {
+  const unitLabel = performanceUnitLabel(usePmLabels);
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
     if (typeof value === "object") return JSON.stringify(value);
@@ -2477,7 +2549,7 @@ function MetaJoinGroupedTable({ rows, usePmLabels = false }) {
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
-              <th>${usePmLabels ? "PM JoinAds (cliente)" : "eCPM JoinAds (cliente)"}</th>
+              <th>${unitLabel} JoinAds (cliente)</th>
               <th>Impressoes JoinAds</th>
             </tr>
           </thead>
@@ -2525,6 +2597,7 @@ function MetaJoinGroupedTable({ rows, usePmLabels = false }) {
 }
 
 function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLabels = false }) {
+  const unitLabel = performanceUnitLabel(usePmLabels);
   const rows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const metaList = Array.isArray(metaRows) ? metaRows : [];
   const semImps = toNumber(semUtmRow?.impressions);
@@ -2635,7 +2708,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLab
     criterionValue = currencyBRL.format(top.spend || 0);
   } else if (hasEcpm) {
     leader = list.reduce((best, row) => (row.ecpm > best.ecpm ? row : best));
-    criterionLabel = usePmLabels ? "PM" : "eCPM";
+    criterionLabel = unitLabel;
     criterionValue = currencyUSD.format(leader.ecpm || 0);
   } else if (hasCtr) {
     leader = list.reduce((best, row) => (row.ctr > best.ctr ? row : best));
@@ -2695,7 +2768,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLab
               <th>Impressões</th>
               <th>Cliques</th>
               <th>Receita cliente</th>
-              <th>${usePmLabels ? "PM cliente" : "eCPM cliente"}</th>
+              <th>${unitLabel} cliente</th>
               <th>ROAS</th>
             </tr>
           </thead>
@@ -2741,6 +2814,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLab
 }
 
 function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false }) {
+  const unitLabel = performanceUnitLabel(usePmLabels);
   const safeJoinadsRows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
@@ -2828,7 +2902,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
               <th>ROAS</th>
               <th>Lucro Op (BRL)</th>
               <th>Receita JoinAds (cliente)</th>
-              <th>${usePmLabels ? "PM JoinAds (cliente)" : "eCPM JoinAds (cliente)"}</th>
+              <th>${unitLabel} JoinAds (cliente)</th>
               <th>Impressoes JoinAds</th>
             </tr>
           </thead>
@@ -7603,7 +7677,7 @@ function App() {
             </p>
           </div>
           <div className="actions">
-            ${activeTab === "dashboard"
+            ${(activeTab === "dashboard" || activeTab === "metricas_mensagens")
               ? html`<div className="muted small">
                   ${fxInfo?.rate
                     ? `USD/BRL ref. ${formatFxDate(fxInfo.effectiveDate)}: R$ ${fxRateNumber.format(
@@ -7612,12 +7686,12 @@ function App() {
                     : "Atualizando cotacao USD/BRL..."}
                 </div>`
               : null}
-            ${activeTab === "dashboard"
+            ${(activeTab === "dashboard" || activeTab === "metricas_mensagens")
               ? html`<div className="muted small">
                   Ultima atualizacao: ${formatDateTime(lastRefreshed)}
                 </div>`
               : null}
-            ${activeTab === "dashboard"
+            ${(activeTab === "dashboard" || activeTab === "metricas_mensagens")
               ? html`<button
                   className="ghost"
                   onClick=${handleLoad}
@@ -7661,9 +7735,11 @@ function App() {
           </button>
         </div>
 
-        ${activeTab === "dashboard" ? html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />` : null}
+        ${(activeTab === "dashboard" || activeTab === "metricas_mensagens")
+          ? html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`
+          : null}
 
-        ${activeTab === "dashboard" ? html`
+        ${(activeTab === "dashboard" || activeTab === "metricas_mensagens") ? html`
           <${Filters}
             filters=${filters}
             setFilters=${setFilters}
@@ -7702,7 +7778,7 @@ function App() {
               </main>
             `
           : html`
-              <${MetricasMensagensView} />
+              <${MetricasMensagensView} rows=${metaDomainFiltered} usePmLabels=${true} />
             `}
       </div>
     `;
@@ -7830,7 +7906,7 @@ function App() {
 
       ${html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`}
 
-      ${activeTab === "dashboard" ? html`
+      ${(activeTab === "dashboard" || activeTab === "metricas_mensagens") ? html`
         <${Filters}
           filters=${filters}
           setFilters=${setFilters}
@@ -7874,7 +7950,7 @@ function App() {
             </main>
           `
         : activeTab === "metricas_mensagens"
-        ? html`<${MetricasMensagensView} />`
+        ? html`<${MetricasMensagensView} rows=${metaDomainFiltered} usePmLabels=${usePmLabels} />`
         : activeTab === "duplicar"
         ? html`
             <${DuplicarView}
