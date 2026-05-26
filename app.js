@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 81;
+const APP_VERSION_BUILD = 84;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -62,7 +62,7 @@ const formatFxDate = (value) => {
 };
 
 const ROLE_TABS = {
-  admin: ["dashboard", "metricas_mensagens", "duplicar", "editar", "urls", "meta", "diag", "token", "pages", "configuracoes", "criar"],
+  admin: ["dashboard", "metricas_mensagens", "carga_bot", "duplicar", "editar", "urls", "meta", "diag", "token", "pages", "configuracoes", "criar"],
   gestor: ["dashboard", "metricas_mensagens", "criar"],
   editor: [],
 };
@@ -70,6 +70,7 @@ const ROLE_TABS = {
 const TAB_LABELS = {
   dashboard: "Dashboard",
   metricas_mensagens: "Metricas Mensagens",
+  carga_bot: "Carga do Bot",
   duplicar: "Duplicar",
   editar: "Editar",
   urls: "URLs com Parametros",
@@ -301,6 +302,13 @@ const statusLabelMap = {
   ACTIVE: "Ativo",
   PAUSED: "Pausado",
   DISABLED: "Desativado",
+  DRAFT: "Rascunho",
+  RASCUNHO: "Rascunho",
+  ATIVADO: "Ativado",
+  DESATIVADO: "Desativado",
+  ARQUIVADO: "Arquivado",
+  EXCLUIDO: "Excluido",
+  INDEFINIDO: "Indefinido",
   ARCHIVED: "Arquivado",
   DELETED: "Excluído",
   PENDING_REVIEW: "Em revisão",
@@ -320,6 +328,13 @@ const statusToneMap = {
   ACTIVE: "on",
   PAUSED: "off",
   DISABLED: "off",
+  DRAFT: "warn",
+  RASCUNHO: "warn",
+  ATIVADO: "on",
+  DESATIVADO: "off",
+  ARQUIVADO: "neutral",
+  EXCLUIDO: "neutral",
+  INDEFINIDO: "neutral",
   ARCHIVED: "neutral",
   DELETED: "neutral",
   PENDING_REVIEW: "warn",
@@ -491,7 +506,20 @@ function isEngagementObjective(value) {
   return objective === "OUTCOME_ENGAGEMENT" || objective === "ENGAGEMENT";
 }
 
-function MetricasMensagensView({ rows = [], usePmLabels = false }) {
+function calculateUserCommission(revenueBrl, commissionPercent) {
+  const value = Number(revenueBrl);
+  if (!Number.isFinite(value)) return null;
+  if (value < 0) return value;
+  return (value * normalizeCommissionPercent(commissionPercent)) / 100;
+}
+
+function MetricasMensagensView({
+  rows = [],
+  usePmLabels = false,
+  brlRate = 0,
+  commissionPercent = 0,
+  showUserCommission = false,
+}) {
   const label = performanceUnitLabel(usePmLabels);
   const campaignRows = Array.from(
     (Array.isArray(rows) ? rows : [])
@@ -536,7 +564,9 @@ function MetricasMensagensView({ rows = [], usePmLabels = false }) {
                 <th>Anuncios</th>
                 <th>Impressoes</th>
                 <th>Cliques</th>
-                <th>Receita cliente</th>
+                ${showUserCommission
+                  ? html`<th>Lucro do usuario</th>`
+                  : html`<th>Receita cliente</th>`}
                 <th>${label}</th>
               </tr>
             </thead>
@@ -546,6 +576,10 @@ function MetricasMensagensView({ rows = [], usePmLabels = false }) {
                 : campaignRows.map((row) => {
                   const metricValue =
                     row.impressions > 0 ? (row.revenue / row.impressions) * 1000 : null;
+                  const revenueBrl = brlRate ? row.revenue * brlRate : null;
+                  const userCommission = showUserCommission
+                    ? calculateUserCommission(revenueBrl, commissionPercent)
+                    : null;
                   return html`
                     <tr key=${row.campaign_name}>
                       <td>${row.campaign_name || "-"}</td>
@@ -553,11 +587,137 @@ function MetricasMensagensView({ rows = [], usePmLabels = false }) {
                       <td>${number.format(row.ads.size || 0)}</td>
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
-                      <td>${currencyUSD.format(row.revenue || 0)}</td>
+                      ${showUserCommission
+                        ? html`<td>${userCommission != null ? currencyBRL.format(userCommission) : "-"}</td>`
+                        : html`<td>${currencyUSD.format(row.revenue || 0)}</td>`}
                       <td>${metricValue != null ? currencyUSD.format(metricValue) : "-"}</td>
                     </tr>
                   `;
                 })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  `;
+}
+
+function BotPayloadView({
+  accountId = "",
+  rows = [],
+  loading = false,
+  error = "",
+  onLoad,
+}) {
+  const [query, setQuery] = useState("");
+  const term = query.trim().toLowerCase();
+  const filteredRows = term
+    ? rows.filter((row) =>
+        [
+          row.campaign_name,
+          row.adset_name,
+          row.ad_name,
+          row.bot_payload_label,
+          row.bot_state,
+          row.configured_status,
+          row.effective_status,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(term)
+      )
+    : rows;
+  const withPayload = rows.filter((row) => row.bot_payload_label).length;
+
+  return html`
+    <main className="grid">
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Meta</span>
+            <h2 className="section-title">Carga do Bot</h2>
+          </div>
+          <div className="chip-group">
+            <button className="ghost" onClick=${onLoad} disabled=${loading || !accountId}>
+              ${loading ? "Carregando..." : "Carregar cargas"}
+            </button>
+            <span className="chip neutral">${filteredRows.length} anuncios</span>
+            <span className="chip neutral">${withPayload} com carga</span>
+          </div>
+        </div>
+
+        ${!accountId
+          ? html`<div className="status warn">Configure o ID da conta Meta em Configuracoes.</div>`
+          : null}
+        ${error ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>` : null}
+
+        <p className="muted small">
+          Lista os anuncios retornados pela Meta e tenta ler a carga em
+          <code>creative.page_welcome_message</code>. Rascunhos que ainda nao viraram objeto da API podem nao aparecer.
+        </p>
+
+        <div className="filters">
+          <label className="field">
+            <span>Filtrar</span>
+            <input
+              type="text"
+              placeholder="Campanha, conjunto, anuncio ou carga"
+              value=${query}
+              onInput=${(e) => setQuery(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="table-wrapper scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>Campanha</th>
+                <th>Conjunto</th>
+                <th>Anuncio</th>
+                <th>Status</th>
+                <th>Entrega</th>
+                <th>Carga atual</th>
+                <th>Criativo</th>
+                <th>Atualizado</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredRows.length === 0
+                ? html`<tr><td colSpan="8" className="muted">Sem anuncios carregados.</td></tr>`
+                : filteredRows.map((row) => {
+                    const tone = statusToneMap[row.bot_state] || "neutral";
+                    return html`
+                      <tr key=${row.ad_id}>
+                        <td>${row.campaign_name || "-"}</td>
+                        <td>${row.adset_name || "-"}</td>
+                        <td>
+                          <strong>${row.ad_name || "-"}</strong>
+                          <div className="muted small">${row.ad_id || ""}</div>
+                        </td>
+                        <td>
+                          <span className=${`status-badge ${tone}`}>
+                            ${formatStatusLabel(row.bot_state)}
+                          </span>
+                          <div className="muted small">${row.configured_status || "-"}</div>
+                        </td>
+                        <td>${formatStatusLabel(row.effective_status)}</td>
+                        <td>
+                          ${row.bot_payload_label
+                            ? html`<code>${row.bot_payload_label}</code>`
+                            : html`<span className="muted">Nao exposta pela API</span>`}
+                          ${row.has_page_welcome_message
+                            ? html`<div className="muted small">page_welcome_message</div>`
+                            : null}
+                        </td>
+                        <td>
+                          ${row.creative_name || "-"}
+                          <div className="muted small">${row.creative_id || ""}</div>
+                        </td>
+                        <td>${formatDateTime(row.updated_time || row.created_time)}</td>
+                      </tr>
+                    `;
+                  })}
             </tbody>
           </table>
         </div>
@@ -1244,6 +1404,51 @@ const normalizeKey = (value) =>
     .toString()
     .trim()
     .toLowerCase();
+
+const DASHBOARD_USER_PARAMS = ["utm_user", "dashboard_user", "username", "user"];
+
+function textMatchesDashboardUser(value, username) {
+  const userKey = normalizeKey(username);
+  const text = normalizeKey(value);
+  if (!userKey || !text) return false;
+  if (text === userKey) return true;
+  return text
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .includes(userKey);
+}
+
+function urlMatchesDashboardUser(value, username) {
+  const userKey = normalizeKey(username);
+  const raw = String(value || "").trim();
+  if (!userKey || !raw) return false;
+  try {
+    const parsed = new URL(raw, raw.startsWith("http") ? undefined : "https://dummy.local");
+    return DASHBOARD_USER_PARAMS.some(
+      (param) => normalizeKey(parsed.searchParams.get(param)) === userKey
+    );
+  } catch {
+    return false;
+  }
+}
+
+function rowMatchesDashboardUser(row, username) {
+  const userKey = normalizeKey(username);
+  if (!userKey || !row) return false;
+  const urls = [row.destination_url, row.url, row.link, row.website_url].filter(Boolean);
+  if (urls.some((url) => urlMatchesDashboardUser(url, userKey))) return true;
+  return [
+    row.campaign_name,
+    row.adset_name,
+    row.ad_name,
+    row.name,
+    row.campaign_id,
+    row.adset_id,
+    row.ad_id,
+    ...urls,
+  ].some((value) => textMatchesDashboardUser(value, userKey));
+}
 
 function buildAdsetGrouped(rows, joinadsRows, brlRate) {
   const safeJoinadsRows = Array.isArray(joinadsRows) ? joinadsRows : [];
@@ -5359,6 +5564,9 @@ function App() {
   const [tokenInfo, setTokenInfo] = useState(null);
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState("");
+  const [botPayloadRows, setBotPayloadRows] = useState([]);
+  const [botPayloadLoading, setBotPayloadLoading] = useState(false);
+  const [botPayloadError, setBotPayloadError] = useState("");
   const [adsetStatusLoading, setAdsetStatusLoading] = useState({});
   const [editAds, setEditAds] = useState([]);
   const [editCampaigns, setEditCampaigns] = useState([]);
@@ -5408,6 +5616,8 @@ function App() {
     setPixelsList([]);
     setTokenInfo(null);
     setTokenError("");
+    setBotPayloadRows([]);
+    setBotPayloadError("");
     setEditAds([]);
     setEditCampaigns([]);
     setEditError("");
@@ -6159,6 +6369,33 @@ function App() {
       setPagesList([]);
     } finally {
       setPagesLoading(false);
+    }
+  };
+
+  const handleLoadBotPayload = async () => {
+    const accountId = filters.metaAccountId.trim();
+    if (!accountId) {
+      setBotPayloadError("Informe o ID da conta de anuncios (Meta).");
+      return;
+    }
+    setBotPayloadLoading(true);
+    setBotPayloadError("");
+    try {
+      const res = await fetchJson(
+        `${API_BASE}/meta-bot-payload?account_id=${encodeURIComponent(accountId)}`,
+        {
+          cacheTtlMs: 2 * 60 * 1000,
+          cacheKey: `meta-bot-payload:${accountId}`,
+          force: true,
+        }
+      );
+      setBotPayloadRows(res.data || []);
+    } catch (err) {
+      setBotPayloadError(formatError(err));
+      pushLog("meta-bot-payload", err);
+      setBotPayloadRows([]);
+    } finally {
+      setBotPayloadLoading(false);
     }
   };
 
@@ -7326,11 +7563,22 @@ function App() {
       if (!host) return true;
       return normalizeKey(host) === domainKey;
     });
-    if (!term) return base;
-    return base.filter((row) =>
+    const scopedBase = isGestorSession(session)
+      ? base.filter((row) => rowMatchesDashboardUser(row, session?.username))
+      : base;
+    if (!term) return scopedBase;
+    return scopedBase.filter((row) =>
       (row.adset_name || "").toLowerCase().includes(term)
     );
-  }, [mergedMeta, filters.adsetFilter, appliedFilters, filters.domain, hiddenCampaigns]);
+  }, [
+    mergedMeta,
+    filters.adsetFilter,
+    appliedFilters,
+    filters.domain,
+    hiddenCampaigns,
+    session?.role,
+    session?.username,
+  ]);
 
   const filteredMeta = useMemo(() => {
     if (isTodaySelected) {
@@ -7778,7 +8026,13 @@ function App() {
               </main>
             `
           : html`
-              <${MetricasMensagensView} rows=${metaDomainFiltered} usePmLabels=${true} />
+              <${MetricasMensagensView}
+                rows=${metaDomainFiltered}
+                usePmLabels=${true}
+                brlRate=${brlRate}
+                commissionPercent=${session?.commissionPercent || 0}
+                showUserCommission=${true}
+              />
             `}
       </div>
     `;
@@ -7837,6 +8091,13 @@ function App() {
           onClick=${() => setActiveTab("metricas_mensagens")}
         >
           Metricas Mensagens
+        </button>
+        <button
+          hidden=${!availableTabs.includes("carga_bot")}
+          className=${`tab ${activeTab === "carga_bot" ? "active" : ""}`}
+          onClick=${() => setActiveTab("carga_bot")}
+        >
+          Carga do Bot
         </button>
         <button
           hidden=${!availableTabs.includes("duplicar")}
@@ -7950,7 +8211,21 @@ function App() {
             </main>
           `
         : activeTab === "metricas_mensagens"
-        ? html`<${MetricasMensagensView} rows=${metaDomainFiltered} usePmLabels=${usePmLabels} />`
+        ? html`<${MetricasMensagensView}
+            rows=${metaDomainFiltered}
+            usePmLabels=${usePmLabels}
+            brlRate=${brlRate}
+            commissionPercent=${session?.commissionPercent || 0}
+            showUserCommission=${isGestorSession(session)}
+          />`
+        : activeTab === "carga_bot"
+        ? html`<${BotPayloadView}
+            accountId=${filters.metaAccountId.trim()}
+            rows=${botPayloadRows}
+            loading=${botPayloadLoading}
+            error=${botPayloadError}
+            onLoad=${handleLoadBotPayload}
+          />`
         : activeTab === "duplicar"
         ? html`
             <${DuplicarView}
