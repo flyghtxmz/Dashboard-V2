@@ -57,6 +57,12 @@ function sanitizeUrls(values) {
     : [];
 }
 
+function sanitizeCommissionPercent(value) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < 0) return 0;
+  return Math.min(numberValue, 100);
+}
+
 async function sanitizeUsers(values, previousUsers, allowedDomains) {
   const seenUsernames = new Set();
   const previousById = new Map((previousUsers || []).map((item) => [item.id, item]));
@@ -104,6 +110,7 @@ async function sanitizeUsers(values, previousUsers, allowedDomains) {
       username,
       role: raw?.role === "editor" ? "editor" : "gestor",
       allowedDomains: userDomains,
+      commissionPercent: sanitizeCommissionPercent(raw?.commissionPercent),
       active: raw?.active !== false,
       passwordHash,
       passwordSalt,

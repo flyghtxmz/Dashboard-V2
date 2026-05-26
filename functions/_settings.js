@@ -96,6 +96,7 @@ function normalizeUsers(values) {
           username: normalizeUsername(item.username),
           role: item.role === "editor" ? "editor" : "gestor",
           allowedDomains: uniqueStrings(item.allowedDomains, normalizeDomain),
+          commissionPercent: normalizeCommissionPercent(item.commissionPercent),
           active: item.active !== false,
           passwordHash: String(item.passwordHash || "").trim(),
           passwordSalt: String(item.passwordSalt || "").trim(),
@@ -104,6 +105,12 @@ function normalizeUsers(values) {
           lastLoginAt: item.lastLoginAt ? String(item.lastLoginAt) : null,
         }))
     : [];
+}
+
+function normalizeCommissionPercent(value) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < 0) return 0;
+  return Math.min(numberValue, 100);
 }
 
 export function normalizeSettings(raw) {
@@ -147,6 +154,7 @@ export function toPublicUser(user) {
     username: user.username,
     role: user.role,
     allowedDomains: uniqueStrings(user.allowedDomains, normalizeDomain),
+    commissionPercent: normalizeCommissionPercent(user.commissionPercent),
     active: user.active !== false,
     lastLoginAt: user.lastLoginAt || null,
   };

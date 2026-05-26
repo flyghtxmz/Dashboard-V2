@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 78;
+const APP_VERSION_BUILD = 79;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -62,13 +62,14 @@ const formatFxDate = (value) => {
 };
 
 const ROLE_TABS = {
-  admin: ["dashboard", "duplicar", "editar", "urls", "meta", "diag", "token", "pages", "configuracoes", "criar"],
-  gestor: ["dashboard", "criar"],
+  admin: ["dashboard", "metricas_mensagens", "duplicar", "editar", "urls", "meta", "diag", "token", "pages", "configuracoes", "criar"],
+  gestor: ["dashboard", "metricas_mensagens", "criar"],
   editor: [],
 };
 
 const TAB_LABELS = {
   dashboard: "Dashboard",
+  metricas_mensagens: "Metricas Mensagens",
   duplicar: "Duplicar",
   editar: "Editar",
   urls: "URLs com Parametros",
@@ -87,6 +88,12 @@ function getSessionName(session) {
 
 function isGestorSession(session) {
   return session?.role === "gestor";
+}
+
+function normalizeCommissionPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, 100);
 }
 
 const defaultDates = () => {
@@ -433,6 +440,91 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
         )}
       </div>
     </section>
+  `;
+}
+
+function UserCommissionOverview({ totals, usdToBrl, commissionPercent, fxDateLabel }) {
+  const percent = normalizeCommissionPercent(commissionPercent);
+  const revenueClientUsd = Number(totals?.revenueClient || 0);
+  const revenueClientBrl =
+    usdToBrl ? revenueClientUsd * Number(usdToBrl || 0) : null;
+  const userProfit =
+    revenueClientBrl == null
+      ? null
+      : revenueClientBrl < 0
+      ? revenueClientBrl
+      : (revenueClientBrl * percent) / 100;
+  const ruleLabel =
+    revenueClientBrl == null
+      ? "Aguardando cotacao"
+      : revenueClientBrl < 0
+      ? "Receita negativa repassada integralmente"
+      : `Comissao aplicada sobre receita positiva (${percent.toFixed(2)}%)`;
+
+  const items = [
+    {
+      label: "Receita cliente (BRL)",
+      value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
+      helper: usdToBrl
+        ? `Conversao USD->BRL${fxDateLabel ? ` (${fxDateLabel})` : ""}`
+        : "Aguardando cotacao",
+      tone: "primary",
+    },
+    {
+      label: "Comissao",
+      value: `${percent.toFixed(2)}%`,
+      helper: "Percentual definido pelo administrador",
+    },
+    {
+      label: "Lucro do usuario",
+      value: userProfit != null ? currencyBRL.format(userProfit) : "-",
+      helper: ruleLabel,
+      tone: "primary",
+    },
+    {
+      label: "Receita cliente (USD)",
+      value: currencyUSD.format(revenueClientUsd),
+      helper: "Base original JoinAds",
+    },
+  ];
+
+  return html`
+    <section className="card wide">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Comissao</span>
+          <h2 className="section-title">Visao geral</h2>
+        </div>
+        <span className="chip neutral">Usuario</span>
+      </div>
+      <div className="metrics-grid">
+        ${items.map(
+          (item) => html`
+            <div className="metric-card" data-tone=${item.tone || ""} key=${item.label}>
+              <div className="metric-label">${item.label}</div>
+              <div className="metric-value">${item.value}</div>
+              <div className="metric-helper">${item.helper}</div>
+            </div>
+          `
+        )}
+      </div>
+    </section>
+  `;
+}
+
+function MetricasMensagensView() {
+  return html`
+    <main className="grid">
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Mensagens</span>
+            <h2 className="section-title">Metricas Mensagens</h2>
+          </div>
+          <span className="chip neutral">Em branco</span>
+        </div>
+      </section>
+    </main>
   `;
 }
 
@@ -4235,6 +4327,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
           ...user,
           password: "",
           allowedDomains: Array.isArray(user.allowedDomains) ? user.allowedDomains : [],
+          commissionPercent: normalizeCommissionPercent(user.commissionPercent),
           active: user.active !== false,
         }))
       : []
@@ -4338,6 +4431,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
         password: "",
         role: "gestor",
         allowedDomains: domains[0] ? [domains[0]] : [],
+        commissionPercent: 0,
         active: true,
         lastLoginAt: null,
       },
@@ -4382,6 +4476,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
           password: user.password || "",
           role: user.role,
           allowedDomains: user.allowedDomains || [],
+          commissionPercent: normalizeCommissionPercent(user.commissionPercent),
           active: user.active !== false,
         })),
       });
@@ -4490,9 +4585,9 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                       <div className="settings-user-head">
                         <div>
                           <strong>${user.nome || `Usu\u00e1rio ${index + 1}`}</strong>
-                          <div className="muted small">
-                            ${user.username || "sem username"} | ${user.role === "editor" ? "Editor" : "Gestor"}
-                          </div>
+                           <div className="muted small">
+                             ${user.username || "sem username"} | ${user.role === "editor" ? "Editor" : "Gestor"} | Comissao ${normalizeCommissionPercent(user.commissionPercent).toFixed(2)}%
+                           </div>
                         </div>
                         <button className="icon-danger-btn" onClick=${() => removeUser(user.id)}>x</button>
                       </div>
@@ -4533,6 +4628,18 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                             <option value="gestor">Gestor</option>
                             <option value="editor">Editor</option>
                           </select>
+                        </div>
+                        <div className="field-stack">
+                          <label className="field-label">Comissao (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value=${user.commissionPercent ?? 0}
+                            onInput=${(e) => updateUser(user.id, { commissionPercent: e.target.value })}
+                            placeholder="0"
+                          />
                         </div>
                       </div>
                       <label className="checkbox checkbox-row settings-user-active">
@@ -7567,6 +7674,12 @@ function App() {
             Dashboard
           </button>
           <button
+            className=${`tab ${activeTab === "metricas_mensagens" ? "active" : ""}`}
+            onClick=${() => setActiveTab("metricas_mensagens")}
+          >
+            Metricas Mensagens
+          </button>
+          <button
             className=${`tab ${activeTab === "criar" ? "active" : ""}`}
             onClick=${() => setActiveTab("criar")}
             style=${{
@@ -7595,37 +7708,16 @@ function App() {
         ${activeTab === "dashboard"
           ? html`
               <main className="grid">
-                ${html`<${Metrics}
+                ${html`<${UserCommissionOverview}
                   totals=${totals}
                   usdToBrl=${brlRate}
-                  metaSpendBrl=${metaTotals.spendBrl}
+                  commissionPercent=${session?.commissionPercent || 0}
                   fxDateLabel=${fxInfo?.effectiveDate ? formatFxDate(fxInfo.effectiveDate) : ""}
-                  usePmLabels=${true}
                 />`}
-                ${html`
-                  <${MetaJoinTable}
-                    rows=${filteredMeta}
-                    adsetFilter=${filters.adsetFilter}
-                    onFilterChange=${(value) =>
-                      setFilters((prev) => ({ ...prev, adsetFilter: value }))}
-                    onToggleAd=${handleToggleAd}
-                    statusLoading=${adStatusLoading}
-                    onBudgetUpdate=${handleUpdateBudget}
-                    budgetLoading=${budgetLoading}
-                    onBidUpdate=${handleUpdateBid}
-                    bidLoading=${bidLoading}
-                    isMultiDay=${isMultiDay}
-                    allowCampaignOps=${false}
-                    usePmLabels=${true}
-                  />
-                `}
-                ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} usePmLabels=${true} />`}
-                ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} brlRate=${brlRate} usePmLabels=${true} />`}
-                ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} usePmLabels=${true} />`}
-                ${html`<${EarningsTable} rows=${earningsAll.filter((r) => { const d = typeof r.date === "string" ? r.date.slice(0, 10) : ""; return !d || ((!filters.startDate || d >= filters.startDate) && (!filters.endDate || d <= filters.endDate)); })} usePmLabels=${true} />`}
               </main>
             `
-          : html`
+          : activeTab === "criar"
+          ? html`
               <main className="grid">
                 <${CriarCampanhaView}
                   accountId=${filters.metaAccountId.trim()}
@@ -7639,6 +7731,9 @@ function App() {
                   savedUrls=${settingsData.urls || []}
                 />
               </main>
+            `
+          : html`
+              <${MetricasMensagensView} />
             `}
       </div>
     `;
@@ -7690,6 +7785,13 @@ function App() {
           onClick=${() => setActiveTab("dashboard")}
         >
           Dashboard
+        </button>
+        <button
+          hidden=${!availableTabs.includes("metricas_mensagens")}
+          className=${`tab ${activeTab === "metricas_mensagens" ? "active" : ""}`}
+          onClick=${() => setActiveTab("metricas_mensagens")}
+        >
+          Metricas Mensagens
         </button>
         <button
           hidden=${!availableTabs.includes("duplicar")}
@@ -7802,6 +7904,8 @@ function App() {
               ${html`<${EarningsTable} rows=${earningsAll.filter((r) => { const d = typeof r.date === "string" ? r.date.slice(0, 10) : ""; return !d || ((!filters.startDate || d >= filters.startDate) && (!filters.endDate || d <= filters.endDate)); })} usePmLabels=${usePmLabels} />`}
             </main>
           `
+        : activeTab === "metricas_mensagens"
+        ? html`<${MetricasMensagensView} />`
         : activeTab === "duplicar"
         ? html`
             <${DuplicarView}
@@ -7980,5 +8084,3 @@ if (rootElement) {
   const root = createRoot(rootElement);
   root.render(html`<${App} />`);
 }
-
-

@@ -135,6 +135,9 @@ export async function onRequestPost(ctx) {
     nome: user.nome || user.username,
     username: user.username,
     allowedDomains: Array.isArray(user.allowedDomains) ? [...user.allowedDomains] : [],
+    commissionPercent: Number.isFinite(Number(user.commissionPercent))
+      ? Math.min(Math.max(Number(user.commissionPercent), 0), 100)
+      : 0,
     exp: Date.now() + SESSION_MAX_AGE_MS,
   };
   const token = await createSessionToken(

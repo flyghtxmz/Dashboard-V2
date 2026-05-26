@@ -107,8 +107,15 @@ function buildUserSession(user, payloadExp) {
     username: user.username,
     email: null,
     allowedDomains: Array.isArray(user.allowedDomains) ? user.allowedDomains.map(normalizeDomain) : [],
+    commissionPercent: normalizeCommissionPercent(user.commissionPercent),
     exp: payloadExp,
   };
+}
+
+function normalizeCommissionPercent(value) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < 0) return 0;
+  return Math.min(numberValue, 100);
 }
 
 export async function getSession(request, env) {
@@ -163,6 +170,7 @@ export function sessionDisplay(session) {
     username: session.username,
     email: session.email || null,
     allowedDomains: session.role === "admin" ? ["*"] : [...(session.allowedDomains || [])],
+    commissionPercent: normalizeCommissionPercent(session.commissionPercent),
   };
 }
 
