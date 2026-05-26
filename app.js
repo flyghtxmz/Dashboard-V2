@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 84;
+const APP_VERSION_BUILD = 85;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -628,6 +628,16 @@ function BotPayloadView({
       )
     : rows;
   const withPayload = rows.filter((row) => row.bot_payload_label).length;
+  const urlParamRows = filteredRows.flatMap((row) =>
+    (row.url_parameters || []).map((param) => ({
+      ...param,
+      ad_id: row.ad_id,
+      ad_name: row.ad_name,
+      campaign_name: row.campaign_name,
+      campaign_objective: row.campaign_objective,
+    }))
+  );
+  const withUrlParams = rows.filter((row) => (row.url_parameters || []).length).length;
 
   return html`
     <main className="grid">
@@ -643,6 +653,7 @@ function BotPayloadView({
             </button>
             <span className="chip neutral">${filteredRows.length} anuncios</span>
             <span className="chip neutral">${withPayload} com carga</span>
+            <span className="chip neutral">${withUrlParams} com parametros</span>
           </div>
         </div>
 
@@ -718,6 +729,50 @@ function BotPayloadView({
                       </tr>
                     `;
                   })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Rastreamento</span>
+            <h2 className="section-title">Parametros URL</h2>
+          </div>
+          <span className="chip neutral">${urlParamRows.length} parametros</span>
+        </div>
+        <p className="muted small">
+          Retorna parametros encontrados em <code>url_tags</code> e nas URLs expostas pelo criativo/carga do bot.
+        </p>
+        <div className="table-wrapper scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>Campanha</th>
+                <th>Objetivo</th>
+                <th>Tipo</th>
+                <th>Parametro</th>
+                <th>Valor</th>
+                <th>Anuncio</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${urlParamRows.length === 0
+                ? html`<tr><td colSpan="6" className="muted">Sem parametros URL encontrados nos anuncios carregados.</td></tr>`
+                : urlParamRows.map((row, idx) => html`
+                    <tr key=${`${row.ad_id}-${row.type}-${row.key}-${idx}`}>
+                      <td>${row.campaign_name || "-"}</td>
+                      <td>${formatObjective(row.campaign_objective)}</td>
+                      <td>${row.type || "-"}</td>
+                      <td><code>${row.parameter || `${row.key || ""}=${row.value || ""}`}</code></td>
+                      <td>${row.value || "-"}</td>
+                      <td>
+                        ${row.ad_name || "-"}
+                        <div className="muted small">${row.ad_id || ""}</div>
+                      </td>
+                    </tr>
+                  `)}
             </tbody>
           </table>
         </div>

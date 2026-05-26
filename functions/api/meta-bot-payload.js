@@ -55,6 +55,69 @@ function collectPayloads(value, out = new Set()) {
   return out;
 }
 
+function collectUrls(value, out = new Set()) {
+  const current = parseMaybeJson(value);
+  if (!current) return out;
+  if (typeof current === "string") {
+    const text = current.trim();
+    if (/^https?:\/\//i.test(text)) out.add(text);
+    return out;
+  }
+  if (Array.isArray(current)) {
+    current.forEach((item) => collectUrls(item, out));
+    return out;
+  }
+  if (typeof current !== "object") return out;
+  Object.values(current).forEach((val) => collectUrls(val, out));
+  return out;
+}
+
+function parseSearchParams(raw, type) {
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  try {
+    const params = /^https?:\/\//i.test(text)
+      ? new URL(text).searchParams
+      : new URLSearchParams(text.startsWith("?") ? text.slice(1) : text);
+    return Array.from(params.entries())
+      .filter(([key]) => key)
+      .map(([key, value]) => ({
+        type,
+        key,
+        value,
+        parameter: `${key}=${value}`,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function extractUrlParameters(creative) {
+  const rows = [];
+  const seen = new Set();
+  const add = (item) => {
+    const unique = `${item.type}|${item.key}|${item.value}`;
+    if (seen.has(unique)) return;
+    seen.add(unique);
+    rows.push(item);
+  };
+
+  parseSearchParams(creative?.url_tags, "url_tags").forEach(add);
+
+  const urls = new Set();
+  collectUrls(creative?.link_url, urls);
+  collectUrls(creative?.object_url, urls);
+  collectUrls(creative?.object_story_spec, urls);
+  collectUrls(creative?.asset_feed_spec, urls);
+  collectUrls(creative?.page_welcome_message, urls);
+
+  urls.forEach((url) => {
+    parseSearchParams(url, "url").forEach((param) => add({ ...param, source_url: url }));
+  });
+
+  return rows;
+}
+
 function formatBotPayload(ad) {
   const creative = ad?.creative || {};
   const payloads = new Set();
@@ -102,9 +165,10 @@ export async function onRequest({ request, env }) {
     "adset_name",
     "campaign_id",
     "campaign_name",
+    "campaign{name,objective}",
     "created_time",
     "updated_time",
-    "creative{id,name,page_welcome_message,object_story_spec,asset_feed_spec,effective_object_story_id,object_story_id,url_tags}",
+    "creative{id,name,page_welcome_message,object_story_spec,asset_feed_spec,effective_object_story_id,object_story_id,url_tags,link_url,object_url}",
   ].join(",");
 
   try {
@@ -115,13 +179,16 @@ export async function onRequest({ request, env }) {
     );
 
     const rows = ads.map((ad) => {
+      const creative = ad.creative || {};
       const payloads = formatBotPayload(ad);
+      const urlParameters = extractUrlParameters(creative);
       return {
         id: ad.id,
         ad_id: ad.id,
         ad_name: ad.name || "",
         campaign_id: ad.campaign_id || "",
-        campaign_name: ad.campaign_name || "",
+        campaign_name: ad.campaign_name || ad.campaign?.name || "",
+        campaign_objective: ad.campaign?.objective || "",
         adset_id: ad.adset_id || "",
         adset_name: ad.adset_name || "",
         configured_status: ad.configured_status || ad.status || "",
@@ -129,9 +196,10 @@ export async function onRequest({ request, env }) {
         bot_state: botState(ad),
         bot_payloads: payloads,
         bot_payload_label: payloads.length ? payloads.join(", ") : "",
-        creative_id: ad.creative?.id || "",
-        creative_name: ad.creative?.name || "",
-        has_page_welcome_message: Boolean(ad.creative?.page_welcome_message),
+        url_parameters: urlParameters,
+        creative_id: creative.id || "",
+        creative_name: creative.name || "",
+        has_page_welcome_message: Boolean(creative.page_welcome_message),
         created_time: ad.created_time || "",
         updated_time: ad.updated_time || "",
       };
