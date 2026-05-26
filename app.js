@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 79;
+const APP_VERSION_BUILD = 80;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -459,34 +459,7 @@ function UserCommissionOverview({ totals, usdToBrl, commissionPercent, fxDateLab
       ? "Aguardando cotacao"
       : revenueClientBrl < 0
       ? "Receita negativa repassada integralmente"
-      : `Comissao aplicada sobre receita positiva (${percent.toFixed(2)}%)`;
-
-  const items = [
-    {
-      label: "Receita cliente (BRL)",
-      value: revenueClientBrl != null ? currencyBRL.format(revenueClientBrl) : "-",
-      helper: usdToBrl
-        ? `Conversao USD->BRL${fxDateLabel ? ` (${fxDateLabel})` : ""}`
-        : "Aguardando cotacao",
-      tone: "primary",
-    },
-    {
-      label: "Comissao",
-      value: `${percent.toFixed(2)}%`,
-      helper: "Percentual definido pelo administrador",
-    },
-    {
-      label: "Lucro do usuario",
-      value: userProfit != null ? currencyBRL.format(userProfit) : "-",
-      helper: ruleLabel,
-      tone: "primary",
-    },
-    {
-      label: "Receita cliente (USD)",
-      value: currencyUSD.format(revenueClientUsd),
-      helper: "Base original JoinAds",
-    },
-  ];
+      : "Calculado sobre o resultado positivo do periodo";
 
   return html`
     <section className="card wide">
@@ -498,15 +471,11 @@ function UserCommissionOverview({ totals, usdToBrl, commissionPercent, fxDateLab
         <span className="chip neutral">Usuario</span>
       </div>
       <div className="metrics-grid">
-        ${items.map(
-          (item) => html`
-            <div className="metric-card" data-tone=${item.tone || ""} key=${item.label}>
-              <div className="metric-label">${item.label}</div>
-              <div className="metric-value">${item.value}</div>
-              <div className="metric-helper">${item.helper}</div>
-            </div>
-          `
-        )}
+        <div className="metric-card" data-tone="primary">
+          <div className="metric-label">Lucro do usuario</div>
+          <div className="metric-value">${userProfit != null ? currencyBRL.format(userProfit) : "-"}</div>
+          <div className="metric-helper">${ruleLabel}</div>
+        </div>
       </div>
     </section>
   `;
