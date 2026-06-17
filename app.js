@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 92;
+const APP_VERSION_BUILD = 93;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -636,27 +636,31 @@ function MetricasMensagensView({
     totalsRow.joinads_impressions > 0
       ? (totalsRow.revenue_usd / totalsRow.joinads_impressions) * 1000
       : null;
-  const messengerMediumRows = (Array.isArray(mediumRows) ? mediumRows : []).filter(
-    (row) => normalizeKey(row.custom_value) === "messenger"
-  );
-  const messengerMedium = messengerMediumRows.reduce(
-    (acc, row) => {
-      acc.impressions += toNumber(row.impressions);
-      acc.clicks += toNumber(row.clicks);
-      acc.revenue_usd += toNumber(row.revenue_client || row.revenue);
-      return acc;
-    },
-    { impressions: 0, clicks: 0, revenue_usd: 0 }
-  );
-  messengerMedium.revenue_brl = brlRate ? messengerMedium.revenue_usd * brlRate : 0;
-  messengerMedium.spend_brl = totalsRow.spend_brl || 0;
-  messengerMedium.profit_brl = messengerMedium.revenue_brl - messengerMedium.spend_brl;
-  messengerMedium.roas =
-    messengerMedium.spend_brl > 0 ? messengerMedium.revenue_brl / messengerMedium.spend_brl : null;
-  messengerMedium.ecpm =
-    messengerMedium.impressions > 0
-      ? (messengerMedium.revenue_usd / messengerMedium.impressions) * 1000
-      : null;
+  const buildMediumSummary = (mediumName, spendBrl = 0) => {
+    const rowsForMedium = (Array.isArray(mediumRows) ? mediumRows : []).filter(
+      (row) => normalizeKey(row.custom_value) === normalizeKey(mediumName)
+    );
+    const summary = rowsForMedium.reduce(
+      (acc, row) => {
+        acc.impressions += toNumber(row.impressions);
+        acc.clicks += toNumber(row.clicks);
+        acc.revenue_usd += toNumber(row.revenue_client || row.revenue);
+        return acc;
+      },
+      { rows: rowsForMedium, impressions: 0, clicks: 0, revenue_usd: 0 }
+    );
+    summary.revenue_brl = brlRate ? summary.revenue_usd * brlRate : 0;
+    summary.spend_brl = spendBrl || 0;
+    summary.profit_brl = summary.revenue_brl - summary.spend_brl;
+    summary.roas = summary.spend_brl > 0 ? summary.revenue_brl / summary.spend_brl : null;
+    summary.ecpm =
+      summary.impressions > 0 ? (summary.revenue_usd / summary.impressions) * 1000 : null;
+    return summary;
+  };
+  const messengerMedium = buildMediumSummary("messenger", totalsRow.spend_brl || 0);
+  const organicMedium = buildMediumSummary("organic", 0);
+  const messengerMediumRows = messengerMedium.rows;
+  const organicMediumRows = organicMedium.rows;
   const attributionLabel = (levels) => {
     const list = Array.from(levels || []);
     if (!list.length) return "-";
@@ -723,6 +727,7 @@ function MetricasMensagensView({
       utmUserRows: diagnostics.joinadsUserRowsCount || 0,
       utmMediumRows: Array.isArray(mediumRows) ? mediumRows.length : 0,
       utmMediumMessengerRows: messengerMediumRows.length,
+      utmMediumOrganicRows: organicMediumRows.length,
     },
     meta: diagnostics.metaDiagnostics || {},
     messageFilter: {
@@ -834,13 +839,16 @@ function MetricasMensagensView({
         <div className="card-head">
           <div>
             <span className="eyebrow">JoinAds</span>
-            <h2 className="section-title">Resumo utm_medium=messenger</h2>
+            <h2 className="section-title">Resumo</h2>
           </div>
-          <span className="chip neutral">${messengerMediumRows.length} linhas messenger</span>
+          <div className="chip-group">
+            <span className="chip neutral">${messengerMediumRows.length} messenger</span>
+            <span className="chip neutral">${organicMediumRows.length} organic</span>
+          </div>
         </div>
         <p className="muted small">
-          Este bloco usa a JoinAds por <code>utm_medium=messenger</code> como receita total do canal
-          e cruza com o gasto Meta das campanhas classificadas como mensagem no periodo.
+          Receita por <code>utm_medium</code> vem da JoinAds. Gasto, ROAS e lucro cruzam
+          <code>utm_medium=messenger</code> com o gasto Meta das campanhas de mensagem no periodo.
         </p>
         <div className="metrics-grid">
           <div className="metric-card">
@@ -853,7 +861,13 @@ function MetricasMensagensView({
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita USD</div>
+            <div className="metric-helper">(utm_medium=messenger)</div>
             <div className="metric-value">${currencyUSD.format(messengerMedium.revenue_usd || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Receita USD</div>
+            <div className="metric-helper">(utm_medium=organic)</div>
+            <div className="metric-value">${currencyUSD.format(organicMedium.revenue_usd || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita BRL</div>
