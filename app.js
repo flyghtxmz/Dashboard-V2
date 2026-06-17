@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 91;
+const APP_VERSION_BUILD = 92;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -546,6 +546,7 @@ function MetricasMensagensView({
   commissionPercent = 0,
   showUserCommission = false,
   diagnostics = {},
+  mediumRows = [],
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -635,6 +636,27 @@ function MetricasMensagensView({
     totalsRow.joinads_impressions > 0
       ? (totalsRow.revenue_usd / totalsRow.joinads_impressions) * 1000
       : null;
+  const messengerMediumRows = (Array.isArray(mediumRows) ? mediumRows : []).filter(
+    (row) => normalizeKey(row.custom_value) === "messenger"
+  );
+  const messengerMedium = messengerMediumRows.reduce(
+    (acc, row) => {
+      acc.impressions += toNumber(row.impressions);
+      acc.clicks += toNumber(row.clicks);
+      acc.revenue_usd += toNumber(row.revenue_client || row.revenue);
+      return acc;
+    },
+    { impressions: 0, clicks: 0, revenue_usd: 0 }
+  );
+  messengerMedium.revenue_brl = brlRate ? messengerMedium.revenue_usd * brlRate : 0;
+  messengerMedium.spend_brl = totalsRow.spend_brl || 0;
+  messengerMedium.profit_brl = messengerMedium.revenue_brl - messengerMedium.spend_brl;
+  messengerMedium.roas =
+    messengerMedium.spend_brl > 0 ? messengerMedium.revenue_brl / messengerMedium.spend_brl : null;
+  messengerMedium.ecpm =
+    messengerMedium.impressions > 0
+      ? (messengerMedium.revenue_usd / messengerMedium.impressions) * 1000
+      : null;
   const attributionLabel = (levels) => {
     const list = Array.from(levels || []);
     if (!list.length) return "-";
@@ -699,6 +721,8 @@ function MetricasMensagensView({
       utmContentRows: diagnostics.joinadsContentRowsCount || 0,
       utmCampaignRows: diagnostics.joinadsCampaignRowsCount || 0,
       utmUserRows: diagnostics.joinadsUserRowsCount || 0,
+      utmMediumRows: Array.isArray(mediumRows) ? mediumRows.length : 0,
+      utmMediumMessengerRows: messengerMediumRows.length,
     },
     meta: diagnostics.metaDiagnostics || {},
     messageFilter: {
@@ -728,8 +752,6 @@ function MetricasMensagensView({
               <tr>
                 <th>Campanha</th>
                 <th>Tipo</th>
-                <th>Conjuntos</th>
-                <th>Anuncios</th>
                 <th>Resultados Meta</th>
                 <th>Cliques Meta</th>
                 <th>Imp. JoinAds</th>
@@ -749,7 +771,7 @@ function MetricasMensagensView({
             </thead>
             <tbody>
               ${campaignRows.length === 0
-                ? html`<tr><td colSpan=${showUserCommission ? 11 : 15} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
+                ? html`<tr><td colSpan=${showUserCommission ? 9 : 13} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
                 : campaignRows.map((row) => {
                   const userCommission = showUserCommission
                     ? calculateUserCommission(row.revenue_brl, commissionPercent)
@@ -758,8 +780,6 @@ function MetricasMensagensView({
                     <tr key=${row.campaign_name}>
                       <td>${row.campaign_name || "-"}</td>
                       <td>${formatObjective(row.objective)}</td>
-                      <td>${number.format(row.adsets.size || 0)}</td>
-                      <td>${number.format(row.ads.size || 0)}</td>
                       <td>${row.results ? number.format(row.results) : "-"}</td>
                       <td>${row.meta_clicks ? number.format(row.meta_clicks) : "-"}</td>
                       <td>${number.format(row.joinads_impressions || 0)}</td>
@@ -788,8 +808,6 @@ function MetricasMensagensView({
                     <tr className="summary-row">
                       <td><strong>Total</strong></td>
                       <td></td>
-                      <td><strong>${number.format(totalsRow.adsets)}</strong></td>
-                      <td><strong>${number.format(totalsRow.ads)}</strong></td>
                       <td><strong>${totalsRow.results ? number.format(totalsRow.results) : "-"}</strong></td>
                       <td><strong>${totalsRow.meta_clicks ? number.format(totalsRow.meta_clicks) : "-"}</strong></td>
                       <td><strong>${number.format(totalsRow.joinads_impressions)}</strong></td>
@@ -810,6 +828,53 @@ function MetricasMensagensView({
                 : null}
             </tbody>
           </table>
+        </div>
+      </section>
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">JoinAds</span>
+            <h2 className="section-title">Resumo utm_medium=messenger</h2>
+          </div>
+          <span className="chip neutral">${messengerMediumRows.length} linhas messenger</span>
+        </div>
+        <p className="muted small">
+          Este bloco usa a JoinAds por <code>utm_medium=messenger</code> como receita total do canal
+          e cruza com o gasto Meta das campanhas classificadas como mensagem no periodo.
+        </p>
+        <div className="metrics-grid">
+          <div className="metric-card">
+            <div className="metric-label">Impressoes JoinAds</div>
+            <div className="metric-value">${number.format(messengerMedium.impressions || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Cliques JoinAds</div>
+            <div className="metric-value">${number.format(messengerMedium.clicks || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Receita USD</div>
+            <div className="metric-value">${currencyUSD.format(messengerMedium.revenue_usd || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Receita BRL</div>
+            <div className="metric-value">${currencyBRL.format(messengerMedium.revenue_brl || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Gasto Meta</div>
+            <div className="metric-value">${currencyBRL.format(messengerMedium.spend_brl || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">ROAS</div>
+            <div className="metric-value">${messengerMedium.roas != null ? `${messengerMedium.roas.toFixed(2)}x` : "-"}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Lucro Op.</div>
+            <div className="metric-value">${currencyBRL.format(messengerMedium.profit_brl || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">${label}</div>
+            <div className="metric-value">${messengerMedium.ecpm != null ? currencyUSD.format(messengerMedium.ecpm) : "-"}</div>
+          </div>
         </div>
       </section>
       <section className="card wide">
@@ -5846,6 +5911,7 @@ function App() {
   const [joinadsContentRows, setJoinadsContentRows] = useState([]);
   const [joinadsCampaignRows, setJoinadsCampaignRows] = useState([]);
   const [joinadsUserRows, setJoinadsUserRows] = useState([]);
+  const [joinadsMediumRows, setJoinadsMediumRows] = useState([]);
   const [messenleadSources, setMessenleadSources] = useState([]);
   const [messenleadUnresolved, setMessenleadUnresolved] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
@@ -5915,6 +5981,7 @@ function App() {
     setJoinadsContentRows([]);
     setJoinadsCampaignRows([]);
     setJoinadsUserRows([]);
+    setJoinadsMediumRows([]);
     setMessenleadSources([]);
     setMessenleadUnresolved([]);
     setTopUrls([]);
@@ -6428,6 +6495,7 @@ function App() {
       setJoinadsContentRows(Array.isArray(contentSuperRes?.data) ? contentSuperRes.data : []);
       setJoinadsCampaignRows(Array.isArray(campaignSuperRes?.data) ? campaignSuperRes.data : []);
       setJoinadsUserRows(Array.isArray(joinadsUserRes?.data) ? joinadsUserRes.data : []);
+      setJoinadsMediumRows(Array.isArray(metaMediumRes?.data) ? metaMediumRes.data : []);
       setMessenleadSources(Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : []);
       setMessenleadUnresolved(Array.isArray(messenleadRes?.unresolved) ? messenleadRes.unresolved : []);
       setSuperKey(superKeyUsed || "utm_content");
@@ -8549,6 +8617,7 @@ function App() {
                 brlRate=${brlRate}
                 commissionPercent=${session?.commissionPercent || 0}
                 showUserCommission=${true}
+                mediumRows=${joinadsMediumRows}
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
                   joinadsCampaignRowsCount: joinadsCampaignRows.length,
@@ -8743,6 +8812,7 @@ function App() {
             brlRate=${brlRate}
             commissionPercent=${session?.commissionPercent || 0}
             showUserCommission=${isGestorSession(session)}
+            mediumRows=${joinadsMediumRows}
             diagnostics=${{
               joinadsContentRowsCount: joinadsContentRows.length,
               joinadsCampaignRowsCount: joinadsCampaignRows.length,
