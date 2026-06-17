@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 88;
+const APP_VERSION_BUILD = 89;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -506,6 +506,32 @@ function isEngagementObjective(value) {
   return objective === "OUTCOME_ENGAGEMENT" || objective === "ENGAGEMENT";
 }
 
+function hasMessengerSignal(row) {
+  const text = [
+    row?.campaign_name,
+    row?.adset_name,
+    row?.ad_name,
+    row?.name,
+    row?.destination_url,
+    row?.url,
+    row?.url_tags,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return (
+    text.includes("messenger") ||
+    text.includes("mensagem") ||
+    text.includes("mensagens") ||
+    text.includes("m.me/") ||
+    text.includes("messenger.com")
+  );
+}
+
+function isMessageMetricsRow(row) {
+  return isEngagementObjective(row?.objective) || hasMessengerSignal(row);
+}
+
 function calculateUserCommission(revenueBrl, commissionPercent) {
   const value = Number(revenueBrl);
   if (!Number.isFinite(value)) return null;
@@ -525,7 +551,7 @@ function MetricasMensagensView({
   const safeRows = Array.isArray(rows) ? rows : [];
   const campaignRows = Array.from(
     safeRows
-      .filter((row) => isEngagementObjective(row.objective))
+      .filter((row) => isMessageMetricsRow(row))
       .reduce((map, row) => {
         const key = row.campaign_name || row.campaign_id || "Sem campanha";
         const item =
@@ -547,8 +573,12 @@ function MetricasMensagensView({
       .values()
   ).sort((a, b) => b.revenue - a.revenue);
   const engagementRows = safeRows.filter((row) => isEngagementObjective(row.objective));
+  const messageRows = safeRows.filter((row) => isMessageMetricsRow(row));
+  const trafficMessengerRows = safeRows.filter(
+    (row) => String(row.objective || "").toUpperCase() === "OUTCOME_TRAFFIC" && hasMessengerSignal(row)
+  );
   const withJoinadsRows = safeRows.filter((row) => row.joinads_matched);
-  const engagementWithJoinadsRows = engagementRows.filter((row) => row.joinads_matched);
+  const messageWithJoinadsRows = messageRows.filter((row) => row.joinads_matched);
   const rowsWithRevenue = safeRows.filter((row) => toNumber(row.revenue_client_value) !== 0);
   const dataLevelCounts = safeRows.reduce((acc, row) => {
     const key = row.data_level || "sem_data_level";
@@ -572,9 +602,11 @@ function MetricasMensagensView({
   const debugPayload = {
     totalRows: safeRows.length,
     engagementRows: engagementRows.length,
+    messageRows: messageRows.length,
+    trafficMessengerRows: trafficMessengerRows.length,
     campaignRows: campaignRows.length,
     withJoinadsRows: withJoinadsRows.length,
-    engagementWithJoinadsRows: engagementWithJoinadsRows.length,
+    messageWithJoinadsRows: messageWithJoinadsRows.length,
     rowsWithRevenue: rowsWithRevenue.length,
     dataLevelCounts,
     objectiveCounts,
@@ -599,7 +631,7 @@ function MetricasMensagensView({
             <span className="eyebrow">Mensagens</span>
             <h2 className="section-title">Metricas Mensagens</h2>
           </div>
-          <span className="chip neutral">${campaignRows.length} campanhas de engajamento</span>
+          <span className="chip neutral">${campaignRows.length} campanhas de mensagem</span>
         </div>
         <div className="table-wrapper scroll-x">
           <table>
@@ -618,7 +650,7 @@ function MetricasMensagensView({
             </thead>
             <tbody>
               ${campaignRows.length === 0
-                ? html`<tr><td colSpan="7" className="muted">Sem campanhas de engajamento para o periodo.</td></tr>`
+                ? html`<tr><td colSpan="7" className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
                 : campaignRows.map((row) => {
                   const metricValue =
                     row.impressions > 0 ? (row.revenue / row.impressions) * 1000 : null;
@@ -652,8 +684,8 @@ function MetricasMensagensView({
           </div>
           <div className="chip-group">
             <span className="chip neutral">${safeRows.length} linhas Meta</span>
-            <span className="chip neutral">${engagementRows.length} engagement</span>
-            <span className="chip neutral">${engagementWithJoinadsRows.length} com JoinAds</span>
+            <span className="chip neutral">${messageRows.length} mensagens</span>
+            <span className="chip neutral">${messageWithJoinadsRows.length} com JoinAds</span>
           </div>
         </div>
         <p className="muted small">
@@ -6186,7 +6218,7 @@ function App() {
           insightRows.map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
         );
         const messageFallbackRows = structureRows
-          .filter((row) => isEngagementObjective(row.objective))
+          .filter((row) => isMessageMetricsRow(row))
           .filter((row) => !insightAdIds.has(normalizeKey(row.ad_id || row.id || "")))
           .map((row) => ({
             ...row,
@@ -6211,6 +6243,10 @@ function App() {
           insightsRows: insightRows.length,
           structureRows: structureRows.length,
           structureEngagementRows: structureRows.filter((row) => isEngagementObjective(row.objective)).length,
+          structureMessageRows: structureRows.filter((row) => isMessageMetricsRow(row)).length,
+          structureTrafficMessengerRows: structureRows.filter(
+            (row) => String(row.objective || "").toUpperCase() === "OUTCOME_TRAFFIC" && hasMessengerSignal(row)
+          ).length,
           fallbackMessageRows: messageFallbackRows.length,
           finalMetaRows: mergedMetaRows.length,
           structureObjectiveCounts: structureRows.reduce((acc, row) => {
