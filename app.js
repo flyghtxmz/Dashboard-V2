@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 86;
+const APP_VERSION_BUILD = 87;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -519,10 +519,12 @@ function MetricasMensagensView({
   brlRate = 0,
   commissionPercent = 0,
   showUserCommission = false,
+  diagnostics = {},
 }) {
   const label = performanceUnitLabel(usePmLabels);
+  const safeRows = Array.isArray(rows) ? rows : [];
   const campaignRows = Array.from(
-    (Array.isArray(rows) ? rows : [])
+    safeRows
       .filter((row) => isEngagementObjective(row.objective))
       .reduce((map, row) => {
         const key = row.campaign_name || row.campaign_id || "Sem campanha";
@@ -544,6 +546,49 @@ function MetricasMensagensView({
       }, new Map())
       .values()
   ).sort((a, b) => b.revenue - a.revenue);
+  const engagementRows = safeRows.filter((row) => isEngagementObjective(row.objective));
+  const withJoinadsRows = safeRows.filter((row) => row.joinads_matched);
+  const engagementWithJoinadsRows = engagementRows.filter((row) => row.joinads_matched);
+  const rowsWithRevenue = safeRows.filter((row) => toNumber(row.revenue_client_value) !== 0);
+  const dataLevelCounts = safeRows.reduce((acc, row) => {
+    const key = row.data_level || "sem_data_level";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const objectiveCounts = safeRows.reduce((acc, row) => {
+    const key = row.objective || "sem_objective";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const sampleRows = safeRows.slice(0, 8).map((row) => ({
+    campaign: row.campaign_name || row.campaign_id || "-",
+    ad: row.ad_name || row.ad_id || "-",
+    objective: row.objective || "-",
+    matched: !!row.joinads_matched,
+    data_level: row.data_level || "-",
+    revenue: toNumber(row.revenue_client_value),
+    source: row.joinads_source_value || "-",
+  }));
+  const debugPayload = {
+    totalRows: safeRows.length,
+    engagementRows: engagementRows.length,
+    campaignRows: campaignRows.length,
+    withJoinadsRows: withJoinadsRows.length,
+    engagementWithJoinadsRows: engagementWithJoinadsRows.length,
+    rowsWithRevenue: rowsWithRevenue.length,
+    dataLevelCounts,
+    objectiveCounts,
+    rawJoinads: {
+      utmContentRows: diagnostics.joinadsContentRowsCount || 0,
+      utmCampaignRows: diagnostics.joinadsCampaignRowsCount || 0,
+      utmUserRows: diagnostics.joinadsUserRowsCount || 0,
+    },
+    messenlead: {
+      sources: diagnostics.messenleadSourcesCount || 0,
+      unresolved: diagnostics.messenleadUnresolved || [],
+    },
+    samples: sampleRows,
+  };
 
   return html`
     <main className="grid">
@@ -597,6 +642,23 @@ function MetricasMensagensView({
             </tbody>
           </table>
         </div>
+      </section>
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Diagnostico</span>
+            <h2 className="section-title">Logs Metricas Mensagens</h2>
+          </div>
+          <div className="chip-group">
+            <span className="chip neutral">${safeRows.length} linhas Meta</span>
+            <span className="chip neutral">${engagementRows.length} engagement</span>
+            <span className="chip neutral">${engagementWithJoinadsRows.length} com JoinAds</span>
+          </div>
+        </div>
+        <p className="muted small">
+          Copie este bloco e me envie se as campanhas de mensagem nao aparecerem.
+        </p>
+        <pre className="debug-log">${JSON.stringify(debugPayload, null, 2)}</pre>
       </section>
     </main>
   `;
@@ -8230,6 +8292,13 @@ function App() {
                 brlRate=${brlRate}
                 commissionPercent=${session?.commissionPercent || 0}
                 showUserCommission=${true}
+                diagnostics=${{
+                  joinadsContentRowsCount: joinadsContentRows.length,
+                  joinadsCampaignRowsCount: joinadsCampaignRows.length,
+                  joinadsUserRowsCount: joinadsUserRows.length,
+                  messenleadSourcesCount: messenleadSources.length,
+                  messenleadUnresolved,
+                }}
               />
             `}
       </div>
@@ -8415,6 +8484,13 @@ function App() {
             brlRate=${brlRate}
             commissionPercent=${session?.commissionPercent || 0}
             showUserCommission=${isGestorSession(session)}
+            diagnostics=${{
+              joinadsContentRowsCount: joinadsContentRows.length,
+              joinadsCampaignRowsCount: joinadsCampaignRows.length,
+              joinadsUserRowsCount: joinadsUserRows.length,
+              messenleadSourcesCount: messenleadSources.length,
+              messenleadUnresolved,
+            }}
           />`
         : activeTab === "carga_bot"
         ? html`<${BotPayloadView}

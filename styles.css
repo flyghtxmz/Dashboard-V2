@@ -229,6 +229,20 @@ button.small {
   color: var(--muted);
 }
 
+.debug-log {
+  margin: 0;
+  padding: 14px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #0f172a;
+  color: #dbeafe;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .grid {
   margin-top: 20px;
   display: grid;
