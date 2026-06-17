@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 89;
+const APP_VERSION_BUILD = 90;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -616,6 +616,10 @@ function MetricasMensagensView({
       utmUserRows: diagnostics.joinadsUserRowsCount || 0,
     },
     meta: diagnostics.metaDiagnostics || {},
+    messageFilter: {
+      sourceRows: diagnostics.messageSourceRowsCount || safeRows.length,
+      note: "Métricas Mensagens ignora filtro de domínio por URL porque campanhas Messenger apontam para chat, não para o domínio do blog.",
+    },
     messenlead: {
       sources: diagnostics.messenleadSourcesCount || 0,
       unresolved: diagnostics.messenleadUnresolved || [],
@@ -7929,6 +7933,30 @@ function App() {
     session?.username,
   ]);
 
+  const metaMessageFiltered = useMemo(() => {
+    const term = filters.adsetFilter.trim().toLowerCase();
+    const base = mergedMeta.filter((row) => {
+      if (hiddenCampaigns.has(row.campaign_id)) return false;
+      return true;
+    });
+    const scopedBase = isGestorSession(session)
+      ? base.filter((row) => rowMatchesDashboardUser(row, session?.username))
+      : base;
+    if (!term) return scopedBase;
+    return scopedBase.filter((row) =>
+      [row.campaign_name, row.adset_name, row.ad_name, row.name]
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [
+    mergedMeta,
+    filters.adsetFilter,
+    hiddenCampaigns,
+    session?.role,
+    session?.username,
+  ]);
+
   const filteredMeta = useMemo(() => {
     if (isTodaySelected) {
       // Hoje: mantém linhas Meta mesmo sem match JoinAds (JoinAds pode atrasar).
@@ -8376,7 +8404,7 @@ function App() {
             `
           : html`
               <${MetricasMensagensView}
-                rows=${metaDomainFiltered}
+                rows=${metaMessageFiltered}
                 usePmLabels=${true}
                 brlRate=${brlRate}
                 commissionPercent=${session?.commissionPercent || 0}
@@ -8388,6 +8416,7 @@ function App() {
                   messenleadSourcesCount: messenleadSources.length,
                   messenleadUnresolved,
                   metaDiagnostics,
+                  messageSourceRowsCount: metaMessageFiltered.length,
                 }}
               />
             `}
@@ -8569,7 +8598,7 @@ function App() {
           `
         : activeTab === "metricas_mensagens"
         ? html`<${MetricasMensagensView}
-            rows=${metaDomainFiltered}
+            rows=${metaMessageFiltered}
             usePmLabels=${usePmLabels}
             brlRate=${brlRate}
             commissionPercent=${session?.commissionPercent || 0}
@@ -8581,6 +8610,7 @@ function App() {
               messenleadSourcesCount: messenleadSources.length,
               messenleadUnresolved,
               metaDiagnostics,
+              messageSourceRowsCount: metaMessageFiltered.length,
             }}
           />`
         : activeTab === "carga_bot"
