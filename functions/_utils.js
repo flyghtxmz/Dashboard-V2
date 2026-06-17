@@ -38,6 +38,14 @@ export function getMetaAppSecret(env) {
   return env.META_APP_SECRET;
 }
 
+export function getMessenleadBaseUrl(env) {
+  return env.MESSENLEAD_API_BASE_URL;
+}
+
+export function getMessenleadToken(env) {
+  return env.MESSENLEAD_API_TOKEN;
+}
+
 export async function safeJson(response) {
   try {
     return await response.json();

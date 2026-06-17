@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 85;
+const APP_VERSION_BUILD = 86;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -1240,11 +1240,15 @@ function DiagnosticsJoin({
   topUrls,
   domain,
   superKey,
+  userRows = [],
+  messenleadUnresolved = [],
 }) {
   const superCount = Array.isArray(superRows) ? superRows.length : 0;
   const kvCount = Array.isArray(kvRows) ? kvRows.length : 0;
   const earningsCount = Array.isArray(earnings) ? earnings.length : 0;
   const topCount = Array.isArray(topUrls) ? topUrls.length : 0;
+  const userCount = Array.isArray(userRows) ? userRows.length : 0;
+  const unresolvedCount = Array.isArray(messenleadUnresolved) ? messenleadUnresolved.length : 0;
 
   return html`
     <section className="card wide meta-campaigns">
@@ -1280,7 +1284,25 @@ function DiagnosticsJoin({
           <div className="metric-value">${topCount}</div>
           <div className="metric-helper">/top-url</div>
         </div>
+        <div className="metric-card">
+          <div className="metric-label">utm_user (linhas)</div>
+          <div className="metric-value">${userCount}</div>
+          <div className="metric-helper">segmentacao de usuario</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">source_key sem resolucao</div>
+          <div className="metric-value">${unresolvedCount}</div>
+          <div className="metric-helper">Messenlead -> ad_id</div>
+        </div>
       </div>
+
+      ${unresolvedCount
+        ? html`<div className="status warn">
+            <strong>Source keys nao resolvidas:</strong>
+            ${messenleadUnresolved.slice(0, 8).join(", ")}
+            ${unresolvedCount > 8 ? ` e mais ${unresolvedCount - 8}` : ""}
+          </div>`
+        : null}
 
       <div className="table-wrapper" style=${{ marginTop: "12px" }}>
         <table>
@@ -5587,6 +5609,11 @@ function App() {
     includeAssets: false,
   });
   const [superFilter, setSuperFilter] = useState([]);
+  const [joinadsContentRows, setJoinadsContentRows] = useState([]);
+  const [joinadsCampaignRows, setJoinadsCampaignRows] = useState([]);
+  const [joinadsUserRows, setJoinadsUserRows] = useState([]);
+  const [messenleadSources, setMessenleadSources] = useState([]);
+  const [messenleadUnresolved, setMessenleadUnresolved] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
   const [earnings, setEarnings] = useState([]);
   const [earningsAll, setEarningsAll] = useState([]);
@@ -5650,6 +5677,11 @@ function App() {
   const [editCampaignFilter, setEditCampaignFilter] = useState("");
   const resetScopedState = () => {
     setSuperFilter([]);
+    setJoinadsContentRows([]);
+    setJoinadsCampaignRows([]);
+    setJoinadsUserRows([]);
+    setMessenleadSources([]);
+    setMessenleadUnresolved([]);
     setTopUrls([]);
     setEarnings([]);
     setEarningsAll([]);
@@ -5904,10 +5936,12 @@ function App() {
         return { data: [] };
       });
       // super-filter utm_content — sequencial necessário pela lógica de fallback
-      let superRes = { data: [] };
+      let contentSuperRes = { data: [] };
+      let campaignSuperRes = { data: [] };
+      let messenleadRes = { sources: [], unresolved: [] };
       let superKeyUsed = "utm_content";
       try {
-        superRes = await fetchJson(`${API_BASE}/super-filter`, {
+        contentSuperRes = await fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
             start_date: filters.startDate,
@@ -5918,25 +5952,41 @@ function App() {
           }),
         });
       } catch (err) {
-        pushLog("super-filter", err);
+        pushLog("super-filter-content", err);
       }
-      // Fallback se deu erro ou veio vazio
-      if (!superRes?.data?.length) {
+      try {
+        campaignSuperRes = await fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_campaign",
+            group: ["domain", "custom_value"],
+          }),
+        });
+      } catch (err) {
+        pushLog("super-filter-campaign", err);
+      }
+      if (!contentSuperRes?.data?.length && campaignSuperRes?.data?.length) {
+        superKeyUsed = "utm_campaign";
+      }
+
+      const sourceKeys = Array.from(
+        new Set(
+          (campaignSuperRes?.data || [])
+            .map((row) => normalizeKey(row.custom_value))
+            .filter((value) => value.startsWith("src_"))
+        )
+      );
+      if (sourceKeys.length) {
         try {
-          const fallback = await fetchJson(`${API_BASE}/super-filter`, {
+          messenleadRes = await fetchJson(`${API_BASE}/messenlead-resolve`, {
             method: "POST",
-            body: JSON.stringify({
-              start_date: filters.startDate,
-              end_date: filters.endDate,
-              "domain[]": [filters.domain.trim()],
-              custom_key: "utm_campaign",
-              group: ["domain", "custom_value"],
-            }),
+            body: JSON.stringify({ sourceKeys }),
           });
-          superRes = fallback;
-          superKeyUsed = "utm_campaign";
         } catch (err) {
-          pushLog("super-filter-fallback", err);
+          pushLog("messenlead-resolve", err);
         }
       }
 
@@ -5963,6 +6013,7 @@ function App() {
         keyValueContentRes,
         metaSourceRes,
         metaMediumRes,
+        joinadsUserRes,
       ] = await Promise.all([
         topPromise,
         earningsPromise,
@@ -6011,6 +6062,16 @@ function App() {
             group: ["domain", "custom_value"],
           }),
         }).catch((err) => { pushLog("meta-utmmedium", err); return { data: [] }; }),
+        fetchJson(`${API_BASE}/super-filter`, {
+          method: "POST",
+          body: JSON.stringify({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            "domain[]": [filters.domain.trim()],
+            custom_key: "utm_user",
+            group: ["domain", "custom_value"],
+          }),
+        }).catch((err) => { pushLog("joinads-utmuser", err); return { data: [] }; }),
       ]);
 
       // Reutiliza keyValueContentRes para paramPairs — elimina 2 fetches duplicados ao mesmo endpoint
@@ -6067,7 +6128,18 @@ function App() {
         setMetaRows([]);
       }
 
-      setSuperFilter(Array.isArray(superRes?.data) ? superRes.data : []);
+      setSuperFilter(
+        Array.isArray(contentSuperRes?.data) && contentSuperRes.data.length
+          ? contentSuperRes.data
+          : Array.isArray(campaignSuperRes?.data)
+          ? campaignSuperRes.data
+          : []
+      );
+      setJoinadsContentRows(Array.isArray(contentSuperRes?.data) ? contentSuperRes.data : []);
+      setJoinadsCampaignRows(Array.isArray(campaignSuperRes?.data) ? campaignSuperRes.data : []);
+      setJoinadsUserRows(Array.isArray(joinadsUserRes?.data) ? joinadsUserRes.data : []);
+      setMessenleadSources(Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : []);
+      setMessenleadUnresolved(Array.isArray(messenleadRes?.unresolved) ? messenleadRes.unresolved : []);
       setSuperKey(superKeyUsed || "utm_content");
       setSuperTermRows(Array.isArray(superTermRes?.data) ? superTermRes.data : []);
       setTopUrls(Array.isArray(topRes?.data) ? topRes.data : []);
@@ -7400,6 +7472,65 @@ function App() {
       return domainKey ? d === domainKey : true;
     });
     const kvContent = Array.isArray(keyValueContent) ? keyValueContent : [];
+    const sourceKeyToAdId = new Map(
+      (messenleadSources || [])
+        .filter((item) => item?.sourceKey && item?.adId)
+        .map((item) => [normalizeKey(item.sourceKey), normalizeKey(item.adId)])
+    );
+    const metaAdIds = new Set(
+      (metaRows || []).map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
+    );
+    const domainFilteredContentRows = (joinadsContentRows || []).filter((row) => {
+      const d = normalizeKey(row.domain || row.name || "");
+      return domainKey ? d === domainKey : true;
+    });
+    const domainFilteredCampaignRows = (joinadsCampaignRows || []).filter((row) => {
+      const d = normalizeKey(row.domain || row.name || "");
+      return domainKey ? d === domainKey : true;
+    });
+
+    const addJoinadsByAdId = (map, adId, row, dataLevel, sourceValue) => {
+      const key = normalizeKey(adId);
+      if (!key) return;
+      const entry =
+        map.get(key) || {
+          impressions: 0,
+          clicks: 0,
+          revenue: 0,
+          revenue_client: 0,
+          ecpm: null,
+          ecpm_client: null,
+          data_level: dataLevel,
+          source_value: sourceValue || "",
+        };
+      entry.impressions += toNumber(row.impressions);
+      entry.clicks += toNumber(row.clicks);
+      entry.revenue += toNumber(row.revenue);
+      entry.revenue_client += toNumber(row.revenue_client);
+      if (row.ecpm != null) entry.ecpm = toNumber(row.ecpm);
+      if (row.ecpm_client != null) entry.ecpm_client = toNumber(row.ecpm_client);
+      map.set(key, entry);
+    };
+
+    const contentByAdId = new Map();
+    domainFilteredContentRows.forEach((row) => {
+      const adId = normalizeKey(row.custom_value);
+      if (metaAdIds.has(adId)) {
+        addJoinadsByAdId(contentByAdId, adId, row, "utm_content_ad_id", row.custom_value);
+      }
+    });
+
+    const sourceByAdId = new Map();
+    domainFilteredCampaignRows.forEach((row) => {
+      const sourceKey = normalizeKey(row.custom_value);
+      if (!sourceKey.startsWith("src_")) return;
+      const adId = sourceKeyToAdId.get(sourceKey);
+      if (adId && metaAdIds.has(adId) && !contentByAdId.has(adId)) {
+        addJoinadsByAdId(sourceByAdId, adId, row, "messenlead_source_key", row.custom_value);
+      }
+    });
+
+    const joinadsByAdId = new Map([...sourceByAdId, ...contentByAdId]);
 
     const earningsByDate = {};
     (earnings || []).forEach((row) => {
@@ -7469,8 +7600,12 @@ function App() {
       const nameKey = normalizeKey(row.ad_name);
       const adIdKey = normalizeKey(row.ad_id || "");
       const adsetKey = normalizeKey(row.adset_name || "");
+      const resolvedJoin = joinadsByAdId.get(adIdKey) || {};
 
       const fromCustom =
+        Object.keys(resolvedJoin).length
+          ? resolvedJoin
+          :
         superByCustom.get(nameKey) ||
         superByCustom.get(adIdKey) ||
         {};
@@ -7480,12 +7615,16 @@ function App() {
         kvByCustom.get(adIdKey) ||
         {};
 
+      const matchedByResolvedAdId = Object.keys(resolvedJoin).length > 0;
       const matchedByContent = contentSet.has(nameKey) || contentSet.has(adIdKey);
       const matchedByTerm = termSet.has(adsetKey);
       const hasJoinads = hasContentData
-        ? matchedByContent ||
+        ? matchedByResolvedAdId ||
+          matchedByContent ||
           Object.keys(fromCustom).length > 0 ||
           Object.keys(fromKv).length > 0
+        : matchedByResolvedAdId
+        ? true
         : hasTermData
         ? matchedByTerm
         : false;
@@ -7580,7 +7719,8 @@ function App() {
         revenue_client_value: revenueClientRaw ?? 0,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
-        data_level: Object.keys(fromKv).length ? "utm_content" : superKey,
+        data_level: resolvedJoin.data_level || (Object.keys(fromKv).length ? "utm_content" : superKey),
+        joinads_source_value: resolvedJoin.source_value || "",
         results_meta: resultsCount,
         adset_daily_budget_brl: dailyBudgetBrl,
         adset_lifetime_budget_brl: lifetimeBudgetBrl,
@@ -7594,6 +7734,9 @@ function App() {
     metaRows,
     earnings,
     superFilter,
+    joinadsContentRows,
+    joinadsCampaignRows,
+    messenleadSources,
     superTermRows,
     keyValueContent,
     brlRate,
@@ -8444,6 +8587,8 @@ function App() {
                   topUrls=${topUrls}
                   domain=${appliedFilters?.domain || filters.domain}
                   superKey=${superKey}
+                  userRows=${joinadsUserRows}
+                  messenleadUnresolved=${messenleadUnresolved}
                 />
               `}
               ${html`<${DiagnosticsNoUtmSummary} row=${semUtmRow} />`}
