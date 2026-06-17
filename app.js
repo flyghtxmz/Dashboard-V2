@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 87;
+const APP_VERSION_BUILD = 88;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -583,6 +583,7 @@ function MetricasMensagensView({
       utmCampaignRows: diagnostics.joinadsCampaignRowsCount || 0,
       utmUserRows: diagnostics.joinadsUserRowsCount || 0,
     },
+    meta: diagnostics.metaDiagnostics || {},
     messenlead: {
       sources: diagnostics.messenleadSourcesCount || 0,
       unresolved: diagnostics.messenleadUnresolved || [],
@@ -5687,6 +5688,7 @@ function App() {
   const [domainsLoading, setDomainsLoading] = useState(false);
   const [logs, setLogs] = useState([]);
   const [metaRows, setMetaRows] = useState([]);
+  const [metaDiagnostics, setMetaDiagnostics] = useState({});
   const [fxInfo, setFxInfo] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
   const [paramPairs, setParamPairs] = useState([]);
@@ -5753,6 +5755,7 @@ function App() {
     setDomains([]);
     setLogs([]);
     setMetaRows([]);
+    setMetaDiagnostics({});
     setFxInfo(null);
     setParamPairs([]);
     setMetaSourceRows([]);
@@ -6177,17 +6180,67 @@ function App() {
             cacheKey: `meta-insights:${metaParams.toString()}`,
           }
         );
-      setMetaRows(Array.isArray(metaRes?.data) ? metaRes.data : []);
-      const destMap = {};
-      (editListRes?.data || []).forEach((row) => {
-        if (row?.id) {
-          destMap[row.id] = row.destination_url || row.url || "";
-        }
-      });
-      setAdDestMap(destMap);
+        const insightRows = Array.isArray(metaRes?.data) ? metaRes.data : [];
+        const structureRows = Array.isArray(editListRes?.data) ? editListRes.data : [];
+        const insightAdIds = new Set(
+          insightRows.map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
+        );
+        const messageFallbackRows = structureRows
+          .filter((row) => isEngagementObjective(row.objective))
+          .filter((row) => !insightAdIds.has(normalizeKey(row.ad_id || row.id || "")))
+          .map((row) => ({
+            ...row,
+            ad_id: row.ad_id || row.id,
+            ad_name: row.ad_name || row.name,
+            date_start: filters.endDate,
+            date: filters.endDate,
+            spend: row.spend || 0,
+            results: row.results || null,
+            cost_per_result: row.cost_per_result || null,
+            meta_source: "structure_fallback",
+          }));
+        const mergedMetaRows = [
+          ...insightRows.map((row) => ({ ...row, meta_source: "insights" })),
+          ...messageFallbackRows,
+        ];
+        setMetaRows(mergedMetaRows);
+        setMetaDiagnostics({
+          accountId: filters.metaAccountId.trim(),
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+          insightsRows: insightRows.length,
+          structureRows: structureRows.length,
+          structureEngagementRows: structureRows.filter((row) => isEngagementObjective(row.objective)).length,
+          fallbackMessageRows: messageFallbackRows.length,
+          finalMetaRows: mergedMetaRows.length,
+          structureObjectiveCounts: structureRows.reduce((acc, row) => {
+            const key = row.objective || "sem_objective";
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+          }, {}),
+          structureSamples: structureRows.slice(0, 8).map((row) => ({
+            campaign: row.campaign_name || row.campaign_id || "-",
+            ad: row.ad_name || row.name || row.ad_id || "-",
+            objective: row.objective || "-",
+            status: row.effective_status || row.status || "-",
+          })),
+        });
+        const destMap = {};
+        structureRows.forEach((row) => {
+          if (row?.id) {
+            destMap[row.id] = row.destination_url || row.url || "";
+          }
+        });
+        setAdDestMap(destMap);
       } catch (err) {
         pushLog("meta", err);
         setMetaRows([]);
+        setMetaDiagnostics({
+          accountId: filters.metaAccountId.trim(),
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+          error: formatError(err),
+        });
       }
 
       setSuperFilter(
@@ -8298,6 +8351,7 @@ function App() {
                   joinadsUserRowsCount: joinadsUserRows.length,
                   messenleadSourcesCount: messenleadSources.length,
                   messenleadUnresolved,
+                  metaDiagnostics,
                 }}
               />
             `}
@@ -8490,6 +8544,7 @@ function App() {
               joinadsUserRowsCount: joinadsUserRows.length,
               messenleadSourcesCount: messenleadSources.length,
               messenleadUnresolved,
+              metaDiagnostics,
             }}
           />`
         : activeTab === "carga_bot"

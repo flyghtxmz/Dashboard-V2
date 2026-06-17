@@ -46,7 +46,7 @@ export async function onRequest({ request, env }) {
   try {
     const adsUrl = `${API_BASE}/${encodeURIComponent(
       account_id
-    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,campaign_id,campaign_name,updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
+    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
     const adsetIds = Array.from(
@@ -84,9 +84,9 @@ export async function onRequest({ request, env }) {
 
     const rows = (ads || []).map((ad) => {
       const spec = ad?.creative?.object_story_spec || {};
-      const adsetName = ad.adset_name || nameMap.get(ad.adset_id) || "";
+      const adsetName = ad.adset_name || ad.adset?.name || nameMap.get(ad.adset_id) || "";
       const campaignName =
-        ad.campaign_name || nameMap.get(ad.campaign_id) || "";
+        ad.campaign_name || ad.campaign?.name || nameMap.get(ad.campaign_id) || "";
       const destination =
         ad?.creative?.link_url ||
         ad?.creative?.object_url ||
@@ -99,8 +99,13 @@ export async function onRequest({ request, env }) {
         effective_status: ad.effective_status,
         adset_id: ad.adset_id,
         adset_name: adsetName,
+        adset_status: ad.adset?.status || "",
+        adset_effective_status: ad.adset?.effective_status || "",
         campaign_id: ad.campaign_id,
         campaign_name: campaignName,
+        objective: ad.campaign?.objective || "",
+        campaign_status: ad.campaign?.status || "",
+        campaign_effective_status: ad.campaign?.effective_status || "",
         url_tags: ad?.creative?.url_tags || "",
         url: extractUrl(spec),
         object_story_id:
