@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 90;
+const APP_VERSION_BUILD = 91;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -553,25 +553,105 @@ function MetricasMensagensView({
     safeRows
       .filter((row) => isMessageMetricsRow(row))
       .reduce((map, row) => {
-        const key = row.campaign_name || row.campaign_id || "Sem campanha";
+        const key = row.campaign_id || row.campaign_name || "Sem campanha";
         const item =
           map.get(key) || {
+            campaign_id: row.campaign_id || "",
             campaign_name: row.campaign_name || "-",
             objective: row.objective || "",
-            impressions: 0,
-            clicks: 0,
-            revenue: 0,
+            meta_impressions: 0,
+            joinads_impressions: 0,
+            meta_clicks: 0,
+            joinads_clicks: 0,
+            spend_brl: 0,
+            revenue_usd: 0,
+            revenue_brl: 0,
+            results: 0,
             ads: new Set(),
+            adsets: new Set(),
+            attributionLevels: new Set(),
+            sourceValues: new Set(),
           };
-        item.impressions += toNumber(row.impressions_joinads || row.impressions);
-        item.clicks += toNumber(row.clicks);
-        item.revenue += toNumber(row.revenue_client_value);
+        const revenueUsd = toNumber(row.revenue_client_value);
+        const revenueBrl = row.revenue_client_brl_value != null
+          ? toNumber(row.revenue_client_brl_value)
+          : brlRate
+          ? revenueUsd * brlRate
+          : 0;
+        item.meta_impressions += toNumber(row.impressions);
+        item.joinads_impressions += toNumber(row.impressions_joinads);
+        item.meta_clicks += toNumber(row.meta_clicks_value || row.clicks);
+        item.joinads_clicks += toNumber(row.clicks_joinads);
+        item.spend_brl += toNumber(row.spend_value || row.spend);
+        item.revenue_usd += revenueUsd;
+        item.revenue_brl += revenueBrl;
+        item.results += toNumber(row.results_meta);
         if (row.ad_id || row.ad_name) item.ads.add(row.ad_id || row.ad_name);
+        if (row.adset_id || row.adset_name) item.adsets.add(row.adset_id || row.adset_name);
+        if (row.data_level) item.attributionLevels.add(row.data_level);
+        if (row.joinads_source_value) item.sourceValues.add(row.joinads_source_value);
         map.set(key, item);
         return map;
       }, new Map())
       .values()
-  ).sort((a, b) => b.revenue - a.revenue);
+  )
+    .map((row) => ({
+      ...row,
+      roas: row.spend_brl > 0 ? row.revenue_brl / row.spend_brl : null,
+      profit_brl: row.revenue_brl - row.spend_brl,
+      ecpm: row.joinads_impressions > 0 ? (row.revenue_usd / row.joinads_impressions) * 1000 : null,
+    }))
+    .sort((a, b) => b.revenue_brl - a.revenue_brl);
+  const totalsRow = campaignRows.reduce(
+    (acc, row) => {
+      acc.ads += row.ads.size || 0;
+      acc.adsets += row.adsets.size || 0;
+      acc.meta_impressions += row.meta_impressions || 0;
+      acc.joinads_impressions += row.joinads_impressions || 0;
+      acc.meta_clicks += row.meta_clicks || 0;
+      acc.joinads_clicks += row.joinads_clicks || 0;
+      acc.results += row.results || 0;
+      acc.spend_brl += row.spend_brl || 0;
+      acc.revenue_usd += row.revenue_usd || 0;
+      acc.revenue_brl += row.revenue_brl || 0;
+      return acc;
+    },
+    {
+      ads: 0,
+      adsets: 0,
+      meta_impressions: 0,
+      joinads_impressions: 0,
+      meta_clicks: 0,
+      joinads_clicks: 0,
+      results: 0,
+      spend_brl: 0,
+      revenue_usd: 0,
+      revenue_brl: 0,
+    }
+  );
+  totalsRow.roas = totalsRow.spend_brl > 0 ? totalsRow.revenue_brl / totalsRow.spend_brl : null;
+  totalsRow.profit_brl = totalsRow.revenue_brl - totalsRow.spend_brl;
+  totalsRow.ecpm =
+    totalsRow.joinads_impressions > 0
+      ? (totalsRow.revenue_usd / totalsRow.joinads_impressions) * 1000
+      : null;
+  const attributionLabel = (levels) => {
+    const list = Array.from(levels || []);
+    if (!list.length) return "-";
+    return list
+      .map((level) =>
+        level === "utm_content_ad_id"
+          ? "ad_id"
+          : level === "messenlead_source_key"
+          ? "Messenlead"
+          : level === "utm_content"
+          ? "utm_content"
+          : level === "utm_campaign"
+          ? "utm_campaign"
+          : level
+      )
+      .join(", ");
+  };
   const engagementRows = safeRows.filter((row) => isEngagementObjective(row.objective));
   const messageRows = safeRows.filter((row) => isMessageMetricsRow(row));
   const trafficMessengerRows = safeRows.filter(
@@ -596,7 +676,12 @@ function MetricasMensagensView({
     objective: row.objective || "-",
     matched: !!row.joinads_matched,
     data_level: row.data_level || "-",
+    meta_clicks: toNumber(row.meta_clicks_value || row.clicks),
+    joinads_clicks: toNumber(row.clicks_joinads),
     revenue: toNumber(row.revenue_client_value),
+    revenue_brl: toNumber(row.revenue_client_brl_value),
+    spend_brl: toNumber(row.spend_value || row.spend),
+    roas: row.roas_joinads || "-",
     source: row.joinads_source_value || "-",
   }));
   const debugPayload = {
@@ -643,39 +728,86 @@ function MetricasMensagensView({
               <tr>
                 <th>Campanha</th>
                 <th>Tipo</th>
+                <th>Conjuntos</th>
                 <th>Anuncios</th>
-                <th>Impressoes</th>
-                <th>Cliques</th>
+                <th>Resultados Meta</th>
+                <th>Cliques Meta</th>
+                <th>Imp. JoinAds</th>
+                <th>Cliques JoinAds</th>
+                ${showUserCommission ? null : html`<th>Gasto Meta</th>`}
                 ${showUserCommission
                   ? html`<th>Lucro do usuario</th>`
-                  : html`<th>Receita cliente</th>`}
+                  : html`
+                      <th>Receita USD</th>
+                      <th>Receita BRL</th>
+                      <th>ROAS</th>
+                      <th>Lucro Op.</th>
+                    `}
                 <th>${label}</th>
+                <th>Atribuicao</th>
               </tr>
             </thead>
             <tbody>
               ${campaignRows.length === 0
-                ? html`<tr><td colSpan="7" className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
+                ? html`<tr><td colSpan=${showUserCommission ? 11 : 15} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
                 : campaignRows.map((row) => {
-                  const metricValue =
-                    row.impressions > 0 ? (row.revenue / row.impressions) * 1000 : null;
-                  const revenueBrl = brlRate ? row.revenue * brlRate : null;
                   const userCommission = showUserCommission
-                    ? calculateUserCommission(revenueBrl, commissionPercent)
+                    ? calculateUserCommission(row.revenue_brl, commissionPercent)
                     : null;
                   return html`
                     <tr key=${row.campaign_name}>
                       <td>${row.campaign_name || "-"}</td>
                       <td>${formatObjective(row.objective)}</td>
+                      <td>${number.format(row.adsets.size || 0)}</td>
                       <td>${number.format(row.ads.size || 0)}</td>
-                      <td>${number.format(row.impressions || 0)}</td>
-                      <td>${number.format(row.clicks || 0)}</td>
+                      <td>${row.results ? number.format(row.results) : "-"}</td>
+                      <td>${row.meta_clicks ? number.format(row.meta_clicks) : "-"}</td>
+                      <td>${number.format(row.joinads_impressions || 0)}</td>
+                      <td>${number.format(row.joinads_clicks || 0)}</td>
+                      ${showUserCommission ? null : html`<td>${currencyBRL.format(row.spend_brl || 0)}</td>`}
                       ${showUserCommission
                         ? html`<td>${userCommission != null ? currencyBRL.format(userCommission) : "-"}</td>`
-                        : html`<td>${currencyUSD.format(row.revenue || 0)}</td>`}
-                      <td>${metricValue != null ? currencyUSD.format(metricValue) : "-"}</td>
+                        : html`
+                            <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
+                            <td>${currencyBRL.format(row.revenue_brl || 0)}</td>
+                            <td>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</td>
+                            <td>${currencyBRL.format(row.profit_brl || 0)}</td>
+                          `}
+                      <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
+                      <td>
+                        ${attributionLabel(row.attributionLevels)}
+                        ${row.sourceValues.size
+                          ? html`<div className="muted small">${Array.from(row.sourceValues).slice(0, 2).join(", ")}</div>`
+                          : null}
+                      </td>
                     </tr>
                   `;
                 })}
+              ${campaignRows.length
+                ? html`
+                    <tr className="summary-row">
+                      <td><strong>Total</strong></td>
+                      <td></td>
+                      <td><strong>${number.format(totalsRow.adsets)}</strong></td>
+                      <td><strong>${number.format(totalsRow.ads)}</strong></td>
+                      <td><strong>${totalsRow.results ? number.format(totalsRow.results) : "-"}</strong></td>
+                      <td><strong>${totalsRow.meta_clicks ? number.format(totalsRow.meta_clicks) : "-"}</strong></td>
+                      <td><strong>${number.format(totalsRow.joinads_impressions)}</strong></td>
+                      <td><strong>${number.format(totalsRow.joinads_clicks)}</strong></td>
+                      ${showUserCommission ? null : html`<td><strong>${currencyBRL.format(totalsRow.spend_brl)}</strong></td>`}
+                      ${showUserCommission
+                        ? html`<td><strong>${currencyBRL.format(calculateUserCommission(totalsRow.revenue_brl, commissionPercent) || 0)}</strong></td>`
+                        : html`
+                            <td><strong>${currencyUSD.format(totalsRow.revenue_usd)}</strong></td>
+                            <td><strong>${currencyBRL.format(totalsRow.revenue_brl)}</strong></td>
+                            <td><strong>${totalsRow.roas != null ? `${totalsRow.roas.toFixed(2)}x` : "-"}</strong></td>
+                            <td><strong>${currencyBRL.format(totalsRow.profit_brl)}</strong></td>
+                          `}
+                      <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong></td>
+                      <td></td>
+                    </tr>
+                  `
+                : null}
             </tbody>
           </table>
         </div>
@@ -1555,6 +1687,9 @@ function MetaSourceTable({ rows }) {
 }
 const objectiveMap = {
   OUTCOME_SALES: "Vendas",
+  OUTCOME_TRAFFIC: "Cliques no link",
+  OUTCOME_ENGAGEMENT: "Engajamento",
+  ENGAGEMENT: "Engajamento",
   LINK_CLICKS: "Cliques no link",
 };
 const formatObjective = (value) => objectiveMap[value] || value || "-";
@@ -7810,6 +7945,9 @@ function App() {
         (ecpmClient != null && impressionsJoin
           ? (Number(ecpmClient) * impressionsJoin) / 1000
           : null);
+      const clicksJoinads = toNumber(
+        fromKv.clicks ?? fromCustom.clicks ?? null
+      );
 
       const revenueClientBrl =
         revenueClientRaw != null && brlRate ? revenueClientRaw * brlRate : null;
@@ -7863,6 +8001,7 @@ function App() {
         cost_per_result: currencyBRL.format(cost),
         spend_brl: currencyBRL.format(spend),
         spend_value: spend,
+        meta_clicks_value: toNumber(row.clicks),
         revenue_client_brl_value: revenueClientBrl ?? null,
         lucro_op_brl: lucroOpBrl != null ? currencyBRL.format(lucroOpBrl) : "-",
         ecpm_client:
@@ -7874,6 +8013,7 @@ function App() {
         revenue_client_value: revenueClientRaw ?? 0,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
+        clicks_joinads: clicksJoinads || null,
         data_level: resolvedJoin.data_level || (Object.keys(fromKv).length ? "utm_content" : superKey),
         joinads_source_value: resolvedJoin.source_value || "",
         results_meta: resultsCount,

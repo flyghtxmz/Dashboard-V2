@@ -42,6 +42,8 @@ export async function onRequest({ request, env }) {
       "ad_id",
       "objective",
       "spend",
+      "clicks",
+      "actions",
       "results",
       "cpm",
       "cost_per_result",
