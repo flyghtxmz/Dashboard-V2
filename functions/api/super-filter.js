@@ -58,6 +58,15 @@ export async function onRequest({ request, env }) {
     payload.group = [];
   }
 
+  const logBase = {
+    report: "Relatorio de URL Avancado",
+    method: "POST",
+    endpoint: `${API_BASE}/super-filter`,
+    authorization: "Bearer [REDACTED]",
+    request: payload,
+  };
+  console.log("[joinads-super-filter] request", JSON.stringify(logBase));
+
   try {
     const response = await fetch(`${API_BASE}/super-filter`, {
       method: "POST",
@@ -70,12 +79,33 @@ export async function onRequest({ request, env }) {
     });
 
     const data = await safeJson(response);
+    console.log(
+      "[joinads-super-filter] response",
+      JSON.stringify({
+        ...logBase,
+        status: response.status,
+        ok: response.ok,
+        code: data?.code || null,
+        rows: Array.isArray(data?.data) ? data.data.length : 0,
+        customKeys: Array.from(
+          new Set((data?.data || []).map((row) => row?.custom_key).filter(Boolean))
+        ),
+        customValues: (data?.data || [])
+          .map((row) => row?.custom_value)
+          .filter(Boolean)
+          .slice(0, 20),
+      })
+    );
     if (!response.ok) {
       return jsonResponse(response.status, { error: "Erro JoinAds", details: data });
     }
 
     return jsonResponse(200, data);
   } catch (error) {
+    console.error(
+      "[joinads-super-filter] error",
+      JSON.stringify({ ...logBase, error: error.message })
+    );
     return jsonResponse(500, {
       error: "Erro ao consultar JoinAds",
       details: error.message,

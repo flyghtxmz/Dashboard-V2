@@ -10,7 +10,7 @@ const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 93;
+const APP_VERSION_BUILD = 94;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -729,6 +729,7 @@ function MetricasMensagensView({
       utmMediumMessengerRows: messengerMediumRows.length,
       utmMediumOrganicRows: organicMediumRows.length,
     },
+    superFilterReport: diagnostics.joinadsSuperFilterDiagnostics || {},
     meta: diagnostics.metaDiagnostics || {},
     messageFilter: {
       sourceRows: diagnostics.messageSourceRowsCount || safeRows.length,
@@ -5926,6 +5927,7 @@ function App() {
   const [joinadsCampaignRows, setJoinadsCampaignRows] = useState([]);
   const [joinadsUserRows, setJoinadsUserRows] = useState([]);
   const [joinadsMediumRows, setJoinadsMediumRows] = useState([]);
+  const [joinadsSuperFilterDiagnostics, setJoinadsSuperFilterDiagnostics] = useState({});
   const [messenleadSources, setMessenleadSources] = useState([]);
   const [messenleadUnresolved, setMessenleadUnresolved] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
@@ -5996,6 +5998,7 @@ function App() {
     setJoinadsCampaignRows([]);
     setJoinadsUserRows([]);
     setJoinadsMediumRows([]);
+    setJoinadsSuperFilterDiagnostics({});
     setMessenleadSources([]);
     setMessenleadUnresolved([]);
     setTopUrls([]);
@@ -6256,35 +6259,89 @@ function App() {
       let contentSuperRes = { data: [] };
       let campaignSuperRes = { data: [] };
       let messenleadRes = { sources: [], unresolved: [] };
+      let contentSuperError = null;
+      let campaignSuperError = null;
       let superKeyUsed = "utm_content";
+      const contentSuperPayload = {
+        start_date: filters.startDate,
+        end_date: filters.endDate,
+        "domain[]": [filters.domain.trim()],
+        custom_key: "utm_content",
+        group: ["domain", "custom_value"],
+      };
+      const campaignSuperPayload = {
+        start_date: filters.startDate,
+        end_date: filters.endDate,
+        "domain[]": [filters.domain.trim()],
+        custom_key: "utm_campaign",
+        group: ["domain", "custom_value"],
+      };
       try {
         contentSuperRes = await fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
-          body: JSON.stringify({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": [filters.domain.trim()],
-            custom_key: "utm_content",
-            group: ["domain", "custom_value"],
-          }),
+          body: JSON.stringify(contentSuperPayload),
         });
       } catch (err) {
+        contentSuperError = formatError(err);
         pushLog("super-filter-content", err);
       }
       try {
         campaignSuperRes = await fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
-          body: JSON.stringify({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": [filters.domain.trim()],
-            custom_key: "utm_campaign",
-            group: ["domain", "custom_value"],
-          }),
+          body: JSON.stringify(campaignSuperPayload),
         });
       } catch (err) {
+        campaignSuperError = formatError(err);
         pushLog("super-filter-campaign", err);
       }
+      const summarizeSuperFilter = (payload, response, requestError) => {
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        return {
+          request: payload,
+          error: requestError,
+          response: {
+            code: response?.code || null,
+            rows: rows.length,
+            customKeys: Array.from(
+              new Set(rows.map((row) => row?.custom_key).filter(Boolean))
+            ),
+            customValues: rows
+              .map((row) => row?.custom_value)
+              .filter(Boolean)
+              .slice(0, 20),
+            sample: rows.slice(0, 10),
+          },
+        };
+      };
+      setJoinadsSuperFilterDiagnostics({
+        report: "Relatorio de URL Avancado",
+        method: "POST",
+        endpoint: "https://office.joinads.me/api/clients-endpoints/super-filter",
+        authorization: "Bearer [REDACTED]",
+        constraints: {
+          maxDateRangeDays: 15,
+          validCustomKeys: [
+            "utm_campaign",
+            "id_post_wp",
+            "id_post",
+            "utm_source",
+            "utm_medium",
+            "utm_content",
+            "land_uri",
+          ],
+          validGroups: ["custom_key", "country", "domain", "custom_value"],
+        },
+        utmContent: summarizeSuperFilter(
+          contentSuperPayload,
+          contentSuperRes,
+          contentSuperError
+        ),
+        utmCampaign: summarizeSuperFilter(
+          campaignSuperPayload,
+          campaignSuperRes,
+          campaignSuperError
+        ),
+      });
       if (!contentSuperRes?.data?.length && campaignSuperRes?.data?.length) {
         superKeyUsed = "utm_campaign";
       }
@@ -8636,6 +8693,7 @@ function App() {
                   joinadsContentRowsCount: joinadsContentRows.length,
                   joinadsCampaignRowsCount: joinadsCampaignRows.length,
                   joinadsUserRowsCount: joinadsUserRows.length,
+                  joinadsSuperFilterDiagnostics,
                   messenleadSourcesCount: messenleadSources.length,
                   messenleadUnresolved,
                   metaDiagnostics,
@@ -8831,6 +8889,7 @@ function App() {
               joinadsContentRowsCount: joinadsContentRows.length,
               joinadsCampaignRowsCount: joinadsCampaignRows.length,
               joinadsUserRowsCount: joinadsUserRows.length,
+              joinadsSuperFilterDiagnostics,
               messenleadSourcesCount: messenleadSources.length,
               messenleadUnresolved,
               metaDiagnostics,
