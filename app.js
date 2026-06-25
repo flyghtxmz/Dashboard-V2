@@ -9,8 +9,9 @@ const DEFAULT_UTM_TAGS =
 const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
+const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 94;
+const APP_VERSION_BUILD = 95;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -532,6 +533,37 @@ function isMessageMetricsRow(row) {
   return isEngagementObjective(row?.objective) || hasMessengerSignal(row);
 }
 
+function isMessagingConversationAction(actionType) {
+  const type = String(actionType || "").toLowerCase();
+  return (
+    type.includes("messaging_conversation_started") ||
+    type.includes("messaging_conversations_started")
+  );
+}
+
+function getActionMetric(actions, matcher) {
+  if (!Array.isArray(actions)) return null;
+  let found = false;
+  const total = actions.reduce((acc, action) => {
+    if (!matcher(action?.action_type)) return acc;
+    found = true;
+    return acc + toNumber(action?.value ?? action?.values?.[0]?.value);
+  }, 0);
+  return found ? total : null;
+}
+
+function getMessagingConversationStarts(row) {
+  return getActionMetric(row?.actions_count || row?.actions, isMessagingConversationAction);
+}
+
+function getMessagingConversationCost(row) {
+  const value = getActionMetric(
+    row?.cost_per_action_type,
+    isMessagingConversationAction
+  );
+  return value != null ? value : null;
+}
+
 function calculateUserCommission(revenueBrl, commissionPercent) {
   const value = Number(revenueBrl);
   if (!Number.isFinite(value)) return null;
@@ -547,9 +579,14 @@ function MetricasMensagensView({
   showUserCommission = false,
   diagnostics = {},
   mediumRows = [],
+  onBidUpdate,
+  bidLoading = {},
+  allowBidControl = false,
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
+  const [messageBidInputs, setMessageBidInputs] = useState({});
+  const [messageBidStrategies, setMessageBidStrategies] = useState({});
   const campaignRows = Array.from(
     safeRows
       .filter((row) => isMessageMetricsRow(row))
@@ -567,9 +604,14 @@ function MetricasMensagensView({
             spend_brl: 0,
             revenue_usd: 0,
             revenue_brl: 0,
-            results: 0,
+            conversations: 0,
+            meta_results: 0,
+            meta_cost_weighted: 0,
+            meta_cost_weight: 0,
+            meta_cost_sum: 0,
+            meta_cost_count: 0,
             ads: new Set(),
-            adsets: new Set(),
+            adsets: new Map(),
             attributionLevels: new Set(),
             sourceValues: new Set(),
           };
@@ -579,16 +621,41 @@ function MetricasMensagensView({
           : brlRate
           ? revenueUsd * brlRate
           : 0;
-        item.meta_impressions += toNumber(row.impressions);
+        const metaCostPerResult = toNumber(row.cost_per_result_value);
+        const rowSpend = toNumber(row.spend_value || row.spend);
+        item.meta_impressions += toNumber(row.meta_impressions_value || row.impressions);
         item.joinads_impressions += toNumber(row.impressions_joinads);
         item.meta_clicks += toNumber(row.meta_clicks_value || row.clicks);
         item.joinads_clicks += toNumber(row.clicks_joinads);
-        item.spend_brl += toNumber(row.spend_value || row.spend);
+        item.spend_brl += rowSpend;
         item.revenue_usd += revenueUsd;
         item.revenue_brl += revenueBrl;
-        item.results += toNumber(row.results_meta);
+        item.conversations += toNumber(row.messaging_conversations_started);
+        item.meta_results += toNumber(row.results_meta);
+        if (metaCostPerResult > 0) {
+          item.meta_cost_sum += metaCostPerResult;
+          item.meta_cost_count += 1;
+          if (rowSpend > 0) {
+            item.meta_cost_weighted += metaCostPerResult * rowSpend;
+            item.meta_cost_weight += rowSpend;
+          }
+        }
         if (row.ad_id || row.ad_name) item.ads.add(row.ad_id || row.ad_name);
-        if (row.adset_id || row.adset_name) item.adsets.add(row.adset_id || row.adset_name);
+        if (row.adset_id) {
+          const current = item.adsets.get(row.adset_id) || {
+            id: row.adset_id,
+            name: row.adset_name || row.adset_id,
+            bidAmountBrl: null,
+            bidStrategy: "",
+            optimizationGoal: "",
+          };
+          if (row.adset_bid_amount_brl != null) {
+            current.bidAmountBrl = toNumber(row.adset_bid_amount_brl);
+          }
+          if (row.adset_bid_strategy) current.bidStrategy = row.adset_bid_strategy;
+          if (row.adset_optimization_goal) current.optimizationGoal = row.adset_optimization_goal;
+          item.adsets.set(row.adset_id, current);
+        }
         if (row.data_level) item.attributionLevels.add(row.data_level);
         if (row.joinads_source_value) item.sourceValues.add(row.joinads_source_value);
         map.set(key, item);
@@ -601,6 +668,16 @@ function MetricasMensagensView({
       roas: row.spend_brl > 0 ? row.revenue_brl / row.spend_brl : null,
       profit_brl: row.revenue_brl - row.spend_brl,
       ecpm: row.joinads_impressions > 0 ? (row.revenue_usd / row.joinads_impressions) * 1000 : null,
+      meta_cost_per_result:
+        row.meta_cost_weight > 0
+          ? row.meta_cost_weighted / row.meta_cost_weight
+          : row.meta_cost_count > 0
+          ? row.meta_cost_sum / row.meta_cost_count
+          : null,
+      cost_per_conversation:
+        row.conversations > 0 ? row.spend_brl / row.conversations : null,
+      joinads_impressions_per_conversation:
+        row.conversations > 0 ? row.joinads_impressions / row.conversations : null,
     }))
     .sort((a, b) => b.revenue_brl - a.revenue_brl);
   const totalsRow = campaignRows.reduce(
@@ -611,7 +688,12 @@ function MetricasMensagensView({
       acc.joinads_impressions += row.joinads_impressions || 0;
       acc.meta_clicks += row.meta_clicks || 0;
       acc.joinads_clicks += row.joinads_clicks || 0;
-      acc.results += row.results || 0;
+      acc.conversations += row.conversations || 0;
+      acc.meta_results += row.meta_results || 0;
+      acc.meta_cost_weighted += row.meta_cost_weighted || 0;
+      acc.meta_cost_weight += row.meta_cost_weight || 0;
+      acc.meta_cost_sum += row.meta_cost_sum || 0;
+      acc.meta_cost_count += row.meta_cost_count || 0;
       acc.spend_brl += row.spend_brl || 0;
       acc.revenue_usd += row.revenue_usd || 0;
       acc.revenue_brl += row.revenue_brl || 0;
@@ -624,7 +706,12 @@ function MetricasMensagensView({
       joinads_impressions: 0,
       meta_clicks: 0,
       joinads_clicks: 0,
-      results: 0,
+      conversations: 0,
+      meta_results: 0,
+      meta_cost_weighted: 0,
+      meta_cost_weight: 0,
+      meta_cost_sum: 0,
+      meta_cost_count: 0,
       spend_brl: 0,
       revenue_usd: 0,
       revenue_brl: 0,
@@ -635,6 +722,18 @@ function MetricasMensagensView({
   totalsRow.ecpm =
     totalsRow.joinads_impressions > 0
       ? (totalsRow.revenue_usd / totalsRow.joinads_impressions) * 1000
+      : null;
+  totalsRow.meta_cost_per_result =
+    totalsRow.meta_cost_weight > 0
+      ? totalsRow.meta_cost_weighted / totalsRow.meta_cost_weight
+      : totalsRow.meta_cost_count > 0
+      ? totalsRow.meta_cost_sum / totalsRow.meta_cost_count
+      : null;
+  totalsRow.cost_per_conversation =
+    totalsRow.conversations > 0 ? totalsRow.spend_brl / totalsRow.conversations : null;
+  totalsRow.joinads_impressions_per_conversation =
+    totalsRow.conversations > 0
+      ? totalsRow.joinads_impressions / totalsRow.conversations
       : null;
   const buildMediumSummary = (mediumName, spendBrl = 0) => {
     const rowsForMedium = (Array.isArray(mediumRows) ? mediumRows : []).filter(
@@ -678,6 +777,19 @@ function MetricasMensagensView({
       )
       .join(", ");
   };
+  const getMessageBidStrategy = (adset) =>
+    messageBidStrategies[adset?.id] ||
+    adset?.bidStrategy ||
+    (adset?.bidAmountBrl != null
+      ? BID_STRATEGY_WITH_BID
+      : BID_STRATEGY_WITHOUT_BID);
+  const getMessageBidInput = (adset) => {
+    if (!adset?.id) return "";
+    if (messageBidInputs[adset.id] !== undefined) {
+      return messageBidInputs[adset.id];
+    }
+    return adset.bidAmountBrl != null ? adset.bidAmountBrl.toFixed(2) : "";
+  };
   const engagementRows = safeRows.filter((row) => isEngagementObjective(row.objective));
   const messageRows = safeRows.filter((row) => isMessageMetricsRow(row));
   const trafficMessengerRows = safeRows.filter(
@@ -702,7 +814,13 @@ function MetricasMensagensView({
     objective: row.objective || "-",
     matched: !!row.joinads_matched,
     data_level: row.data_level || "-",
-    meta_clicks: toNumber(row.meta_clicks_value || row.clicks),
+    meta_impressions: toNumber(row.meta_impressions_value || row.impressions),
+    conversations_started: toNumber(row.messaging_conversations_started),
+    meta_cost_per_result: toNumber(row.cost_per_result_value),
+    cost_per_conversation: toNumber(row.messaging_cost_per_conversation),
+    action_types: Array.isArray(row.actions)
+      ? row.actions.map((action) => action?.action_type).filter(Boolean)
+      : [],
     joinads_clicks: toNumber(row.clicks_joinads),
     revenue: toNumber(row.revenue_client_value),
     revenue_brl: toNumber(row.revenue_client_brl_value),
@@ -757,10 +875,16 @@ function MetricasMensagensView({
             <thead>
               <tr>
                 <th>Campanha</th>
-                <th>Tipo</th>
-                <th>Resultados Meta</th>
-                <th>Cliques Meta</th>
+                <th>Impressoes Meta</th>
+                <th>Conversas iniciadas</th>
+                ${showUserCommission
+                  ? null
+                  : html`
+                      <th>Custo por resultado Meta</th>
+                      <th>Custo por conversa</th>
+                    `}
                 <th>Imp. JoinAds</th>
+                <th>Imp. JoinAds / conversa</th>
                 <th>Cliques JoinAds</th>
                 ${showUserCommission ? null : html`<th>Gasto Meta</th>`}
                 ${showUserCommission
@@ -772,23 +896,40 @@ function MetricasMensagensView({
                       <th>Lucro Op.</th>
                     `}
                 <th>${label}</th>
+                ${allowBidControl
+                  ? html`
+                      <th>Bid atual</th>
+                      <th>Novo bid</th>
+                    `
+                  : null}
                 <th>Atribuicao</th>
               </tr>
             </thead>
             <tbody>
               ${campaignRows.length === 0
-                ? html`<tr><td colSpan=${showUserCommission ? 9 : 13} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
+                ? html`<tr><td colSpan=${showUserCommission ? 9 : allowBidControl ? 17 : 15} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
                 : campaignRows.map((row) => {
                   const userCommission = showUserCommission
                     ? calculateUserCommission(row.revenue_brl, commissionPercent)
                     : null;
+                  const adsets = Array.from(row.adsets.values());
+                  const singleAdset = adsets.length === 1 ? adsets[0] : null;
+                  const bidStrategy = getMessageBidStrategy(singleAdset);
+                  const requiresBidValue = bidStrategy !== BID_STRATEGY_WITHOUT_BID;
+                  const bidBusy = singleAdset && bidLoading?.[singleAdset.id];
                   return html`
                     <tr key=${row.campaign_name}>
                       <td>${row.campaign_name || "-"}</td>
-                      <td>${formatObjective(row.objective)}</td>
-                      <td>${row.results ? number.format(row.results) : "-"}</td>
-                      <td>${row.meta_clicks ? number.format(row.meta_clicks) : "-"}</td>
+                      <td>${number.format(row.meta_impressions || 0)}</td>
+                      <td>${row.conversations ? number.format(row.conversations) : "-"}</td>
+                      ${showUserCommission
+                        ? null
+                        : html`
+                            <td>${row.meta_cost_per_result != null ? currencyBRL.format(row.meta_cost_per_result) : "-"}</td>
+                            <td>${row.cost_per_conversation != null ? currencyBRL.format(row.cost_per_conversation) : "-"}</td>
+                          `}
                       <td>${number.format(row.joinads_impressions || 0)}</td>
+                      <td>${row.joinads_impressions_per_conversation != null ? row.joinads_impressions_per_conversation.toFixed(2) : "-"}</td>
                       <td>${number.format(row.joinads_clicks || 0)}</td>
                       ${showUserCommission ? null : html`<td>${currencyBRL.format(row.spend_brl || 0)}</td>`}
                       ${showUserCommission
@@ -800,6 +941,73 @@ function MetricasMensagensView({
                             <td>${currencyBRL.format(row.profit_brl || 0)}</td>
                           `}
                       <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
+                      ${allowBidControl
+                        ? html`
+                            <td>
+                              ${singleAdset
+                                ? html`
+                                    <div>${formatBidStrategy(singleAdset.bidStrategy || bidStrategy)}</div>
+                                    <div className="muted small">
+                                      ${singleAdset.bidAmountBrl != null
+                                        ? currencyBRL.format(singleAdset.bidAmountBrl)
+                                        : "Sem valor definido"}
+                                    </div>
+                                  `
+                                : adsets.length > 1
+                                ? html`<span className="muted">Multiplos conjuntos</span>`
+                                : html`<span className="muted">Indisponivel</span>`}
+                            </td>
+                            <td>
+                              ${singleAdset
+                                ? html`
+                                    <div className="budget-cell">
+                                      <select
+                                        value=${bidStrategy}
+                                        onChange=${(e) =>
+                                          setMessageBidStrategies((prev) => ({
+                                            ...prev,
+                                            [singleAdset.id]: e.target.value,
+                                          }))}
+                                      >
+                                        <option value=${BID_STRATEGY_WITH_BID}>Limite de lance</option>
+                                        <option value=${BID_STRATEGY_COST_CAP}>Meta de custo</option>
+                                        <option value=${BID_STRATEGY_WITHOUT_BID}>Sem limite</option>
+                                      </select>
+                                      <div className="budget-actions">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          placeholder="R$"
+                                          disabled=${!requiresBidValue}
+                                          value=${getMessageBidInput(singleAdset)}
+                                          onInput=${(e) =>
+                                            setMessageBidInputs((prev) => ({
+                                              ...prev,
+                                              [singleAdset.id]: e.target.value,
+                                            }))}
+                                        />
+                                        <button
+                                          className="ghost small"
+                                          disabled=${bidBusy}
+                                          onClick=${() =>
+                                            onBidUpdate?.(
+                                              singleAdset.id,
+                                              requiresBidValue
+                                                ? getMessageBidInput(singleAdset)
+                                                : "",
+                                              bidStrategy
+                                            )}
+                                        >
+                                          ${bidBusy ? "..." : "Salvar"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  `
+                                : html`<span className="muted small">Controle indisponivel</span>`}
+                            </td>
+                          `
+                        : null}
                       <td>
                         ${attributionLabel(row.attributionLevels)}
                         ${row.sourceValues.size
@@ -813,10 +1021,16 @@ function MetricasMensagensView({
                 ? html`
                     <tr className="summary-row">
                       <td><strong>Total</strong></td>
-                      <td></td>
-                      <td><strong>${totalsRow.results ? number.format(totalsRow.results) : "-"}</strong></td>
-                      <td><strong>${totalsRow.meta_clicks ? number.format(totalsRow.meta_clicks) : "-"}</strong></td>
+                      <td><strong>${number.format(totalsRow.meta_impressions)}</strong></td>
+                      <td><strong>${totalsRow.conversations ? number.format(totalsRow.conversations) : "-"}</strong></td>
+                      ${showUserCommission
+                        ? null
+                        : html`
+                            <td><strong>${totalsRow.meta_cost_per_result != null ? currencyBRL.format(totalsRow.meta_cost_per_result) : "-"}</strong></td>
+                            <td><strong>${totalsRow.cost_per_conversation != null ? currencyBRL.format(totalsRow.cost_per_conversation) : "-"}</strong></td>
+                          `}
                       <td><strong>${number.format(totalsRow.joinads_impressions)}</strong></td>
+                      <td><strong>${totalsRow.joinads_impressions_per_conversation != null ? totalsRow.joinads_impressions_per_conversation.toFixed(2) : "-"}</strong></td>
                       <td><strong>${number.format(totalsRow.joinads_clicks)}</strong></td>
                       ${showUserCommission ? null : html`<td><strong>${currencyBRL.format(totalsRow.spend_brl)}</strong></td>`}
                       ${showUserCommission
@@ -828,6 +1042,7 @@ function MetricasMensagensView({
                             <td><strong>${currencyBRL.format(totalsRow.profit_brl)}</strong></td>
                           `}
                       <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong></td>
+                      ${allowBidControl ? html`<td></td><td></td>` : null}
                       <td></td>
                     </tr>
                   `
@@ -6478,6 +6693,7 @@ function App() {
           start_date: filters.startDate,
           end_date: filters.endDate,
           include_assets: filters.includeAssets ? "1" : "0",
+          schema: "message-metrics-v2",
         });
         if (filters.endDate === formatDate(new Date())) {
           metaParams.set("_ts", String(Date.now()));
@@ -7507,8 +7723,17 @@ function App() {
   const handleUpdateBid = async (adsetId, bidValue, bidMode = "with_bid") => {
     if (!adsetId) return;
 
-    const bidStrategy = modeToStrategy(bidMode);
-    const requiresBidValue = bidStrategy === BID_STRATEGY_WITH_BID;
+    const requestedStrategy = String(bidMode || "").toUpperCase();
+    const bidStrategy = [
+      BID_STRATEGY_WITH_BID,
+      BID_STRATEGY_WITHOUT_BID,
+      BID_STRATEGY_COST_CAP,
+    ].includes(requestedStrategy)
+      ? requestedStrategy
+      : modeToStrategy(bidMode);
+    const requiresBidValue =
+      bidStrategy === BID_STRATEGY_WITH_BID ||
+      bidStrategy === BID_STRATEGY_COST_CAP;
 
     let bidNumber = null;
     if (requiresBidValue) {
@@ -8093,6 +8318,14 @@ function App() {
 
       const cost = toNumber(row.cost_per_result);
       const spend = toNumber(row.spend);
+      const messagingConversations = getMessagingConversationStarts(row);
+      const messagingCostFromMeta = getMessagingConversationCost(row);
+      const messagingCost =
+        messagingCostFromMeta != null
+          ? messagingCostFromMeta
+          : messagingConversations > 0
+          ? spend / messagingConversations
+          : null;
       let resultsCount = null;
       const actionsCandidates = row.actions_count || row.actions;
       if (Array.isArray(actionsCandidates)) {
@@ -8138,9 +8371,13 @@ function App() {
         destination_url: adDestMap[row.ad_id] || row.destination_url || "",
         joinads_matched: hasJoinads,
         cost_per_result: currencyBRL.format(cost),
+        cost_per_result_value: cost,
         spend_brl: currencyBRL.format(spend),
         spend_value: spend,
+        meta_impressions_value: toNumber(row.impressions),
         meta_clicks_value: toNumber(row.clicks),
+        messaging_conversations_started: messagingConversations,
+        messaging_cost_per_conversation: messagingCost,
         revenue_client_brl_value: revenueClientBrl ?? null,
         lucro_op_brl: lucroOpBrl != null ? currencyBRL.format(lucroOpBrl) : "-",
         ecpm_client:
@@ -8689,6 +8926,7 @@ function App() {
                 commissionPercent=${session?.commissionPercent || 0}
                 showUserCommission=${true}
                 mediumRows=${joinadsMediumRows}
+                allowBidControl=${false}
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
                   joinadsCampaignRowsCount: joinadsCampaignRows.length,
@@ -8885,6 +9123,9 @@ function App() {
             commissionPercent=${session?.commissionPercent || 0}
             showUserCommission=${isGestorSession(session)}
             mediumRows=${joinadsMediumRows}
+            onBidUpdate=${handleUpdateBid}
+            bidLoading=${bidLoading}
+            allowBidControl=${session?.role === "admin"}
             diagnostics=${{
               joinadsContentRowsCount: joinadsContentRows.length,
               joinadsCampaignRowsCount: joinadsCampaignRows.length,
