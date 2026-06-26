@@ -35,6 +35,7 @@ export async function onRequest({ request, env }) {
     "fields",
     [
       "date_start",
+      "campaign_id",
       "campaign_name",
       "adset_id",
       "adset_name",
@@ -72,7 +73,7 @@ export async function onRequest({ request, env }) {
     );
     const chunkSize = 50;
 
-    // Busca status de ads e orçamento de adsets em paralelo
+    // Busca status de ads e orçamentos em paralelo.
     const adChunks = [];
     for (let i = 0; i < adIds.length; i += chunkSize) adChunks.push(adIds.slice(i, i + chunkSize));
 
@@ -81,8 +82,13 @@ export async function onRequest({ request, env }) {
     );
     const adsetChunks = [];
     for (let i = 0; i < adsetIds.length; i += chunkSize) adsetChunks.push(adsetIds.slice(i, i + chunkSize));
+    const campaignIds = Array.from(
+      new Set(insights.map((row) => row.campaign_id).filter(Boolean))
+    );
+    const campaignChunks = [];
+    for (let i = 0; i < campaignIds.length; i += chunkSize) campaignChunks.push(campaignIds.slice(i, i + chunkSize));
 
-    const [adStatusResults, adsetBudgetResults] = await Promise.all([
+    const [adStatusResults, adsetBudgetResults, campaignBudgetResults] = await Promise.all([
       Promise.all(
         adChunks.map((chunk) =>
           fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=status,effective_status&access_token=${token}`)
@@ -93,6 +99,13 @@ export async function onRequest({ request, env }) {
       Promise.all(
         adsetChunks.map((chunk) =>
           fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints&access_token=${token}`)
+            .then(safeJson)
+            .catch(() => ({}))
+        )
+      ),
+      Promise.all(
+        campaignChunks.map((chunk) =>
+          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status&access_token=${token}`)
             .then(safeJson)
             .catch(() => ({}))
         )
@@ -145,6 +158,30 @@ export async function onRequest({ request, env }) {
       }
     });
 
+    const campaignBudgetMap = new Map();
+    campaignBudgetResults.forEach((budgetJson) => {
+      if (budgetJson && typeof budgetJson === "object") {
+        Object.entries(budgetJson).forEach(([id, value]) => {
+          if (
+            value &&
+            (value.daily_budget ||
+              value.lifetime_budget ||
+              value.budget_remaining ||
+              value.status ||
+              value.effective_status)
+          ) {
+            campaignBudgetMap.set(id, {
+              campaign_daily_budget: value.daily_budget,
+              campaign_lifetime_budget: value.lifetime_budget,
+              campaign_budget_remaining: value.budget_remaining,
+              campaign_status: value.status,
+              campaign_effective_status: value.effective_status,
+            });
+          }
+        });
+      }
+    });
+
     const baseRows = insights.map((row) => {
       const enriched = { ...row };
       const statusInfo = statusMap.get(row.ad_id);
@@ -174,6 +211,19 @@ export async function onRequest({ request, env }) {
         }
         if (budgetInfo.adset_effective_status) {
           enriched.adset_effective_status = budgetInfo.adset_effective_status;
+        }
+      }
+      const campaignBudgetInfo = campaignBudgetMap.get(row.campaign_id);
+      if (campaignBudgetInfo) {
+        enriched.campaign_daily_budget = campaignBudgetInfo.campaign_daily_budget;
+        enriched.campaign_lifetime_budget = campaignBudgetInfo.campaign_lifetime_budget;
+        enriched.campaign_budget_remaining = campaignBudgetInfo.campaign_budget_remaining;
+        if (campaignBudgetInfo.campaign_status) {
+          enriched.campaign_status = campaignBudgetInfo.campaign_status;
+        }
+        if (campaignBudgetInfo.campaign_effective_status) {
+          enriched.campaign_effective_status =
+            campaignBudgetInfo.campaign_effective_status;
         }
       }
       return enriched;

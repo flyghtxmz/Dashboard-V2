@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 96;
+const APP_VERSION_BUILD = 97;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -648,12 +648,16 @@ function MetricasMensagensView({
           const current = item.adsets.get(row.adset_id) || {
             id: row.adset_id,
             name: row.adset_name || row.adset_id,
+            campaignId: row.campaign_id || "",
             dailyBudgetBrl: null,
             lifetimeBudgetBrl: null,
+            campaignDailyBudgetBrl: null,
+            campaignLifetimeBudgetBrl: null,
             bidAmountBrl: null,
             bidStrategy: "",
             optimizationGoal: "",
           };
+          if (!current.campaignId && row.campaign_id) current.campaignId = row.campaign_id;
           const dailyBudgetBrl =
             row.adset_daily_budget_brl != null
               ? toNumber(row.adset_daily_budget_brl)
@@ -666,8 +670,22 @@ function MetricasMensagensView({
               : row.adset_lifetime_budget != null
               ? toNumber(row.adset_lifetime_budget) / 100
               : null;
+          const campaignDailyBudgetBrl =
+            row.campaign_daily_budget_brl != null
+              ? toNumber(row.campaign_daily_budget_brl)
+              : row.campaign_daily_budget != null
+              ? toNumber(row.campaign_daily_budget) / 100
+              : null;
+          const campaignLifetimeBudgetBrl =
+            row.campaign_lifetime_budget_brl != null
+              ? toNumber(row.campaign_lifetime_budget_brl)
+              : row.campaign_lifetime_budget != null
+              ? toNumber(row.campaign_lifetime_budget) / 100
+              : null;
           if (dailyBudgetBrl != null) current.dailyBudgetBrl = dailyBudgetBrl;
           if (lifetimeBudgetBrl != null) current.lifetimeBudgetBrl = lifetimeBudgetBrl;
+          if (campaignDailyBudgetBrl != null) current.campaignDailyBudgetBrl = campaignDailyBudgetBrl;
+          if (campaignLifetimeBudgetBrl != null) current.campaignLifetimeBudgetBrl = campaignLifetimeBudgetBrl;
           if (row.adset_bid_amount_brl != null) {
             current.bidAmountBrl = toNumber(row.adset_bid_amount_brl);
           }
@@ -799,19 +817,37 @@ function MetricasMensagensView({
   const formatMessageBudget = (adset) => {
     if (!adset) return "-";
     if (adset.dailyBudgetBrl != null) {
-      return `${currencyBRL.format(adset.dailyBudgetBrl)} / dia`;
+      return `Conjunto: ${currencyBRL.format(adset.dailyBudgetBrl)} / dia`;
     }
     if (adset.lifetimeBudgetBrl != null) {
-      return `${currencyBRL.format(adset.lifetimeBudgetBrl)} (vitalicio)`;
+      return `Conjunto: ${currencyBRL.format(adset.lifetimeBudgetBrl)} (vitalicio)`;
+    }
+    if (adset.campaignDailyBudgetBrl != null) {
+      return `Campanha: ${currencyBRL.format(adset.campaignDailyBudgetBrl)} / dia`;
+    }
+    if (adset.campaignLifetimeBudgetBrl != null) {
+      return `Campanha: ${currencyBRL.format(adset.campaignLifetimeBudgetBrl)} (vitalicio)`;
     }
     return "Sem valor definido";
+  };
+  const getMessageBudgetTarget = (adset) => {
+    if (!adset?.id) return { id: "", scope: "adset" };
+    if (adset.dailyBudgetBrl != null || adset.lifetimeBudgetBrl != null || !adset.campaignId) {
+      return { id: adset.id, scope: "adset" };
+    }
+    if (adset.campaignDailyBudgetBrl != null || adset.campaignLifetimeBudgetBrl != null) {
+      return { id: adset.campaignId, scope: "campaign" };
+    }
+    return { id: adset.id, scope: "adset" };
   };
   const getMessageBudgetInput = (adset) => {
     if (!adset?.id) return "";
     if (messageBudgetInputs[adset.id] !== undefined) {
       return messageBudgetInputs[adset.id];
     }
-    return adset.dailyBudgetBrl != null ? adset.dailyBudgetBrl.toFixed(2) : "";
+    if (adset.dailyBudgetBrl != null) return adset.dailyBudgetBrl.toFixed(2);
+    if (adset.campaignDailyBudgetBrl != null) return adset.campaignDailyBudgetBrl.toFixed(2);
+    return "";
   };
   const getMessageBidStrategy = (adset) =>
     messageBidStrategies[adset?.id] ||
@@ -954,7 +990,8 @@ function MetricasMensagensView({
                   const singleAdset = adsets.length === 1 ? adsets[0] : null;
                   const bidStrategy = getMessageBidStrategy(singleAdset);
                   const requiresBidValue = bidStrategy !== BID_STRATEGY_WITHOUT_BID;
-                  const budgetBusy = singleAdset && budgetLoading?.[singleAdset.id];
+                  const budgetTarget = getMessageBudgetTarget(singleAdset);
+                  const budgetBusy = budgetTarget.id && budgetLoading?.[budgetTarget.id];
                   const bidBusy = singleAdset && bidLoading?.[singleAdset.id];
                   return html`
                     <tr key=${row.campaign_name}>
@@ -1011,8 +1048,9 @@ function MetricasMensagensView({
                                           onKeyDown=${(e) => {
                                             if (e.key === "Enter") {
                                               onBudgetUpdate?.(
-                                                singleAdset.id,
-                                                getMessageBudgetInput(singleAdset)
+                                                budgetTarget.id,
+                                                getMessageBudgetInput(singleAdset),
+                                                budgetTarget.scope
                                               );
                                             }
                                           }}
@@ -1022,14 +1060,19 @@ function MetricasMensagensView({
                                           disabled=${budgetBusy}
                                           onClick=${() =>
                                             onBudgetUpdate?.(
-                                              singleAdset.id,
-                                              getMessageBudgetInput(singleAdset)
+                                              budgetTarget.id,
+                                              getMessageBudgetInput(singleAdset),
+                                              budgetTarget.scope
                                             )}
                                         >
                                           ${budgetBusy ? "..." : "Salvar"}
                                         </button>
                                       </div>
-                                      <div className="muted small">Altera o orcamento diario do conjunto.</div>
+                                      <div className="muted small">
+                                        ${budgetTarget.scope === "campaign"
+                                          ? "Altera o orcamento diario da campanha."
+                                          : "Altera o orcamento diario do conjunto."}
+                                      </div>
                                     </div>
                                   `
                                 : html`<span className="muted small">Controle indisponivel</span>`}
@@ -7761,8 +7804,8 @@ function App() {
     await updateAdsetStatuses(adsetIds, nextStatus);
   };
 
-  const handleUpdateBudget = async (adsetId, budgetValue) => {
-    if (!adsetId) return;
+  const handleUpdateBudget = async (targetId, budgetValue, scope = "adset") => {
+    if (!targetId) return;
     const raw = String(budgetValue ?? "").trim();
     if (!raw) return;
     const budgetNumber = Number(raw.replace(",", "."));
@@ -7771,41 +7814,50 @@ function App() {
       return;
     }
 
-    setBudgetLoading((prev) => ({ ...prev, [adsetId]: true }));
+    const isCampaignBudget = scope === "campaign";
+    setBudgetLoading((prev) => ({ ...prev, [targetId]: true }));
     try {
-      const res = await fetchJson(`${API_BASE}/meta-adset-budget`, {
+      const res = await fetchJson(
+        `${API_BASE}/${isCampaignBudget ? "meta-campaign-budget" : "meta-adset-budget"}`,
+        {
         method: "POST",
         body: JSON.stringify({
-          adset_id: adsetId,
+          [isCampaignBudget ? "campaign_id" : "adset_id"]: targetId,
           daily_budget_brl: budgetNumber,
         }),
       });
-      const updated = res?.adset || null;
+      const updated = isCampaignBudget ? res?.campaign || null : res?.adset || null;
       if (updated) {
         setMetaRows((prev) =>
           (prev || []).map((row) =>
-            row.adset_id === adsetId
+            (isCampaignBudget ? row.campaign_id === targetId : row.adset_id === targetId)
               ? {
                   ...row,
-                  adset_daily_budget: updated.daily_budget,
-                  adset_lifetime_budget: updated.lifetime_budget,
-                  adset_budget_remaining: updated.budget_remaining,
+                  ...(isCampaignBudget
+                    ? {
+                        campaign_daily_budget: updated.daily_budget,
+                        campaign_lifetime_budget: updated.lifetime_budget,
+                        campaign_budget_remaining: updated.budget_remaining,
+                      }
+                    : {
+                        adset_daily_budget: updated.daily_budget,
+                        adset_lifetime_budget: updated.lifetime_budget,
+                        adset_budget_remaining: updated.budget_remaining,
+                      }),
                 }
               : row
           )
         );
       }
       pushLog("meta-budget", {
-        message: `Orcamento atualizado: ${adsetId} -> R$ ${budgetNumber.toFixed(
-          2
-        )}`,
+        message: `Orcamento atualizado (${isCampaignBudget ? "campanha" : "conjunto"}): ${targetId} -> R$ ${budgetNumber.toFixed(2)}`,
       });
     } catch (err) {
       pushLog("meta-budget", err);
     } finally {
       setBudgetLoading((prev) => {
         const next = { ...prev };
-        delete next[adsetId];
+        delete next[targetId];
         return next;
       });
     }
@@ -8446,6 +8498,14 @@ function App() {
         row.adset_lifetime_budget != null
           ? toNumber(row.adset_lifetime_budget) / 100
           : null;
+      const campaignDailyBudgetBrl =
+        row.campaign_daily_budget != null
+          ? toNumber(row.campaign_daily_budget) / 100
+          : null;
+      const campaignLifetimeBudgetBrl =
+        row.campaign_lifetime_budget != null
+          ? toNumber(row.campaign_lifetime_budget) / 100
+          : null;
       const rawBid =
         row.adset_bid_amount != null
           ? row.adset_bid_amount
@@ -8486,6 +8546,8 @@ function App() {
         results_meta: resultsCount,
         adset_daily_budget_brl: dailyBudgetBrl,
         adset_lifetime_budget_brl: lifetimeBudgetBrl,
+        campaign_daily_budget_brl: campaignDailyBudgetBrl,
+        campaign_lifetime_budget_brl: campaignLifetimeBudgetBrl,
         adset_bid_amount_brl: bidAmountBrl,
         adset_bid_strategy: row.adset_bid_strategy,
         adset_optimization_goal: row.adset_optimization_goal,
