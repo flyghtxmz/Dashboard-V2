@@ -11,8 +11,11 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 97;
+const APP_VERSION_BUILD = 99;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
+const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
+const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+const FX_FETCH_TIMEOUT_MS = 9000;
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -60,6 +63,157 @@ const formatFxDate = (value) => {
   const [y, m, d] = String(value).split("-");
   if (!y || !m || !d) return String(value);
   return `${d}/${m}/${y}`;
+};
+
+const readCachedFxInfo = () => {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(FX_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const rate = Number(parsed?.rate);
+    const savedAt = Number(parsed?.savedAt);
+    if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(savedAt)) return null;
+    if (Date.now() - savedAt > FX_CACHE_MAX_AGE_MS) return null;
+    return {
+      rate,
+      requestedDate: parsed.requestedDate || parsed.effectiveDate || formatDate(new Date()),
+      effectiveDate: parsed.effectiveDate || parsed.requestedDate || formatDate(new Date()),
+      source: "cache",
+    };
+  } catch (e) {
+    return null;
+  }
+};
+
+const parseFxRate = (value) => {
+  const rate = Number(String(value ?? "").replace(",", "."));
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error("Cotacao USD/BRL indisponivel");
+  }
+  return rate;
+};
+
+const compactDate = (value) => String(value || "").replaceAll("-", "");
+
+const fetchJsonForFx = async (url, signal) => {
+  const response = await fetch(url, { signal });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(`Erro ao consultar cotacao (${response.status})`);
+    error.data = data;
+    throw error;
+  }
+  return data;
+};
+
+const fetchFrankfurterFx = async (requestedDate, today, signal) => {
+  const url =
+    requestedDate === today
+      ? "https://api.frankfurter.dev/v2/rates?base=USD&quotes=BRL"
+      : `https://api.frankfurter.dev/v2/rates?base=USD&quotes=BRL&date=${encodeURIComponent(
+          requestedDate
+        )}`;
+  const data = await fetchJsonForFx(url, signal);
+  return {
+    rate: parseFxRate(data?.rates?.BRL),
+    requestedDate,
+    effectiveDate: data?.date || requestedDate,
+    source: "frankfurter",
+  };
+};
+
+const fetchAwesomeFx = async (requestedDate, today, signal) => {
+  const url =
+    requestedDate === today
+      ? "https://economia.awesomeapi.com.br/json/last/USD-BRL"
+      : `https://economia.awesomeapi.com.br/json/daily/USD-BRL/1?start_date=${compactDate(
+          requestedDate
+        )}&end_date=${compactDate(requestedDate)}`;
+  const data = await fetchJsonForFx(url, signal);
+  const row = requestedDate === today ? data?.USDBRL : Array.isArray(data) ? data[0] : null;
+  return {
+    rate: parseFxRate(row?.bid || row?.ask || row?.high),
+    requestedDate,
+    effectiveDate: row?.create_date ? String(row.create_date).slice(0, 10) : requestedDate,
+    source: "awesomeapi",
+  };
+};
+
+const fetchOpenExchangeFx = async (requestedDate, today, signal) => {
+  const data = await fetchJsonForFx("https://open.er-api.com/v6/latest/USD", signal);
+  return {
+    rate: parseFxRate(data?.rates?.BRL),
+    requestedDate,
+    effectiveDate: data?.time_last_update_utc
+      ? formatDate(new Date(data.time_last_update_utc))
+      : today,
+    source: "open-er-api",
+  };
+};
+
+const fetchFxWithProviders = async (requestedDate, signal) => {
+  const today = formatDate(new Date());
+  const providers =
+    requestedDate === today
+      ? [fetchFrankfurterFx, fetchAwesomeFx, fetchOpenExchangeFx]
+      : [fetchFrankfurterFx, fetchAwesomeFx];
+  const errors = [];
+  for (const provider of providers) {
+    try {
+      return await provider(requestedDate, today, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      errors.push(`${provider.name}: ${formatError(error)}`);
+    }
+  }
+  const error = new Error("Nenhuma API de cotacao USD/BRL respondeu com valor valido");
+  error.data = { providers: errors };
+  throw error;
+};
+
+const saveCachedFxInfo = (info) => {
+  if (typeof localStorage === "undefined" || !info?.rate) return;
+  try {
+    localStorage.setItem(
+      FX_CACHE_KEY,
+      JSON.stringify({
+        rate: info.rate,
+        requestedDate: info.requestedDate,
+        effectiveDate: info.effectiveDate,
+        savedAt: Date.now(),
+      })
+    );
+  } catch (e) {
+    // Cache failure should never block the dashboard.
+  }
+};
+
+const formatFxLabel = (fxInfo, fxStatus) => {
+  if (!fxInfo?.rate) {
+    return fxStatus === "loading"
+      ? "Consultando cotacao USD/BRL..."
+      : "USD/BRL indisponivel";
+  }
+  const sourceLabel =
+    fxInfo.source === "awesomeapi"
+      ? "AwesomeAPI"
+      : fxInfo.source === "open-er-api"
+      ? "ExchangeRate"
+      : fxInfo.source === "cache"
+      ? "cache"
+      : "";
+  const suffix =
+    fxStatus === "loading"
+      ? " - atualizando"
+      : fxStatus === "stale"
+      ? " - ultimo valor"
+      : sourceLabel
+      ? ` - ${sourceLabel}`
+      : "";
+  return `USD/BRL ref. ${formatFxDate(fxInfo.effectiveDate)}: R$ ${fxRateNumber.format(
+    fxInfo.rate
+  )}${suffix}`;
 };
 
 const ROLE_TABS = {
@@ -6291,7 +6445,8 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [metaRows, setMetaRows] = useState([]);
   const [metaDiagnostics, setMetaDiagnostics] = useState({});
-  const [fxInfo, setFxInfo] = useState(null);
+  const [fxInfo, setFxInfo] = useState(() => readCachedFxInfo());
+  const [fxStatus, setFxStatus] = useState("idle");
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
   const [paramPairs, setParamPairs] = useState([]);
   const [superKey, setSuperKey] = useState("utm_content");
@@ -6360,7 +6515,7 @@ function App() {
     setLogs([]);
     setMetaRows([]);
     setMetaDiagnostics({});
-    setFxInfo(null);
+    setFxStatus("idle");
     setParamPairs([]);
     setMetaSourceRows([]);
     setSuperTermRows([]);
@@ -8877,43 +9032,44 @@ function App() {
   }, [topUrls, paramPairs]);
 
   useEffect(() => {
-    const today = formatDate(new Date());
-    const requestedDate = fxTargetDate || today;
-    const url =
-      requestedDate === today
-        ? "https://api.frankfurter.dev/v1/latest?base=USD&symbols=BRL"
-        : `https://api.frankfurter.dev/v1/${encodeURIComponent(
-            requestedDate
-          )}?base=USD&symbols=BRL`;
-    const controller = new AbortController();
+    const requestedDate = fxTargetDate || formatDate(new Date());
+    const cached = readCachedFxInfo();
+    if (cached?.rate) {
+      setFxInfo(cached);
+    }
+    setFxStatus("loading");
 
-    fetch(url, { signal: controller.signal })
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const error = new Error(`Erro ao consultar cotação (${response.status})`);
-          error.data = data;
-          throw error;
-        }
-        return data;
-      })
-      .then((data) => {
-        const rate = Number(data?.rates?.BRL);
-        if (!Number.isFinite(rate) || rate <= 0) {
-          throw new Error("Cotação USD/BRL indisponível");
-        }
-        setFxInfo({
-          rate,
-          requestedDate,
-          effectiveDate: data?.date || requestedDate,
-        });
+    const controller = new AbortController();
+    let cancelled = false;
+    const timeoutId = setTimeout(() => controller.abort(), FX_FETCH_TIMEOUT_MS);
+
+    fetchFxWithProviders(requestedDate, controller.signal)
+      .then((nextFxInfo) => {
+        if (cancelled) return;
+        setFxInfo(nextFxInfo);
+        saveCachedFxInfo(nextFxInfo);
+        setFxStatus("ready");
       })
       .catch((err) => {
-        if (err?.name === "AbortError") return;
-        pushLog("dollar", err);
+        if (cancelled) return;
+        setFxStatus(cached?.rate || fxInfo?.rate ? "stale" : "unavailable");
+        pushLog("dollar", {
+          message:
+            err?.name === "AbortError"
+              ? "Timeout ao consultar cotacao USD/BRL nas APIs configuradas."
+              : formatError(err),
+          data: err?.data || null,
+        });
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
       });
 
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [fxTargetDate]);
 
   useEffect(() => {
@@ -8973,11 +9129,7 @@ function App() {
           <div className="actions">
             ${(activeTab === "dashboard" || activeTab === "metricas_mensagens")
               ? html`<div className="muted small">
-                  ${fxInfo?.rate
-                    ? `USD/BRL ref. ${formatFxDate(fxInfo.effectiveDate)}: R$ ${fxRateNumber.format(
-                        fxInfo.rate
-                      )}`
-                    : "Atualizando cotacao USD/BRL..."}
+                  ${formatFxLabel(fxInfo, fxStatus)}
                 </div>`
               : null}
             ${(activeTab === "dashboard" || activeTab === "metricas_mensagens")
@@ -9108,11 +9260,7 @@ function App() {
         </div>
         <div className="actions">
           <div className="muted small">
-            ${fxInfo?.rate
-              ? `USD/BRL ref. ${formatFxDate(fxInfo.effectiveDate)}: R$ ${fxRateNumber.format(
-                  fxInfo.rate
-                )}`
-              : "Atualizando cotação USD/BRL..."}
+            ${formatFxLabel(fxInfo, fxStatus)}
           </div>
           <div className="muted small">
             Ultima atualizacao: ${formatDateTime(lastRefreshed)}
