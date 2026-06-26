@@ -46,7 +46,7 @@ export async function onRequest({ request, env }) {
   try {
     const adsUrl = `${API_BASE}/${encodeURIComponent(
       account_id
-    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
+    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
     const adsetIds = Array.from(
@@ -101,6 +101,9 @@ export async function onRequest({ request, env }) {
         adset_name: adsetName,
         adset_status: ad.adset?.status || "",
         adset_effective_status: ad.adset?.effective_status || "",
+        adset_daily_budget: ad.adset?.daily_budget ?? null,
+        adset_lifetime_budget: ad.adset?.lifetime_budget ?? null,
+        adset_budget_remaining: ad.adset?.budget_remaining ?? null,
         adset_bid_amount: ad.adset?.bid_amount ?? null,
         adset_bid_strategy: ad.adset?.bid_strategy || "",
         adset_optimization_goal: ad.adset?.optimization_goal || "",

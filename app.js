@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 95;
+const APP_VERSION_BUILD = 96;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
@@ -579,12 +579,15 @@ function MetricasMensagensView({
   showUserCommission = false,
   diagnostics = {},
   mediumRows = [],
+  onBudgetUpdate,
+  budgetLoading = {},
   onBidUpdate,
   bidLoading = {},
   allowBidControl = false,
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
+  const [messageBudgetInputs, setMessageBudgetInputs] = useState({});
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
   const campaignRows = Array.from(
@@ -645,10 +648,26 @@ function MetricasMensagensView({
           const current = item.adsets.get(row.adset_id) || {
             id: row.adset_id,
             name: row.adset_name || row.adset_id,
+            dailyBudgetBrl: null,
+            lifetimeBudgetBrl: null,
             bidAmountBrl: null,
             bidStrategy: "",
             optimizationGoal: "",
           };
+          const dailyBudgetBrl =
+            row.adset_daily_budget_brl != null
+              ? toNumber(row.adset_daily_budget_brl)
+              : row.adset_daily_budget != null
+              ? toNumber(row.adset_daily_budget) / 100
+              : null;
+          const lifetimeBudgetBrl =
+            row.adset_lifetime_budget_brl != null
+              ? toNumber(row.adset_lifetime_budget_brl)
+              : row.adset_lifetime_budget != null
+              ? toNumber(row.adset_lifetime_budget) / 100
+              : null;
+          if (dailyBudgetBrl != null) current.dailyBudgetBrl = dailyBudgetBrl;
+          if (lifetimeBudgetBrl != null) current.lifetimeBudgetBrl = lifetimeBudgetBrl;
           if (row.adset_bid_amount_brl != null) {
             current.bidAmountBrl = toNumber(row.adset_bid_amount_brl);
           }
@@ -777,6 +796,23 @@ function MetricasMensagensView({
       )
       .join(", ");
   };
+  const formatMessageBudget = (adset) => {
+    if (!adset) return "-";
+    if (adset.dailyBudgetBrl != null) {
+      return `${currencyBRL.format(adset.dailyBudgetBrl)} / dia`;
+    }
+    if (adset.lifetimeBudgetBrl != null) {
+      return `${currencyBRL.format(adset.lifetimeBudgetBrl)} (vitalicio)`;
+    }
+    return "Sem valor definido";
+  };
+  const getMessageBudgetInput = (adset) => {
+    if (!adset?.id) return "";
+    if (messageBudgetInputs[adset.id] !== undefined) {
+      return messageBudgetInputs[adset.id];
+    }
+    return adset.dailyBudgetBrl != null ? adset.dailyBudgetBrl.toFixed(2) : "";
+  };
   const getMessageBidStrategy = (adset) =>
     messageBidStrategies[adset?.id] ||
     adset?.bidStrategy ||
@@ -898,6 +934,8 @@ function MetricasMensagensView({
                 <th>${label}</th>
                 ${allowBidControl
                   ? html`
+                      <th>Orcamento atual</th>
+                      <th>Novo orcamento</th>
                       <th>Bid atual</th>
                       <th>Novo bid</th>
                     `
@@ -907,7 +945,7 @@ function MetricasMensagensView({
             </thead>
             <tbody>
               ${campaignRows.length === 0
-                ? html`<tr><td colSpan=${showUserCommission ? 9 : allowBidControl ? 17 : 15} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
+                ? html`<tr><td colSpan=${showUserCommission ? 9 : allowBidControl ? 19 : 15} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
                 : campaignRows.map((row) => {
                   const userCommission = showUserCommission
                     ? calculateUserCommission(row.revenue_brl, commissionPercent)
@@ -916,6 +954,7 @@ function MetricasMensagensView({
                   const singleAdset = adsets.length === 1 ? adsets[0] : null;
                   const bidStrategy = getMessageBidStrategy(singleAdset);
                   const requiresBidValue = bidStrategy !== BID_STRATEGY_WITHOUT_BID;
+                  const budgetBusy = singleAdset && budgetLoading?.[singleAdset.id];
                   const bidBusy = singleAdset && bidLoading?.[singleAdset.id];
                   return html`
                     <tr key=${row.campaign_name}>
@@ -943,6 +982,58 @@ function MetricasMensagensView({
                       <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
                       ${allowBidControl
                         ? html`
+                            <td>
+                              ${singleAdset
+                                ? html`
+                                    <div>${formatMessageBudget(singleAdset)}</div>
+                                    <div className="muted small">${singleAdset.name || singleAdset.id}</div>
+                                  `
+                                : adsets.length > 1
+                                ? html`<span className="muted">Multiplos conjuntos</span>`
+                                : html`<span className="muted">Indisponivel</span>`}
+                            </td>
+                            <td>
+                              ${singleAdset
+                                ? html`
+                                    <div className="budget-cell">
+                                      <div className="budget-actions">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          placeholder="R$ diario"
+                                          value=${getMessageBudgetInput(singleAdset)}
+                                          onInput=${(e) =>
+                                            setMessageBudgetInputs((prev) => ({
+                                              ...prev,
+                                              [singleAdset.id]: e.target.value,
+                                            }))}
+                                          onKeyDown=${(e) => {
+                                            if (e.key === "Enter") {
+                                              onBudgetUpdate?.(
+                                                singleAdset.id,
+                                                getMessageBudgetInput(singleAdset)
+                                              );
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          className="ghost small"
+                                          disabled=${budgetBusy}
+                                          onClick=${() =>
+                                            onBudgetUpdate?.(
+                                              singleAdset.id,
+                                              getMessageBudgetInput(singleAdset)
+                                            )}
+                                        >
+                                          ${budgetBusy ? "..." : "Salvar"}
+                                        </button>
+                                      </div>
+                                      <div className="muted small">Altera o orcamento diario do conjunto.</div>
+                                    </div>
+                                  `
+                                : html`<span className="muted small">Controle indisponivel</span>`}
+                            </td>
                             <td>
                               ${singleAdset
                                 ? html`
@@ -1042,7 +1133,7 @@ function MetricasMensagensView({
                             <td><strong>${currencyBRL.format(totalsRow.profit_brl)}</strong></td>
                           `}
                       <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong></td>
-                      ${allowBidControl ? html`<td></td><td></td>` : null}
+                      ${allowBidControl ? html`<td></td><td></td><td></td><td></td>` : null}
                       <td></td>
                     </tr>
                   `
@@ -9123,6 +9214,8 @@ function App() {
             commissionPercent=${session?.commissionPercent || 0}
             showUserCommission=${isGestorSession(session)}
             mediumRows=${joinadsMediumRows}
+            onBudgetUpdate=${handleUpdateBudget}
+            budgetLoading=${budgetLoading}
             onBidUpdate=${handleUpdateBid}
             bidLoading=${bidLoading}
             allowBidControl=${session?.role === "admin"}
