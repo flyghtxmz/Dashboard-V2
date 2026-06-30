@@ -2,6 +2,43 @@
 
 const API_BASE = "https://graph.facebook.com/v24.0";
 
+// Retry com backoff exponencial em erros de rate-limit da Meta.
+async function fetchWithRetry(url, maxRetries = 4) {
+  let delay = 1000;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url);
+    const json = await safeJson(res);
+    const code = json?.error?.code;
+    const isRateLimit = res.status === 429 || code === 17 || code === 32 || code === 4;
+    if (isRateLimit && attempt < maxRetries) {
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, 16000);
+      continue;
+    }
+    if (!res.ok) {
+      const err = new Error("Meta API error");
+      err.status = res.status;
+      err.details = json;
+      throw err;
+    }
+    return json;
+  }
+}
+
+// Busca paginada: segue paging.next ate esgotar (com teto de seguranca).
+async function fetchPaged(url, cap = 5000) {
+  const results = [];
+  let next = url;
+  while (next) {
+    const json = await fetchWithRetry(next);
+    results.push(...(json.data || []));
+    next = json?.paging?.next || null;
+    if (results.length >= cap) break;
+    if (next) await new Promise((r) => setTimeout(r, 200));
+  }
+  return results;
+}
+
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
   if (!token) {
@@ -55,18 +92,13 @@ export async function onRequest({ request, env }) {
   q.set("time_range", JSON.stringify({ since: start_date, until: end_date }));
   q.set("level", "ad");
   q.set("time_increment", "1");
+  q.set("limit", "500");
   q.set("access_token", token);
 
   try {
-    const response = await fetch(
+    const insights = await fetchPaged(
       `${API_BASE}/${encodeURIComponent(account_id)}/insights?${q.toString()}`
     );
-    const data = await safeJson(response);
-    if (!response.ok) {
-      return jsonResponse(response.status, { error: "Erro Meta", details: data });
-    }
-
-    const insights = data.data || [];
 
     const adIds = Array.from(
       new Set(insights.map((row) => row.ad_id).filter(Boolean))
@@ -287,9 +319,9 @@ export async function onRequest({ request, env }) {
 
     return jsonResponse(200, { code: "success", data: withAssets });
   } catch (error) {
-    return jsonResponse(500, {
+    return jsonResponse(error.status || 500, {
       error: "Erro ao consultar Meta",
-      details: error.message,
+      details: error.details || error.message,
     });
   }
 }

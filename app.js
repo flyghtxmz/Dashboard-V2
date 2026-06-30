@@ -877,6 +877,7 @@ function MetricasMensagensView({
             adsets: new Map(),
             attributionLevels: new Set(),
             sourceValues: new Set(),
+            countedJoinadsAds: new Set(),
           };
         const revenueUsd = toNumber(row.revenue_client_value);
         const revenueBrl = row.revenue_client_brl_value != null
@@ -886,15 +887,22 @@ function MetricasMensagensView({
           : 0;
         const metaCostPerResult = toNumber(row.cost_per_result_value);
         const rowSpend = toNumber(row.spend_value || row.spend);
+        // Metricas da Meta sao diarias (time_increment=1) -> somar por linha esta correto.
         item.meta_impressions += toNumber(row.meta_impressions_value || row.impressions);
-        item.joinads_impressions += toNumber(row.impressions_joinads);
         item.meta_clicks += toNumber(row.meta_clicks_value || row.clicks);
-        item.joinads_clicks += toNumber(row.clicks_joinads);
         item.spend_brl += rowSpend;
-        item.revenue_usd += revenueUsd;
-        item.revenue_brl += revenueBrl;
         item.conversations += toNumber(row.messaging_conversations_started);
         item.meta_results += toNumber(row.results_meta);
+        // Metricas da JoinAds (receita/impressoes/cliques) sao TOTAIS do periodo repetidos em cada
+        // linha diaria do mesmo anuncio. Contar uma unica vez por anuncio para nao multiplicar pelos dias.
+        const joinadsAdKey = row.ad_id || row.ad_name || "";
+        if (!joinadsAdKey || !item.countedJoinadsAds.has(joinadsAdKey)) {
+          item.joinads_impressions += toNumber(row.impressions_joinads);
+          item.joinads_clicks += toNumber(row.clicks_joinads);
+          item.revenue_usd += revenueUsd;
+          item.revenue_brl += revenueBrl;
+          if (joinadsAdKey) item.countedJoinadsAds.add(joinadsAdKey);
+        }
         if (metaCostPerResult > 0) {
           item.meta_cost_sum += metaCostPerResult;
           item.meta_cost_count += 1;
