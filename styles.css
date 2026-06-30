@@ -325,6 +325,11 @@ button.small {
   color: #915000;
   border: 1px solid #f5d08a;
 }
+.chip.danger {
+  background: #fdecec;
+  color: #a11212;
+  border: 1px solid #f3b4b4;
+}
 .chip-group {
   display: flex;
   gap: 8px;

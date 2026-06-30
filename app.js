@@ -725,6 +725,111 @@ function calculateUserCommission(revenueBrl, commissionPercent) {
   return (value * normalizeCommissionPercent(commissionPercent)) / 100;
 }
 
+// Audita a ponte de atribuicao do funil Messenger: src_ (JoinAds) -> adId (Messenlead) -> anuncio Meta.
+// Percorre as linhas utm_campaign da JoinAds que comecam com "src_" e classifica a receita de cada
+// uma no estagio onde ela "vaza" (nao resolve, anuncio fora do conjunto, conflito com utm_content) ou
+// onde efetivamente entra na tabela. Espelha a mesma logica de casamento usada em mergedMeta para que
+// o valor "atribuido" reconcilie com o que aparece em Metricas Mensagens.
+function buildMessengerAttributionAudit({
+  campaignRows = [],
+  contentRows = [],
+  metaRows = [],
+  messenleadSources = [],
+  messenleadUnresolved = [],
+  domainKey = "",
+  brlRate = 0,
+}) {
+  const inDomain = (row) => {
+    if (!domainKey) return true;
+    return normalizeKey(row.domain || row.name || "") === domainKey;
+  };
+  const srcRevenue = (row) =>
+    toNumber(row.revenue_client != null ? row.revenue_client : row.revenue);
+
+  const metaAdIds = new Set(
+    (metaRows || []).map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
+  );
+  const sourceKeyToAdId = new Map(
+    (messenleadSources || [])
+      .filter((item) => item?.sourceKey && item?.adId)
+      .map((item) => [normalizeKey(item.sourceKey), normalizeKey(item.adId)])
+  );
+  // adIds que ja casam por utm_content=ad_id (esses bloqueiam o casamento por source key em mergedMeta).
+  const contentAdIdSet = new Set();
+  (contentRows || []).forEach((row) => {
+    if (!inDomain(row)) return;
+    const adId = normalizeKey(row.custom_value);
+    if (adId && metaAdIds.has(adId)) contentAdIdSet.add(adId);
+  });
+
+  const bucket = () => ({ keys: new Set(), rows: 0, revenueUsd: 0 });
+  const audit = {
+    gross: bucket(),
+    attributed: bucket(),
+    unresolved: bucket(),
+    adNotLoaded: bucket(),
+    contentConflict: bucket(),
+    matchedAdIds: new Set(),
+  };
+
+  (campaignRows || []).forEach((row) => {
+    if (!inDomain(row)) return;
+    const key = normalizeKey(row.custom_value);
+    if (!key.startsWith("src_")) return;
+    const rev = srcRevenue(row);
+    const add = (b) => {
+      b.keys.add(key);
+      b.rows += 1;
+      b.revenueUsd += rev;
+    };
+    add(audit.gross);
+
+    const adId = sourceKeyToAdId.get(key);
+    if (!adId) {
+      add(audit.unresolved);
+      return;
+    }
+    if (!metaAdIds.has(adId)) {
+      add(audit.adNotLoaded);
+      return;
+    }
+    if (contentAdIdSet.has(adId)) {
+      add(audit.contentConflict);
+      return;
+    }
+    add(audit.attributed);
+    audit.matchedAdIds.add(adId);
+  });
+
+  const toBrl = (usd) => (brlRate ? usd * brlRate : 0);
+  const pack = (b) => ({
+    keys: b.keys.size,
+    rows: b.rows,
+    revenueUsd: b.revenueUsd,
+    revenueBrl: toBrl(b.revenueUsd),
+  });
+  const grossUsd = audit.gross.revenueUsd;
+  const leakedUsd =
+    audit.unresolved.revenueUsd +
+    audit.adNotLoaded.revenueUsd +
+    audit.contentConflict.revenueUsd;
+
+  return {
+    domainScoped: !!domainKey,
+    gross: pack(audit.gross),
+    attributed: pack(audit.attributed),
+    unresolved: pack(audit.unresolved),
+    adNotLoaded: pack(audit.adNotLoaded),
+    contentConflict: pack(audit.contentConflict),
+    matchedAds: audit.matchedAdIds.size,
+    leaked: { revenueUsd: leakedUsd, revenueBrl: toBrl(leakedUsd) },
+    leakPercent: grossUsd > 0 ? (leakedUsd / grossUsd) * 100 : 0,
+    apiUnresolvedKeys: Array.isArray(messenleadUnresolved)
+      ? messenleadUnresolved.length
+      : 0,
+  };
+}
+
 function MetricasMensagensView({
   rows = [],
   usePmLabels = false,
@@ -738,6 +843,7 @@ function MetricasMensagensView({
   onBidUpdate,
   bidLoading = {},
   allowBidControl = false,
+  attributionAudit = null,
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -1395,6 +1501,61 @@ function MetricasMensagensView({
           </div>
         </div>
       </section>
+      ${attributionAudit
+        ? html`
+          <section className="card wide">
+            <div className="card-head">
+              <div>
+                <span className="eyebrow">Diagnostico</span>
+                <h2 className="section-title">Auditoria de Atribuicao (funil Messenlead)</h2>
+              </div>
+              <span className=${`chip ${attributionAudit.leakPercent >= 20 ? "danger" : attributionAudit.leakPercent > 0 ? "warn" : "neutral"}`}>
+                ${attributionAudit.leakPercent.toFixed(0)}% da receita nao atribuida
+              </span>
+            </div>
+            <p className="muted small">
+              Segue a ponte <code>src_</code> (JoinAds) -> <code>adId</code> (Messenlead) -> anuncio Meta.
+              A "receita bruta" e tudo que a JoinAds reporta nas <code>src_</code> do periodo; cada etapa
+              abaixo mostra quanto vaza antes de entrar na tabela acima.
+              ${attributionAudit.domainScoped
+                ? html`<strong> Atencao: ha um dominio selecionado, entao src_ de outros dominios foram excluidas.</strong>`
+                : null}
+            </p>
+            <div className="metrics-grid">
+              <div className="metric-card">
+                <div className="metric-label">Receita bruta JoinAds (src_)</div>
+                <div className="metric-helper">${attributionAudit.gross.keys} src_ / ${attributionAudit.gross.rows} linhas</div>
+                <div className="metric-value">${currencyBRL.format(attributionAudit.gross.revenueBrl || 0)}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Receita atribuida</div>
+                <div className="metric-helper">${attributionAudit.attributed.keys} src_ -> ${attributionAudit.matchedAds} anuncios</div>
+                <div className="metric-value">${currencyBRL.format(attributionAudit.attributed.revenueBrl || 0)}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Total nao atribuido</div>
+                <div className="metric-helper">${attributionAudit.leakPercent.toFixed(1)}% da bruta</div>
+                <div className="metric-value">${currencyBRL.format(attributionAudit.leaked.revenueBrl || 0)}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">src_ sem resolucao Messenlead</div>
+                <div className="metric-helper">${attributionAudit.unresolved.keys} src_ (API reportou ${attributionAudit.apiUnresolvedKeys})</div>
+                <div className="metric-value">${currencyBRL.format(attributionAudit.unresolved.revenueBrl || 0)}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Anuncio fora do conjunto Meta</div>
+                <div className="metric-helper">${attributionAudit.adNotLoaded.keys} src_ (periodo/conta ou paginacao)</div>
+                <div className="metric-value">${currencyBRL.format(attributionAudit.adNotLoaded.revenueBrl || 0)}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Conflito com utm_content</div>
+                <div className="metric-helper">${attributionAudit.contentConflict.keys} src_ ignoradas</div>
+                <div className="metric-value">${currencyBRL.format(attributionAudit.contentConflict.revenueBrl || 0)}</div>
+              </div>
+            </div>
+          </section>
+        `
+        : null}
       <section className="card wide">
         <div className="card-head">
           <div>
@@ -8724,6 +8885,29 @@ function App() {
     adDestMap,
   ]);
 
+  const messengerAttributionAudit = useMemo(
+    () =>
+      buildMessengerAttributionAudit({
+        campaignRows: joinadsCampaignRows,
+        contentRows: joinadsContentRows,
+        metaRows,
+        messenleadSources,
+        messenleadUnresolved,
+        domainKey: normalizeKey(appliedFilters?.domain || filters.domain || ""),
+        brlRate,
+      }),
+    [
+      joinadsCampaignRows,
+      joinadsContentRows,
+      metaRows,
+      messenleadSources,
+      messenleadUnresolved,
+      appliedFilters,
+      filters.domain,
+      brlRate,
+    ]
+  );
+
   const isTodaySelected = useMemo(() => {
     const endRaw = appliedFilters?.endDate || filters.endDate;
     if (!endRaw) return false;
@@ -9429,6 +9613,7 @@ function App() {
             onBidUpdate=${handleUpdateBid}
             bidLoading=${bidLoading}
             allowBidControl=${session?.role === "admin"}
+            attributionAudit=${messengerAttributionAudit}
             diagnostics=${{
               joinadsContentRowsCount: joinadsContentRows.length,
               joinadsCampaignRowsCount: joinadsCampaignRows.length,
