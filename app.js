@@ -983,6 +983,14 @@ function MetricasMensagensView({
         row.conversations > 0 ? row.spend_brl / row.conversations : null,
       joinads_impressions_per_conversation:
         row.conversations > 0 ? row.joinads_impressions / row.conversations : null,
+      revenue_per_conversation:
+        row.conversations > 0 ? row.revenue_brl / row.conversations : null,
+      profit_per_conversation:
+        row.conversations > 0 ? (row.revenue_brl - row.spend_brl) / row.conversations : null,
+      visits_per_conversation:
+        row.conversations > 0 ? row.joinads_clicks / row.conversations : null,
+      margin_pct: row.revenue_brl > 0 ? ((row.revenue_brl - row.spend_brl) / row.revenue_brl) * 100 : null,
+      ctr_meta: row.meta_impressions > 0 ? (row.meta_clicks / row.meta_impressions) * 100 : null,
     }))
     .sort((a, b) => b.revenue_brl - a.revenue_brl);
   const totalsRow = campaignRows.reduce(
@@ -1040,6 +1048,16 @@ function MetricasMensagensView({
     totalsRow.conversations > 0
       ? totalsRow.joinads_impressions / totalsRow.conversations
       : null;
+  totalsRow.revenue_per_conversation =
+    totalsRow.conversations > 0 ? totalsRow.revenue_brl / totalsRow.conversations : null;
+  totalsRow.profit_per_conversation =
+    totalsRow.conversations > 0 ? totalsRow.profit_brl / totalsRow.conversations : null;
+  totalsRow.visits_per_conversation =
+    totalsRow.conversations > 0 ? totalsRow.joinads_clicks / totalsRow.conversations : null;
+  totalsRow.margin_pct =
+    totalsRow.revenue_brl > 0 ? (totalsRow.profit_brl / totalsRow.revenue_brl) * 100 : null;
+  totalsRow.ctr_meta =
+    totalsRow.meta_impressions > 0 ? (totalsRow.meta_clicks / totalsRow.meta_impressions) * 100 : null;
   const buildMediumSummary = (mediumName, spendBrl = 0) => {
     const rowsForMedium = (Array.isArray(mediumRows) ? mediumRows : []).filter(
       (row) => normalizeKey(row.custom_value) === normalizeKey(mediumName)
@@ -1216,15 +1234,19 @@ function MetricasMensagensView({
               <tr>
                 <th>Campanha</th>
                 <th>Impressoes Meta</th>
+                <th>CTR Meta</th>
                 <th>Conversas iniciadas</th>
                 ${showUserCommission
                   ? null
                   : html`
                       <th>Custo por resultado Meta</th>
                       <th>Custo por conversa</th>
+                      <th>Receita por conversa</th>
+                      <th>Lucro por conversa</th>
                     `}
                 <th>Imp. JoinAds</th>
                 <th>Imp. JoinAds / conversa</th>
+                <th>Visitas / conversa</th>
                 <th>Cliques JoinAds</th>
                 ${showUserCommission ? null : html`<th>Gasto Meta</th>`}
                 ${showUserCommission
@@ -1234,6 +1256,7 @@ function MetricasMensagensView({
                       <th>Receita BRL</th>
                       <th>ROAS</th>
                       <th>Lucro Op.</th>
+                      <th>Margem</th>
                     `}
                 <th>${label}</th>
                 ${allowBidControl
@@ -1249,7 +1272,7 @@ function MetricasMensagensView({
             </thead>
             <tbody>
               ${campaignRows.length === 0
-                ? html`<tr><td colSpan=${showUserCommission ? 9 : allowBidControl ? 19 : 15} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
+                ? html`<tr><td colSpan=${showUserCommission ? 11 : allowBidControl ? 24 : 20} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
                 : campaignRows.map((row) => {
                   const userCommission = showUserCommission
                     ? calculateUserCommission(row.revenue_brl, commissionPercent)
@@ -1265,15 +1288,19 @@ function MetricasMensagensView({
                     <tr key=${row.campaign_name}>
                       <td>${row.campaign_name || "-"}</td>
                       <td>${number.format(row.meta_impressions || 0)}</td>
+                      <td>${row.ctr_meta != null ? `${row.ctr_meta.toFixed(2)}%` : "-"}</td>
                       <td>${row.conversations ? number.format(row.conversations) : "-"}</td>
                       ${showUserCommission
                         ? null
                         : html`
                             <td>${row.meta_cost_per_result != null ? currencyBRL.format(row.meta_cost_per_result) : "-"}</td>
                             <td>${row.cost_per_conversation != null ? currencyBRL.format(row.cost_per_conversation) : "-"}</td>
+                            <td>${row.revenue_per_conversation != null ? currencyBRL.format(row.revenue_per_conversation) : "-"}</td>
+                            <td>${row.profit_per_conversation != null ? currencyBRL.format(row.profit_per_conversation) : "-"}</td>
                           `}
                       <td>${number.format(row.joinads_impressions || 0)}</td>
                       <td>${row.joinads_impressions_per_conversation != null ? row.joinads_impressions_per_conversation.toFixed(2) : "-"}</td>
+                      <td>${row.visits_per_conversation != null ? row.visits_per_conversation.toFixed(2) : "-"}</td>
                       <td>${number.format(row.joinads_clicks || 0)}</td>
                       ${showUserCommission ? null : html`<td>${currencyBRL.format(row.spend_brl || 0)}</td>`}
                       ${showUserCommission
@@ -1283,6 +1310,7 @@ function MetricasMensagensView({
                             <td>${currencyBRL.format(row.revenue_brl || 0)}</td>
                             <td>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</td>
                             <td>${currencyBRL.format(row.profit_brl || 0)}</td>
+                            <td>${row.margin_pct != null ? `${row.margin_pct.toFixed(1)}%` : "-"}</td>
                           `}
                       <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
                       ${allowBidControl
@@ -1424,15 +1452,19 @@ function MetricasMensagensView({
                     <tr className="summary-row">
                       <td><strong>Total</strong></td>
                       <td><strong>${number.format(totalsRow.meta_impressions)}</strong></td>
+                      <td><strong>${totalsRow.ctr_meta != null ? `${totalsRow.ctr_meta.toFixed(2)}%` : "-"}</strong></td>
                       <td><strong>${totalsRow.conversations ? number.format(totalsRow.conversations) : "-"}</strong></td>
                       ${showUserCommission
                         ? null
                         : html`
                             <td><strong>${totalsRow.meta_cost_per_result != null ? currencyBRL.format(totalsRow.meta_cost_per_result) : "-"}</strong></td>
                             <td><strong>${totalsRow.cost_per_conversation != null ? currencyBRL.format(totalsRow.cost_per_conversation) : "-"}</strong></td>
+                            <td><strong>${totalsRow.revenue_per_conversation != null ? currencyBRL.format(totalsRow.revenue_per_conversation) : "-"}</strong></td>
+                            <td><strong>${totalsRow.profit_per_conversation != null ? currencyBRL.format(totalsRow.profit_per_conversation) : "-"}</strong></td>
                           `}
                       <td><strong>${number.format(totalsRow.joinads_impressions)}</strong></td>
                       <td><strong>${totalsRow.joinads_impressions_per_conversation != null ? totalsRow.joinads_impressions_per_conversation.toFixed(2) : "-"}</strong></td>
+                      <td><strong>${totalsRow.visits_per_conversation != null ? totalsRow.visits_per_conversation.toFixed(2) : "-"}</strong></td>
                       <td><strong>${number.format(totalsRow.joinads_clicks)}</strong></td>
                       ${showUserCommission ? null : html`<td><strong>${currencyBRL.format(totalsRow.spend_brl)}</strong></td>`}
                       ${showUserCommission
@@ -1442,6 +1474,7 @@ function MetricasMensagensView({
                             <td><strong>${currencyBRL.format(totalsRow.revenue_brl)}</strong></td>
                             <td><strong>${totalsRow.roas != null ? `${totalsRow.roas.toFixed(2)}x` : "-"}</strong></td>
                             <td><strong>${currencyBRL.format(totalsRow.profit_brl)}</strong></td>
+                            <td><strong>${totalsRow.margin_pct != null ? `${totalsRow.margin_pct.toFixed(1)}%` : "-"}</strong></td>
                           `}
                       <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong></td>
                       ${allowBidControl ? html`<td></td><td></td><td></td><td></td>` : null}
