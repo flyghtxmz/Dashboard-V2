@@ -17,13 +17,15 @@ export async function onRequest({ request, env }) {
   }
 
   const body = await readJson(request);
-  const { adset_id, bid_amount_brl, bid_strategy } = body || {};
+  const { adset_id, bid_amount_brl, bid_strategy, amount_only } = body || {};
   if (!adset_id) {
     return jsonResponse(400, { error: "Parametro obrigatorio: adset_id" });
   }
 
   const bidStrategy = (bid_strategy || BID_STRATEGY_DEFAULT).toUpperCase();
+  const updateStrategy = !amount_only;
   if (
+    updateStrategy &&
     bidStrategy !== BID_STRATEGY_WITH_BID &&
     bidStrategy !== BID_STRATEGY_WITHOUT_BID &&
     bidStrategy !== BID_STRATEGY_COST_CAP
@@ -35,7 +37,9 @@ export async function onRequest({ request, env }) {
   }
 
   const requiresAmount =
-    bidStrategy === BID_STRATEGY_WITH_BID || bidStrategy === BID_STRATEGY_COST_CAP;
+    amount_only ||
+    bidStrategy === BID_STRATEGY_WITH_BID ||
+    bidStrategy === BID_STRATEGY_COST_CAP;
 
   let bidNumber = null;
   if (requiresAmount) {
@@ -49,7 +53,9 @@ export async function onRequest({ request, env }) {
 
   try {
     const params = new URLSearchParams();
-    params.set("bid_strategy", bidStrategy);
+    if (updateStrategy) {
+      params.set("bid_strategy", bidStrategy);
+    }
     if (requiresAmount) {
       params.set("bid_amount", String(Math.round(bidNumber * 100)));
     }
@@ -80,7 +86,7 @@ export async function onRequest({ request, env }) {
     // controlada na campanha via orcamento de campanha/CBO). Comparamos o que foi pedido com o que
     // ficou de fato, para nao falhar em silencio.
     const actualStrategy = String(adset?.bid_strategy || "").toUpperCase();
-    const applied = actualStrategy ? actualStrategy === bidStrategy : null;
+    const applied = updateStrategy && actualStrategy ? actualStrategy === bidStrategy : null;
     const warning =
       applied === false
         ? `A Meta manteve a estrategia "${actualStrategy}" em vez de "${bidStrategy}". Normalmente a estrategia de lance e controlada na campanha (orcamento de campanha/CBO) ou a transicao nao e permitida neste nivel — nesse caso, altere a estrategia na campanha.`
@@ -90,7 +96,7 @@ export async function onRequest({ request, env }) {
       code: "success",
       data,
       adset,
-      requested_strategy: bidStrategy,
+      requested_strategy: updateStrategy ? bidStrategy : null,
       applied,
       warning,
     });
