@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 102;
+const APP_VERSION_BUILD = 103;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1148,6 +1148,45 @@ function MetricasMensagensView({
     }
     return adset.bidAmountBrl != null ? adset.bidAmountBrl.toFixed(2) : "";
   };
+  const getCostCapEligibility = (adsets) => {
+    const list = Array.isArray(adsets) ? adsets : [];
+    const goals = Array.from(
+      new Set(
+        list
+          .map((adset) => String(adset?.optimizationGoal || "").trim().toUpperCase())
+          .filter(Boolean)
+      )
+    );
+    if (!list.length) {
+      return {
+        status: "blocked",
+        label: "Sem conjunto carregado",
+        detail: "Nao ha conjunto suficiente para validar Meta de custo.",
+      };
+    }
+    if (goals.length > 1) {
+      return {
+        status: "blocked",
+        label: "Otimizacoes diferentes",
+        detail:
+          "A Meta exige que todos os conjuntos da campanha usem a mesma otimizacao de veiculacao.",
+      };
+    }
+    if (!goals.length) {
+      return {
+        status: "unknown",
+        label: "Otimizacao nao carregada",
+        detail:
+          "A Meta so permite Meta de custo para algumas otimizacoes. Se recusar, ajuste a otimizacao no Gerenciador.",
+      };
+    }
+    return {
+      status: "check",
+      label: goals[0],
+      detail:
+        "A elegibilidade final e validada pela Meta. Se recusar, esta otimizacao nao aceita Meta de custo.",
+    };
+  };
   const engagementRows = safeRows.filter((row) => isEngagementObjective(row.objective));
   const messageRows = safeRows.filter((row) => isMessageMetricsRow(row));
   const trafficMessengerRows = safeRows.filter(
@@ -1282,6 +1321,10 @@ function MetricasMensagensView({
                   const bidStrategy = getMessageBidStrategy(singleAdset);
                   const requiresBidValue = bidStrategy !== BID_STRATEGY_WITHOUT_BID;
                   const budgetTarget = getMessageBudgetTarget(singleAdset);
+                  const costCapEligibility = getCostCapEligibility(adsets);
+                  const costCapBlocked =
+                    bidStrategy === BID_STRATEGY_COST_CAP &&
+                    costCapEligibility.status === "blocked";
                   const budgetBusy = budgetTarget.id && budgetLoading?.[budgetTarget.id];
                   const bidBusy = singleAdset && bidLoading?.[singleAdset.id];
                   return html`
@@ -1382,9 +1425,15 @@ function MetricasMensagensView({
                                         ? currencyBRL.format(singleAdset.bidAmountBrl)
                                         : "Sem valor definido"}
                                     </div>
+                                    <div className="muted small">
+                                      Otimizacao: ${singleAdset.optimizationGoal || "nao carregada"}
+                                    </div>
                                   `
                                 : adsets.length > 1
-                                ? html`<span className="muted">Multiplos conjuntos</span>`
+                                ? html`<div className="budget-meta">
+                                    <span className="muted">Multiplos conjuntos</span>
+                                    <span className="muted small">${costCapEligibility.detail}</span>
+                                  </div>`
                                 : html`<span className="muted">Indisponivel</span>`}
                             </td>
                             <td>
@@ -1400,7 +1449,12 @@ function MetricasMensagensView({
                                           }))}
                                       >
                                         <option value=${BID_STRATEGY_WITH_BID}>Limite de lance</option>
-                                        <option value=${BID_STRATEGY_COST_CAP}>Meta de custo</option>
+                                        <option
+                                          value=${BID_STRATEGY_COST_CAP}
+                                          disabled=${costCapEligibility.status === "blocked"}
+                                        >
+                                          Meta de custo
+                                        </option>
                                         <option value=${BID_STRATEGY_WITHOUT_BID}>Sem limite</option>
                                       </select>
                                       <div className="budget-actions">
@@ -1419,7 +1473,7 @@ function MetricasMensagensView({
                                         />
                                         <button
                                           className="ghost small"
-                                          disabled=${bidBusy}
+                                          disabled=${bidBusy || costCapBlocked}
                                           onClick=${() =>
                                             onBidUpdate?.(
                                               singleAdset.id,
@@ -1435,6 +1489,11 @@ function MetricasMensagensView({
                                         >
                                           ${bidBusy ? "..." : "Salvar"}
                                         </button>
+                                      </div>
+                                      <div className=${`muted small ${costCapBlocked ? "danger-text" : ""}`}>
+                                        ${bidStrategy === BID_STRATEGY_COST_CAP
+                                          ? costCapEligibility.detail
+                                          : `Otimizacao: ${costCapEligibility.label}`}
                                       </div>
                                     </div>
                                   `
