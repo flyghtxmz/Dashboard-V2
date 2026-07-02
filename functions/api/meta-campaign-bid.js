@@ -19,7 +19,7 @@ export async function onRequest({ request, env }) {
   }
 
   const body = await readJson(request);
-  const { campaign_id, bid_strategy } = body || {};
+  const { campaign_id, bid_strategy, soft_fail } = body || {};
   if (!campaign_id) {
     return jsonResponse(400, { error: "Parametro obrigatorio: campaign_id" });
   }
@@ -47,6 +47,17 @@ export async function onRequest({ request, env }) {
     });
     const data = await safeJson(response);
     if (!response.ok) {
+      if (soft_fail) {
+        return jsonResponse(200, {
+          code: "meta_rejected",
+          ok: false,
+          campaign: null,
+          requested_strategy: bidStrategy,
+          applied: false,
+          warning: data?.error?.message || "A Meta recusou alterar a estrategia da campanha.",
+          details: data,
+        });
+      }
       return jsonResponse(response.status, { error: "Erro Meta", details: data });
     }
 

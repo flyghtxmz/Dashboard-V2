@@ -17,7 +17,7 @@ export async function onRequest({ request, env }) {
   }
 
   const body = await readJson(request);
-  const { adset_id, bid_amount_brl, bid_strategy, amount_only } = body || {};
+  const { adset_id, bid_amount_brl, bid_strategy, amount_only, soft_fail } = body || {};
   if (!adset_id) {
     return jsonResponse(400, { error: "Parametro obrigatorio: adset_id" });
   }
@@ -52,22 +52,73 @@ export async function onRequest({ request, env }) {
   }
 
   try {
-    const params = new URLSearchParams();
-    if (updateStrategy) {
-      params.set("bid_strategy", bidStrategy);
-    }
-    if (requiresAmount) {
-      params.set("bid_amount", String(Math.round(bidNumber * 100)));
-    }
-    params.set("access_token", token);
+    const amountCents = requiresAmount ? Math.round(bidNumber * 100) : null;
+    const attempts = [];
+    const base = {};
+    if (updateStrategy) base.bid_strategy = bidStrategy;
 
-    const response = await fetch(`${API_BASE}/${encodeURIComponent(adset_id)}`, {
-      method: "POST",
-      body: params,
-    });
-    const data = await safeJson(response);
-    if (!response.ok) {
-      return jsonResponse(response.status, { error: "Erro Meta", details: data });
+    if (requiresAmount && bidStrategy === BID_STRATEGY_COST_CAP && updateStrategy) {
+      attempts.push({ ...base, bid_amount: String(amountCents) });
+      attempts.push({
+        ...base,
+        bid_constraints: JSON.stringify({ cost_per_result_goal: amountCents }),
+      });
+      attempts.push({
+        ...base,
+        bid_constraints: JSON.stringify({ cost_cap: amountCents }),
+      });
+    } else if (requiresAmount && amount_only) {
+      attempts.push({ bid_amount: String(amountCents) });
+      attempts.push({
+        bid_constraints: JSON.stringify({ cost_per_result_goal: amountCents }),
+      });
+      attempts.push({
+        bid_constraints: JSON.stringify({ cost_cap: amountCents }),
+      });
+    } else {
+      attempts.push({
+        ...base,
+        ...(requiresAmount ? { bid_amount: String(amountCents) } : {}),
+      });
+    }
+
+    let data = null;
+    let response = null;
+    const errors = [];
+    for (const attempt of attempts) {
+      const params = new URLSearchParams();
+      Object.entries(attempt).forEach(([key, value]) => params.set(key, value));
+      params.set("access_token", token);
+
+      response = await fetch(`${API_BASE}/${encodeURIComponent(adset_id)}`, {
+        method: "POST",
+        body: params,
+      });
+      data = await safeJson(response);
+      if (response.ok) break;
+      errors.push({ attempt, details: data });
+    }
+
+    if (!response?.ok) {
+      const payload = {
+        error: "Erro Meta",
+        details: data,
+        attempts: errors,
+      };
+      if (soft_fail) {
+        return jsonResponse(200, {
+          code: "meta_rejected",
+          ok: false,
+          adset: null,
+          requested_strategy: updateStrategy ? bidStrategy : null,
+          applied: false,
+          warning:
+            data?.error?.message ||
+            "A Meta recusou alterar a estrategia/valor do conjunto.",
+          ...payload,
+        });
+      }
+      return jsonResponse(response?.status || 400, payload);
     }
 
     let adset = null;
@@ -94,6 +145,7 @@ export async function onRequest({ request, env }) {
 
     return jsonResponse(200, {
       code: "success",
+      ok: true,
       data,
       adset,
       requested_strategy: updateStrategy ? bidStrategy : null,

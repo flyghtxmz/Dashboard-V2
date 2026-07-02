@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 101;
+const APP_VERSION_BUILD = 102;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -8267,11 +8267,22 @@ function App() {
         try {
           const campRes = await fetchJson(`${API_BASE}/meta-campaign-bid`, {
             method: "POST",
-            body: JSON.stringify({ campaign_id: campaignId, bid_strategy: bidStrategy }),
+            body: JSON.stringify({
+              campaign_id: campaignId,
+              bid_strategy: bidStrategy,
+              soft_fail: true,
+            }),
           });
-          campaignStrategy = String(campRes?.campaign?.bid_strategy || "").toUpperCase();
-          campApplied = campRes?.applied ?? null;
-          campWarning = campRes?.warning || "";
+          if (campRes?.ok === false) {
+            strategyError = {
+              message: campRes.warning || "A Meta recusou alterar a estrategia da campanha.",
+              data: campRes,
+            };
+          } else {
+            campaignStrategy = String(campRes?.campaign?.bid_strategy || "").toUpperCase();
+            campApplied = campRes?.applied ?? null;
+            campWarning = campRes?.warning || "";
+          }
         } catch (err) {
           strategyError = err;
         }
@@ -8288,8 +8299,15 @@ function App() {
                 adset_id: adsetId,
                 bid_strategy: bidStrategy,
                 bid_amount_brl: bidNumber,
+                soft_fail: true,
               }),
             });
+            if (adsetRes?.ok === false) {
+              throw {
+                message: adsetRes.warning || "A Meta recusou alterar a estrategia do conjunto.",
+                data: adsetRes,
+              };
+            }
             adsetUpdated = adsetRes?.adset || null;
           } catch (err) {
             adsetStrategyError = err;
@@ -8300,9 +8318,17 @@ function App() {
                   adset_id: adsetId,
                   bid_amount_brl: bidNumber,
                   amount_only: true,
+                  soft_fail: true,
                 }),
               });
-              adsetUpdated = adsetRes?.adset || null;
+              if (adsetRes?.ok === false) {
+                pushLog("meta-bid", {
+                  message: adsetRes.warning || "A Meta recusou salvar o valor do cap no conjunto.",
+                  data: adsetRes,
+                });
+              } else {
+                adsetUpdated = adsetRes?.adset || null;
+              }
             } catch (fallbackErr) {
               pushLog("meta-bid", fallbackErr);
             }
