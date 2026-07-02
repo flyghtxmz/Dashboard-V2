@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 103;
+const APP_VERSION_BUILD = 104;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -838,6 +838,7 @@ function MetricasMensagensView({
   showUserCommission = false,
   diagnostics = {},
   mediumRows = [],
+  termRows = [],
   onBudgetUpdate,
   budgetLoading = {},
   onBidUpdate,
@@ -1083,6 +1084,71 @@ function MetricasMensagensView({
   const organicMedium = buildMediumSummary("organic", 0);
   const messengerMediumRows = messengerMedium.rows;
   const organicMediumRows = organicMedium.rows;
+  const isLeadTerm = (value) => normalizeKey(value).startsWith("ml_");
+  const leadTermRows = (Array.isArray(termRows) ? termRows : []).filter((row) =>
+    isLeadTerm(row.custom_value)
+  );
+  const leadLtvRows = Array.from(
+    leadTermRows
+      .reduce((map, row) => {
+        const leadId = String(row.custom_value || "").trim();
+        const key = normalizeKey(leadId);
+        if (!key) return map;
+        const item =
+          map.get(key) || {
+            lead_id: leadId,
+            rows: 0,
+            domains: new Set(),
+            impressions: 0,
+            clicks: 0,
+            revenue_usd: 0,
+          };
+        item.rows += 1;
+        if (row.domain || row.name) item.domains.add(row.domain || row.name);
+        item.impressions += toNumber(row.impressions);
+        item.clicks += toNumber(row.clicks);
+        item.revenue_usd += toNumber(
+          row.revenue_client != null ? row.revenue_client : row.revenue
+        );
+        map.set(key, item);
+        return map;
+      }, new Map())
+      .values()
+  )
+    .map((row) => ({
+      ...row,
+      revenue_brl: brlRate ? row.revenue_usd * brlRate : 0,
+      ecpm: row.impressions > 0 ? (row.revenue_usd / row.impressions) * 1000 : null,
+      user_commission_brl: calculateUserCommission(
+        brlRate ? row.revenue_usd * brlRate : 0,
+        commissionPercent
+      ),
+    }))
+    .sort((a, b) => b.revenue_usd - a.revenue_usd);
+  const leadLtvVisibleRows = leadLtvRows.slice(0, 50);
+  const leadLtvTotals = leadLtvRows.reduce(
+    (acc, row) => {
+      acc.rows += row.rows || 0;
+      acc.impressions += row.impressions || 0;
+      acc.clicks += row.clicks || 0;
+      acc.revenue_usd += row.revenue_usd || 0;
+      acc.revenue_brl += row.revenue_brl || 0;
+      acc.user_commission_brl += row.user_commission_brl || 0;
+      return acc;
+    },
+    {
+      rows: 0,
+      impressions: 0,
+      clicks: 0,
+      revenue_usd: 0,
+      revenue_brl: 0,
+      user_commission_brl: 0,
+    }
+  );
+  leadLtvTotals.ecpm =
+    leadLtvTotals.impressions > 0
+      ? (leadLtvTotals.revenue_usd / leadLtvTotals.impressions) * 1000
+      : null;
   const attributionLabel = (levels) => {
     const list = Array.from(levels || []);
     if (!list.length) return "-";
@@ -1240,6 +1306,8 @@ function MetricasMensagensView({
       utmContentRows: diagnostics.joinadsContentRowsCount || 0,
       utmCampaignRows: diagnostics.joinadsCampaignRowsCount || 0,
       utmUserRows: diagnostics.joinadsUserRowsCount || 0,
+      utmTermRows: Array.isArray(termRows) ? termRows.length : 0,
+      utmTermLeadRows: leadTermRows.length,
       utmMediumRows: Array.isArray(mediumRows) ? mediumRows.length : 0,
       utmMediumMessengerRows: messengerMediumRows.length,
       utmMediumOrganicRows: organicMediumRows.length,
@@ -1541,6 +1609,100 @@ function MetricasMensagensView({
                           `}
                       <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong></td>
                       ${allowBidControl ? html`<td></td><td></td><td></td><td></td>` : null}
+                      <td></td>
+                    </tr>
+                  `
+                : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">LTV</span>
+            <h2 className="section-title">LTV Mensagens</h2>
+          </div>
+          <div className="chip-group">
+            <span className="chip neutral">${leadLtvRows.length} leads com utm_term</span>
+            ${leadLtvRows.length > leadLtvVisibleRows.length
+              ? html`<span className="chip warn">mostrando top ${leadLtvVisibleRows.length}</span>`
+              : null}
+          </div>
+        </div>
+        <p className="muted small">
+          Primeira base de coorte: agrupa receita JoinAds por <code>utm_term=lead_id</code>.
+          D0/D1/D3/D7 dependem do proximo passo: resolver <code>lead_id -> first_seen_at</code>
+          no Messenlead.
+        </p>
+        <div className="table-wrapper scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>Lead ID</th>
+                <th>Linhas JoinAds</th>
+                <th>Imp. JoinAds</th>
+                <th>Cliques JoinAds</th>
+                ${showUserCommission
+                  ? html`<th>Lucro do usuario</th>`
+                  : html`
+                      <th>Receita USD</th>
+                      <th>Receita BRL</th>
+                    `}
+                <th>${label}</th>
+                <th>Status LTV</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${leadLtvVisibleRows.length
+                ? leadLtvVisibleRows.map(
+                    (row) => html`
+                      <tr>
+                        <td>
+                          <code>${row.lead_id}</code>
+                          ${row.domains.size
+                            ? html`<div className="muted small">${Array.from(row.domains).slice(0, 2).join(", ")}</div>`
+                            : null}
+                        </td>
+                        <td>${number.format(row.rows || 0)}</td>
+                        <td>${number.format(row.impressions || 0)}</td>
+                        <td>${number.format(row.clicks || 0)}</td>
+                        ${showUserCommission
+                          ? html`<td>${currencyBRL.format(row.user_commission_brl || 0)}</td>`
+                          : html`
+                              <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
+                              <td>${currencyBRL.format(row.revenue_brl || 0)}</td>
+                            `}
+                        <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
+                        <td>
+                          <span className="chip neutral">lead_id capturado</span>
+                          <div className="muted small">Aguardando data de coorte do Messenlead</div>
+                        </td>
+                      </tr>
+                    `
+                  )
+                : html`
+                    <tr>
+                      <td colSpan=${showUserCommission ? 7 : 8}>
+                        Sem <code>utm_term=ml_...</code> na JoinAds para o periodo.
+                        Use <code>utm_term=${"{{entry.lead_id}}"}</code> nos links do Messenlead.
+                      </td>
+                    </tr>
+                  `}
+              ${leadLtvRows.length
+                ? html`
+                    <tr className="summary-row">
+                      <td><strong>Total</strong></td>
+                      <td><strong>${number.format(leadLtvTotals.rows)}</strong></td>
+                      <td><strong>${number.format(leadLtvTotals.impressions)}</strong></td>
+                      <td><strong>${number.format(leadLtvTotals.clicks)}</strong></td>
+                      ${showUserCommission
+                        ? html`<td><strong>${currencyBRL.format(leadLtvTotals.user_commission_brl || 0)}</strong></td>`
+                        : html`
+                            <td><strong>${currencyUSD.format(leadLtvTotals.revenue_usd || 0)}</strong></td>
+                            <td><strong>${currencyBRL.format(leadLtvTotals.revenue_brl || 0)}</strong></td>
+                          `}
+                      <td><strong>${leadLtvTotals.ecpm != null ? currencyUSD.format(leadLtvTotals.ecpm) : "-"}</strong></td>
                       <td></td>
                     </tr>
                   `
@@ -9654,6 +9816,7 @@ function App() {
                 commissionPercent=${session?.commissionPercent || 0}
                 showUserCommission=${true}
                 mediumRows=${joinadsMediumRows}
+                termRows=${superTermRows}
                 allowBidControl=${false}
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
@@ -9847,6 +10010,7 @@ function App() {
             commissionPercent=${session?.commissionPercent || 0}
             showUserCommission=${isGestorSession(session)}
             mediumRows=${joinadsMediumRows}
+            termRows=${superTermRows}
             onBudgetUpdate=${handleUpdateBudget}
             budgetLoading=${budgetLoading}
             onBidUpdate=${handleUpdateBid}
