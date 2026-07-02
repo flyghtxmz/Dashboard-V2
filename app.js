@@ -8257,31 +8257,48 @@ function App() {
     setBidLoading((prev) => ({ ...prev, [adsetId]: true }));
     try {
       // Campanha com Orcamento de Campanha (CBO): a estrategia vai na CAMPANHA; o valor vai no CONJUNTO.
+      // As duas chamadas sao independentes para que uma falhar nao aborte a outra.
       if (cbo && campaignId) {
-        const campRes = await fetchJson(`${API_BASE}/meta-campaign-bid`, {
-          method: "POST",
-          body: JSON.stringify({ campaign_id: campaignId, bid_strategy: bidStrategy }),
-        });
-        const campaignStrategy =
-          String(campRes?.campaign?.bid_strategy || "").toUpperCase() || bidStrategy;
-
+        // 1) Valor (cap/cost cap) no CONJUNTO primeiro: sob CBO a Meta exige o valor no conjunto
+        //    antes de aceitar a estrategia de cap na campanha.
         let adsetUpdated = null;
         if (requiresBidValue) {
-          const adsetRes = await fetchJson(`${API_BASE}/meta-adset-bid`, {
+          try {
+            const adsetRes = await fetchJson(`${API_BASE}/meta-adset-bid`, {
+              method: "POST",
+              body: JSON.stringify({
+                adset_id: adsetId,
+                bid_strategy: bidStrategy,
+                bid_amount_brl: bidNumber,
+              }),
+            });
+            adsetUpdated = adsetRes?.adset || null;
+          } catch (err) {
+            pushLog("meta-bid", err);
+          }
+        }
+
+        // 2) Estrategia na CAMPANHA.
+        let campaignStrategy = "";
+        let campApplied = null;
+        let campWarning = "";
+        let strategyError = null;
+        try {
+          const campRes = await fetchJson(`${API_BASE}/meta-campaign-bid`, {
             method: "POST",
-            body: JSON.stringify({
-              adset_id: adsetId,
-              bid_strategy: bidStrategy,
-              bid_amount_brl: bidNumber,
-            }),
+            body: JSON.stringify({ campaign_id: campaignId, bid_strategy: bidStrategy }),
           });
-          adsetUpdated = adsetRes?.adset || null;
+          campaignStrategy = String(campRes?.campaign?.bid_strategy || "").toUpperCase();
+          campApplied = campRes?.applied ?? null;
+          campWarning = campRes?.warning || "";
+        } catch (err) {
+          strategyError = err;
         }
 
         setMetaRows((prev) =>
           (prev || []).map((row) => {
             let next = row;
-            if (row.campaign_id === campaignId) {
+            if (campaignStrategy && row.campaign_id === campaignId) {
               next = { ...next, adset_bid_strategy: campaignStrategy };
             }
             if (row.adset_id === adsetId && adsetUpdated) {
@@ -8295,17 +8312,22 @@ function App() {
           })
         );
 
-        if (campRes?.applied === false) {
+        if (requiresBidValue && adsetUpdated) {
+          pushLog("meta-bid", {
+            message: `Custo do conjunto ${adsetId} -> R$ ${bidNumber.toFixed(2)} atualizado.`,
+          });
+        }
+        if (strategyError) {
+          pushLog("meta-bid", strategyError);
+        } else if (campApplied === false) {
           pushLog("meta-bid", {
             message:
-              campRes.warning ||
+              campWarning ||
               `A Meta nao aplicou a estrategia ${formatBidStrategy(bidStrategy)} na campanha ${campaignId}.`,
           });
         } else {
           pushLog("meta-bid", {
-            message: requiresBidValue
-              ? `Estrategia da campanha atualizada (${formatBidStrategy(bidStrategy)}) e custo do conjunto ${adsetId} -> R$ ${bidNumber.toFixed(2)}`
-              : `Estrategia da campanha atualizada (${formatBidStrategy(bidStrategy)}) para ${campaignId}`,
+            message: `Estrategia da campanha atualizada (${formatBidStrategy(bidStrategy)}) para ${campaignId}.`,
           });
         }
         return;
