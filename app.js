@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 100;
+const APP_VERSION_BUILD = 101;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -8259,26 +8259,7 @@ function App() {
       // Campanha com Orcamento de Campanha (CBO): a estrategia vai na CAMPANHA; o valor vai no CONJUNTO.
       // As duas chamadas sao independentes para que uma falhar nao aborte a outra.
       if (cbo && campaignId) {
-        // 1) Valor (cap/cost cap) no CONJUNTO primeiro: sob CBO a Meta exige o valor no conjunto
-        //    antes de aceitar a estrategia de cap na campanha.
-        let adsetUpdated = null;
-        if (requiresBidValue) {
-          try {
-            const adsetRes = await fetchJson(`${API_BASE}/meta-adset-bid`, {
-              method: "POST",
-              body: JSON.stringify({
-                adset_id: adsetId,
-                bid_amount_brl: bidNumber,
-                amount_only: true,
-              }),
-            });
-            adsetUpdated = adsetRes?.adset || null;
-          } catch (err) {
-            pushLog("meta-bid", err);
-          }
-        }
-
-        // 2) Estrategia na CAMPANHA.
+        // 1) Estrategia na CAMPANHA. Em CBO a Meta pode controlar a estrategia neste nivel.
         let campaignStrategy = "";
         let campApplied = null;
         let campWarning = "";
@@ -8295,6 +8276,39 @@ function App() {
           strategyError = err;
         }
 
+        // 2) Estrategia e valor no CONJUNTO. O Gerenciador costuma exibir o rotulo pelo conjunto;
+        //    se a Meta rejeitar a estrategia aqui, mantemos pelo menos o valor do cap.
+        let adsetUpdated = null;
+        let adsetStrategyError = null;
+        if (requiresBidValue) {
+          try {
+            const adsetRes = await fetchJson(`${API_BASE}/meta-adset-bid`, {
+              method: "POST",
+              body: JSON.stringify({
+                adset_id: adsetId,
+                bid_strategy: bidStrategy,
+                bid_amount_brl: bidNumber,
+              }),
+            });
+            adsetUpdated = adsetRes?.adset || null;
+          } catch (err) {
+            adsetStrategyError = err;
+            try {
+              const adsetRes = await fetchJson(`${API_BASE}/meta-adset-bid`, {
+                method: "POST",
+                body: JSON.stringify({
+                  adset_id: adsetId,
+                  bid_amount_brl: bidNumber,
+                  amount_only: true,
+                }),
+              });
+              adsetUpdated = adsetRes?.adset || null;
+            } catch (fallbackErr) {
+              pushLog("meta-bid", fallbackErr);
+            }
+          }
+        }
+
         setMetaRows((prev) =>
           (prev || []).map((row) => {
             let next = row;
@@ -8305,6 +8319,7 @@ function App() {
               next = {
                 ...next,
                 adset_bid_amount: adsetUpdated.bid_amount ?? next.adset_bid_amount,
+                adset_bid_strategy: adsetUpdated.bid_strategy || next.adset_bid_strategy,
                 adset_bid_constraints: adsetUpdated.bid_constraints ?? next.adset_bid_constraints,
               };
             }
@@ -8328,6 +8343,13 @@ function App() {
         } else {
           pushLog("meta-bid", {
             message: `Estrategia da campanha atualizada (${formatBidStrategy(bidStrategy)}) para ${campaignId}.`,
+          });
+        }
+        if (adsetStrategyError) {
+          pushLog("meta-bid", {
+            message:
+              "A Meta rejeitou aplicar a estrategia no conjunto; o dashboard tentou salvar apenas o valor do cap como fallback. Se o Gerenciador continuar mostrando Limite de Lance, a estrategia do conjunto nao foi aceita pela API.",
+            detail: adsetStrategyError?.data || adsetStrategyError?.message || adsetStrategyError,
           });
         }
         return;
