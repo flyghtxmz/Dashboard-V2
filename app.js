@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 111;
+const APP_VERSION_BUILD = 112;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -218,7 +218,7 @@ const formatFxLabel = (fxInfo, fxStatus) => {
 };
 
 const ROLE_TABS = {
-  admin: ["dashboard", "metricas_mensagens", "carga_bot", "duplicar", "editar", "urls", "meta", "diag", "token", "pages", "configuracoes", "criar"],
+  admin: ["dashboard", "metricas_mensagens", "duplicar", "editar", "urls", "meta", "diag", "token", "pages", "configuracoes", "criar"],
   gestor: ["dashboard", "metricas_mensagens", "criar"],
   editor: [],
 };
@@ -226,7 +226,6 @@ const ROLE_TABS = {
 const TAB_LABELS = {
   dashboard: "Dashboard",
   metricas_mensagens: "Metricas Mensagens",
-  carga_bot: "Carga do Bot",
   duplicar: "Duplicar",
   editar: "Editar",
   urls: "URLs com Parametros",
@@ -2455,185 +2454,6 @@ function MetricasMensagensView({
           Copie este bloco e me envie se as campanhas de mensagem nao aparecerem.
         </p>
         <pre className="debug-log">${JSON.stringify(debugPayload, null, 2)}</pre>
-      </section>
-    </main>
-  `;
-}
-
-function BotPayloadView({
-  accountId = "",
-  rows = [],
-  loading = false,
-  error = "",
-  onLoad,
-}) {
-  const [query, setQuery] = useState("");
-  const term = query.trim().toLowerCase();
-  const filteredRows = term
-    ? rows.filter((row) =>
-        [
-          row.campaign_name,
-          row.adset_name,
-          row.ad_name,
-          row.bot_payload_label,
-          row.bot_state,
-          row.configured_status,
-          row.effective_status,
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(term)
-      )
-    : rows;
-  const withPayload = rows.filter((row) => row.bot_payload_label).length;
-  const urlParamRows = filteredRows.flatMap((row) =>
-    (row.url_parameters || []).map((param) => ({
-      ...param,
-      ad_id: row.ad_id,
-      ad_name: row.ad_name,
-      campaign_name: row.campaign_name,
-      campaign_objective: row.campaign_objective,
-    }))
-  );
-  const withUrlParams = rows.filter((row) => (row.url_parameters || []).length).length;
-
-  return html`
-    <main className="grid">
-      <section className="card wide">
-        <div className="card-head">
-          <div>
-            <span className="eyebrow">Meta</span>
-            <h2 className="section-title">Carga do Bot</h2>
-          </div>
-          <div className="chip-group">
-            <button className="ghost" onClick=${onLoad} disabled=${loading || !accountId}>
-              ${loading ? "Carregando..." : "Carregar cargas"}
-            </button>
-            <span className="chip neutral">${filteredRows.length} anuncios</span>
-            <span className="chip neutral">${withPayload} com carga</span>
-            <span className="chip neutral">${withUrlParams} com parametros</span>
-          </div>
-        </div>
-
-        ${!accountId
-          ? html`<div className="status warn">Configure o ID da conta Meta em Configuracoes.</div>`
-          : null}
-        ${error ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>` : null}
-
-        <p className="muted small">
-          Lista os anuncios retornados pela Meta e tenta ler a carga em
-          <code>creative.page_welcome_message</code>. Rascunhos que ainda nao viraram objeto da API podem nao aparecer.
-        </p>
-
-        <div className="filters">
-          <label className="field">
-            <span>Filtrar</span>
-            <input
-              type="text"
-              placeholder="Campanha, conjunto, anuncio ou carga"
-              value=${query}
-              onInput=${(e) => setQuery(e.target.value)}
-            />
-          </label>
-        </div>
-
-        <div className="table-wrapper scroll-x">
-          <table>
-            <thead>
-              <tr>
-                <th>Campanha</th>
-                <th>Conjunto</th>
-                <th>Anuncio</th>
-                <th>Status</th>
-                <th>Entrega</th>
-                <th>Carga atual</th>
-                <th>Criativo</th>
-                <th>Atualizado</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredRows.length === 0
-                ? html`<tr><td colSpan="8" className="muted">Sem anuncios carregados.</td></tr>`
-                : filteredRows.map((row) => {
-                    const tone = statusToneMap[row.bot_state] || "neutral";
-                    return html`
-                      <tr key=${row.ad_id}>
-                        <td>${row.campaign_name || "-"}</td>
-                        <td>${row.adset_name || "-"}</td>
-                        <td>
-                          <strong>${row.ad_name || "-"}</strong>
-                          <div className="muted small">${row.ad_id || ""}</div>
-                        </td>
-                        <td>
-                          <span className=${`status-badge ${tone}`}>
-                            ${formatStatusLabel(row.bot_state)}
-                          </span>
-                          <div className="muted small">${row.configured_status || "-"}</div>
-                        </td>
-                        <td>${formatStatusLabel(row.effective_status)}</td>
-                        <td>
-                          ${row.bot_payload_label
-                            ? html`<code>${row.bot_payload_label}</code>`
-                            : html`<span className="muted">Nao exposta pela API</span>`}
-                          ${row.has_page_welcome_message
-                            ? html`<div className="muted small">page_welcome_message</div>`
-                            : null}
-                        </td>
-                        <td>
-                          ${row.creative_name || "-"}
-                          <div className="muted small">${row.creative_id || ""}</div>
-                        </td>
-                        <td>${formatDateTime(row.updated_time || row.created_time)}</td>
-                      </tr>
-                    `;
-                  })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="card wide">
-        <div className="card-head">
-          <div>
-            <span className="eyebrow">Rastreamento</span>
-            <h2 className="section-title">Parametros URL</h2>
-          </div>
-          <span className="chip neutral">${urlParamRows.length} parametros</span>
-        </div>
-        <p className="muted small">
-          Retorna parametros encontrados em <code>url_tags</code> e nas URLs expostas pelo criativo/carga do bot.
-        </p>
-        <div className="table-wrapper scroll-x">
-          <table>
-            <thead>
-              <tr>
-                <th>Campanha</th>
-                <th>Objetivo</th>
-                <th>Tipo</th>
-                <th>Parametro</th>
-                <th>Valor</th>
-                <th>Anuncio</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${urlParamRows.length === 0
-                ? html`<tr><td colSpan="6" className="muted">Sem parametros URL encontrados nos anuncios carregados.</td></tr>`
-                : urlParamRows.map((row, idx) => html`
-                    <tr key=${`${row.ad_id}-${row.type}-${row.key}-${idx}`}>
-                      <td>${row.campaign_name || "-"}</td>
-                      <td>${formatObjective(row.campaign_objective)}</td>
-                      <td>${row.type || "-"}</td>
-                      <td><code>${row.parameter || `${row.key || ""}=${row.value || ""}`}</code></td>
-                      <td>${row.value || "-"}</td>
-                      <td>
-                        ${row.ad_name || "-"}
-                        <div className="muted small">${row.ad_id || ""}</div>
-                      </td>
-                    </tr>
-                  `)}
-            </tbody>
-          </table>
-        </div>
       </section>
     </main>
   `;
@@ -7562,9 +7382,6 @@ function App() {
   const [tokenInfo, setTokenInfo] = useState(null);
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState("");
-  const [botPayloadRows, setBotPayloadRows] = useState([]);
-  const [botPayloadLoading, setBotPayloadLoading] = useState(false);
-  const [botPayloadError, setBotPayloadError] = useState("");
   const [adsetStatusLoading, setAdsetStatusLoading] = useState({});
   const [editAds, setEditAds] = useState([]);
   const [editCampaigns, setEditCampaigns] = useState([]);
@@ -7625,8 +7442,6 @@ function App() {
     setPixelsList([]);
     setTokenInfo(null);
     setTokenError("");
-    setBotPayloadRows([]);
-    setBotPayloadError("");
     setEditAds([]);
     setEditCampaigns([]);
     setEditError("");
@@ -8602,33 +8417,6 @@ function App() {
       setPagesList([]);
     } finally {
       setPagesLoading(false);
-    }
-  };
-
-  const handleLoadBotPayload = async () => {
-    const accountId = filters.metaAccountId.trim();
-    if (!accountId) {
-      setBotPayloadError("Informe o ID da conta de anuncios (Meta).");
-      return;
-    }
-    setBotPayloadLoading(true);
-    setBotPayloadError("");
-    try {
-      const res = await fetchJson(
-        `${API_BASE}/meta-bot-payload?account_id=${encodeURIComponent(accountId)}`,
-        {
-          cacheTtlMs: 2 * 60 * 1000,
-          cacheKey: `meta-bot-payload:${accountId}`,
-          force: true,
-        }
-      );
-      setBotPayloadRows(res.data || []);
-    } catch (err) {
-      setBotPayloadError(formatError(err));
-      pushLog("meta-bot-payload", err);
-      setBotPayloadRows([]);
-    } finally {
-      setBotPayloadLoading(false);
     }
   };
 
@@ -10635,13 +10423,6 @@ function App() {
           Metricas Mensagens
         </button>
         <button
-          hidden=${!availableTabs.includes("carga_bot")}
-          className=${`tab ${activeTab === "carga_bot" ? "active" : ""}`}
-          onClick=${() => setActiveTab("carga_bot")}
-        >
-          Carga do Bot
-        </button>
-        <button
           hidden=${!availableTabs.includes("duplicar")}
           className=${`tab ${activeTab === "duplicar" ? "active" : ""}`}
           onClick=${() => setActiveTab("duplicar")}
@@ -10782,14 +10563,6 @@ function App() {
               metaDiagnostics,
               messageSourceRowsCount: metaMessageFiltered.length,
             }}
-          />`
-        : activeTab === "carga_bot"
-        ? html`<${BotPayloadView}
-            accountId=${filters.metaAccountId.trim()}
-            rows=${botPayloadRows}
-            loading=${botPayloadLoading}
-            error=${botPayloadError}
-            onLoad=${handleLoadBotPayload}
           />`
         : activeTab === "duplicar"
         ? html`

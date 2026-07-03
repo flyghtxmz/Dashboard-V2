@@ -139,6 +139,11 @@ function botState(ad) {
 }
 
 export async function onRequest({ request, env }) {
+  return jsonResponse(404, {
+    code: "removed",
+    message: "Recurso removido do Dashboard.",
+  });
+
   const token = getMetaToken(env);
   if (!token) {
     return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
