@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 105;
+const APP_VERSION_BUILD = 106;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -872,6 +872,7 @@ function MetricasMensagensView({
   onBidUpdate,
   bidLoading = {},
   allowBidControl = false,
+  showLtvTable = true,
   attributionAudit = null,
 }) {
   const label = performanceUnitLabel(usePmLabels);
@@ -1708,6 +1709,8 @@ function MetricasMensagensView({
           </table>
         </div>
       </section>
+      ${showLtvTable
+        ? html`
       <section className="card wide">
         <div className="card-head">
           <div>
@@ -1817,7 +1820,61 @@ function MetricasMensagensView({
             </tbody>
           </table>
         </div>
+        <div className="table-wrapper scroll-x" style=${{ marginTop: "14px" }}>
+          <div className="muted small" style=${{ padding: "10px 12px" }}>
+            <strong>Exemplo ficticio da tabela.</strong>
+            Os valores abaixo sao ilustrativos e nao entram nos totais reais.
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Lead ID</th>
+                <th>Coorte</th>
+                <th>Anuncio</th>
+                <th>${showUserCommission ? "Lucro D0" : "Receita D0"}</th>
+                <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
+                <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
+                <th>${showUserCommission ? "Lucro D7" : "Receita D7"}</th>
+                <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
+                <th>Imp. JoinAds</th>
+                <th>Cliques JoinAds</th>
+                <th>${label}</th>
+                <th>Status LTV</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <code>ml_exemplo7d9a2k4p8q1</code>
+                  <div className="muted small">es.remediototal.com.br</div>
+                </td>
+                <td>
+                  2026-07-02
+                  <div className="muted small">ultimo 2026-07-05</div>
+                </td>
+                <td>
+                  120247015017960378
+                  <div className="muted small">src_exemplo39yyf40</div>
+                </td>
+                <td>${currencyBRL.format(12.4)}</td>
+                <td>${currencyBRL.format(21.8)}</td>
+                <td>${currencyBRL.format(38.5)}</td>
+                <td>${currencyBRL.format(61.2)}</td>
+                <td>${currencyBRL.format(61.2)}</td>
+                <td>${number.format(8420)}</td>
+                <td>${number.format(312)}</td>
+                <td>${currencyUSD.format(7.27)}</td>
+                <td>
+                  <span className="chip neutral">exemplo ficticio</span>
+                  <div className="muted small">4 linhas JoinAds</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
+        `
+        : null}
       <section className="card wide">
         <div className="card-head">
           <div>
@@ -5995,6 +6052,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
   const [reportType, setReportType] = useState(settings.reportType || "Analytical");
   const [includeAssets, setIncludeAssets] = useState(!!settings.includeAssets);
+  const [showMessagesLtvTable, setShowMessagesLtvTable] = useState(settings.showMessagesLtvTable !== false);
   const [nichos, setNichos] = useState(Array.isArray(settings.nichos) ? settings.nichos : []);
   const [urls, setUrls] = useState(Array.isArray(settings.urls) ? settings.urls : []);
   const [users, setUsers] = useState(
@@ -6143,6 +6201,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
         metaAccountId,
         reportType,
         includeAssets,
+        showMessagesLtvTable,
         nichos,
         urls,
         users: users.map((user) => ({
@@ -6208,6 +6267,20 @@ function ConfiguracoesView({ settings, onSave, saving }) {
               <span>Ativado (mais lento)</span>
             </label>
             <span className="muted small">Carrega imagens e vídeos dos anúncios ao buscar dados da Meta.</span>
+          </div>
+          <div className="field">
+            <label>LTV Mensagens</label>
+            <label className="checkbox checkbox-row" style=${{ marginTop: "4px" }}>
+              <input
+                type="checkbox"
+                checked=${!!showMessagesLtvTable}
+                onChange=${(e) => setShowMessagesLtvTable(e.target.checked)}
+              />
+              <span>Mostrar tabela de LTV</span>
+            </label>
+            <span className="muted small">
+              Exibe ou oculta a tabela de coortes por <code>utm_term=lead_id</code> em Metricas Mensagens.
+            </span>
           </div>
         </div>
 
@@ -7124,7 +7197,7 @@ function App() {
   const [settingsDomains, setSettingsDomains] = useState([...DEFAULT_DOMAINS]);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsData, setSettingsData] = useState({
-    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false, nichos: [], urls: [], users: [],
+    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false, showMessagesLtvTable: true, nichos: [], urls: [], users: [],
   });
 
   useEffect(() => {
@@ -7133,7 +7206,10 @@ function App() {
       .then((r) => r.json())
       .then((d) => {
         if (d.code === "success" && d.data) {
-          const s = d.data;
+          const s = {
+            ...d.data,
+            showMessagesLtvTable: d.data.showMessagesLtvTable !== false,
+          };
           setSettingsData(s);
           if (Array.isArray(s.domains) && s.domains.length) setSettingsDomains(s.domains);
           setFilters((p) => ({
@@ -7160,7 +7236,10 @@ function App() {
       });
       const d = await res.json();
       if (d.code === "success" && d.data) {
-        const s = d.data;
+        const s = {
+          ...d.data,
+          showMessagesLtvTable: d.data.showMessagesLtvTable !== false,
+        };
         setSettingsData(s);
         if (Array.isArray(s.domains) && s.domains.length) setSettingsDomains(s.domains);
         setFilters((p) => ({
@@ -9991,6 +10070,7 @@ function App() {
                 termDailyRows=${joinadsTermDailyRows}
                 leadRows=${messenleadLeads}
                 unresolvedLeadIds=${messenleadUnresolvedLeadIds}
+                showLtvTable=${settingsData.showMessagesLtvTable !== false}
                 allowBidControl=${false}
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
@@ -10188,6 +10268,7 @@ function App() {
             termDailyRows=${joinadsTermDailyRows}
             leadRows=${messenleadLeads}
             unresolvedLeadIds=${messenleadUnresolvedLeadIds}
+            showLtvTable=${settingsData.showMessagesLtvTable !== false}
             onBudgetUpdate=${handleUpdateBudget}
             budgetLoading=${budgetLoading}
             onBidUpdate=${handleUpdateBid}

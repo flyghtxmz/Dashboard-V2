@@ -163,6 +163,7 @@ export async function onRequest({ request, env }) {
       const metaAccountId = String(body.metaAccountId || "").trim();
       const reportType = body.reportType || "Analytical";
       const includeAssets = !!body.includeAssets;
+      const showMessagesLtvTable = body.showMessagesLtvTable !== false;
       const nichos = sanitizeNichos(body.nichos);
       const urls = sanitizeUrls(body.urls);
       const users = await sanitizeUsers(body.users, current.users, allowedDomainSet);
@@ -172,6 +173,7 @@ export async function onRequest({ request, env }) {
         metaAccountId,
         reportType,
         includeAssets,
+        showMessagesLtvTable,
         nichos,
         urls,
         users,
