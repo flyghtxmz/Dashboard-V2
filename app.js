@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 108;
+const APP_VERSION_BUILD = 109;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1311,13 +1311,20 @@ function MetricasMensagensView({
           ? metaCampaignDailyByKey.get(`${row.campaign_key}|||${row.cohort_date}`)
           : null;
       const spendBrl = metaDaily ? toNumber(metaDaily.spend_brl) : 0;
+      const metaConversations = metaDaily ? toNumber(metaDaily.conversations) : 0;
       const profitBrl = row.revenue_brl - spendBrl;
       return {
         ...row,
         spend_brl: spendBrl,
-        meta_conversations: metaDaily ? toNumber(metaDaily.conversations) : 0,
+        meta_conversations: metaConversations,
+        roas_d0: spendBrl > 0 ? row.d0_brl / spendBrl : null,
+        roas_d1: spendBrl > 0 ? row.d1_brl / spendBrl : null,
+        roas_d2: spendBrl > 0 ? row.d2_brl / spendBrl : null,
+        roas_d3: spendBrl > 0 ? row.d3_brl / spendBrl : null,
         roas: spendBrl > 0 ? row.revenue_brl / spendBrl : null,
         profit_brl: profitBrl,
+        joinads_impressions_per_conversation:
+          metaConversations > 0 ? row.impressions / metaConversations : null,
         ecpm: row.impressions > 0 ? (row.revenue_usd / row.impressions) * 1000 : null,
       };
     })
@@ -1342,6 +1349,7 @@ function MetricasMensagensView({
       acc.d3_user_brl += row.d3_user_brl || 0;
       acc.user_commission_brl += row.user_commission_brl || 0;
       acc.spend_brl += row.spend_brl || 0;
+      acc.meta_conversations += row.meta_conversations || 0;
       Array.from(row.ads || []).forEach((ad) => acc.ads.add(ad));
       if (row.campaign_name || row.campaign_id) acc.campaigns.add(row.campaign_id || row.campaign_name);
       return acc;
@@ -1364,15 +1372,36 @@ function MetricasMensagensView({
       d3_user_brl: 0,
       user_commission_brl: 0,
       spend_brl: 0,
+      meta_conversations: 0,
       campaigns: new Set(),
       ads: new Set(),
     }
   );
+  campaignLtvTotals.roas_d0 =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.d0_brl / campaignLtvTotals.spend_brl
+      : null;
+  campaignLtvTotals.roas_d1 =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.d1_brl / campaignLtvTotals.spend_brl
+      : null;
+  campaignLtvTotals.roas_d2 =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.d2_brl / campaignLtvTotals.spend_brl
+      : null;
+  campaignLtvTotals.roas_d3 =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.d3_brl / campaignLtvTotals.spend_brl
+      : null;
   campaignLtvTotals.roas =
     campaignLtvTotals.spend_brl > 0
       ? campaignLtvTotals.revenue_brl / campaignLtvTotals.spend_brl
       : null;
   campaignLtvTotals.profit_brl = campaignLtvTotals.revenue_brl - campaignLtvTotals.spend_brl;
+  campaignLtvTotals.joinads_impressions_per_conversation =
+    campaignLtvTotals.meta_conversations > 0
+      ? campaignLtvTotals.impressions / campaignLtvTotals.meta_conversations
+      : null;
   campaignLtvTotals.ecpm =
     campaignLtvTotals.impressions > 0
       ? (campaignLtvTotals.revenue_usd / campaignLtvTotals.impressions) * 1000
@@ -1892,10 +1921,15 @@ function MetricasMensagensView({
                   ? null
                   : html`
                       <th>Gasto Meta</th>
-                      <th>ROAS</th>
+                      <th>ROAS D0</th>
+                      <th>ROAS D1</th>
+                      <th>ROAS D2</th>
+                      <th>ROAS D3</th>
+                      <th>ROAS total</th>
                       <th>Lucro</th>
                     `}
                 <th>Imp. JoinAds</th>
+                <th>Imp. JoinAds / conversa</th>
                 <th>Cliques JoinAds</th>
                 <th>${label}</th>
                 <th>Status LTV</th>
@@ -1942,10 +1976,19 @@ function MetricasMensagensView({
                           ? null
                           : html`
                               <td>${currencyBRL.format(row.spend_brl || 0)}</td>
+                              <td>${row.roas_d0 != null ? `${row.roas_d0.toFixed(2)}x` : "-"}</td>
+                              <td>${row.roas_d1 != null ? `${row.roas_d1.toFixed(2)}x` : "-"}</td>
+                              <td>${row.roas_d2 != null ? `${row.roas_d2.toFixed(2)}x` : "-"}</td>
+                              <td>${row.roas_d3 != null ? `${row.roas_d3.toFixed(2)}x` : "-"}</td>
                               <td>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</td>
                               <td>${currencyBRL.format(row.profit_brl || 0)}</td>
                             `}
                         <td>${number.format(row.impressions || 0)}</td>
+                        <td>
+                          ${row.joinads_impressions_per_conversation != null
+                            ? row.joinads_impressions_per_conversation.toFixed(2)
+                            : "-"}
+                        </td>
                         <td>${number.format(row.clicks || 0)}</td>
                         <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
                         <td>
@@ -1959,7 +2002,7 @@ function MetricasMensagensView({
                   )
                 : html`
                     <tr>
-                      <td colSpan=${showUserCommission ? 13 : 16}>
+                      <td colSpan=${showUserCommission ? 14 : 21}>
                         Sem <code>utm_term=ml_...</code> na JoinAds para o periodo.
                         Use <code>utm_term=${"{{entry.lead_id}}"}</code> nos links do Messenlead.
                       </td>
@@ -1981,10 +2024,21 @@ function MetricasMensagensView({
                         ? null
                         : html`
                             <td><strong>${currencyBRL.format(campaignLtvTotals.spend_brl || 0)}</strong></td>
+                            <td><strong>${campaignLtvTotals.roas_d0 != null ? `${campaignLtvTotals.roas_d0.toFixed(2)}x` : "-"}</strong></td>
+                            <td><strong>${campaignLtvTotals.roas_d1 != null ? `${campaignLtvTotals.roas_d1.toFixed(2)}x` : "-"}</strong></td>
+                            <td><strong>${campaignLtvTotals.roas_d2 != null ? `${campaignLtvTotals.roas_d2.toFixed(2)}x` : "-"}</strong></td>
+                            <td><strong>${campaignLtvTotals.roas_d3 != null ? `${campaignLtvTotals.roas_d3.toFixed(2)}x` : "-"}</strong></td>
                             <td><strong>${campaignLtvTotals.roas != null ? `${campaignLtvTotals.roas.toFixed(2)}x` : "-"}</strong></td>
                             <td><strong>${currencyBRL.format(campaignLtvTotals.profit_brl || 0)}</strong></td>
                           `}
                       <td><strong>${number.format(campaignLtvTotals.impressions)}</strong></td>
+                      <td>
+                        <strong>
+                          ${campaignLtvTotals.joinads_impressions_per_conversation != null
+                            ? campaignLtvTotals.joinads_impressions_per_conversation.toFixed(2)
+                            : "-"}
+                        </strong>
+                      </td>
                       <td><strong>${number.format(campaignLtvTotals.clicks)}</strong></td>
                       <td><strong>${campaignLtvTotals.ecpm != null ? currencyUSD.format(campaignLtvTotals.ecpm) : "-"}</strong></td>
                       <td></td>
@@ -2015,10 +2069,15 @@ function MetricasMensagensView({
                   ? null
                   : html`
                       <th>Gasto Meta</th>
-                      <th>ROAS</th>
+                      <th>ROAS D0</th>
+                      <th>ROAS D1</th>
+                      <th>ROAS D2</th>
+                      <th>ROAS D3</th>
+                      <th>ROAS total</th>
                       <th>Lucro</th>
                     `}
                 <th>Imp. JoinAds</th>
+                <th>Imp. JoinAds / conversa</th>
                 <th>Cliques JoinAds</th>
                 <th>${label}</th>
                 <th>Status LTV</th>
@@ -2052,10 +2111,15 @@ function MetricasMensagensView({
                   ? null
                   : html`
                       <td>${currencyBRL.format(180)}</td>
+                      <td>0.46x</td>
+                      <td>0.82x</td>
+                      <td>1.19x</td>
+                      <td>1.40x</td>
                       <td>1.85x</td>
                       <td>${currencyBRL.format(153)}</td>
                     `}
                 <td>${number.format(48320)}</td>
+                <td>${(48320 / 86).toFixed(2)}</td>
                 <td>${number.format(1184)}</td>
                 <td>${currencyUSD.format(6.89)}</td>
                 <td>
