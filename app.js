@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 107;
+const APP_VERSION_BUILD = 108;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1148,8 +1148,8 @@ function MetricasMensagensView({
             revenue_usd: 0,
             d0_usd: 0,
             d1_usd: 0,
+            d2_usd: 0,
             d3_usd: 0,
-            d7_usd: 0,
           };
         if (!item.first_seen_at && leadInfo.firstSeenAt) item.first_seen_at = leadInfo.firstSeenAt;
         if (!item.last_seen_at && leadInfo.lastSeenAt) item.last_seen_at = leadInfo.lastSeenAt;
@@ -1170,8 +1170,8 @@ function MetricasMensagensView({
         if (ageDays != null && ageDays >= 0) {
           if (ageDays <= 0) item.d0_usd += revenueUsd;
           if (ageDays <= 1) item.d1_usd += revenueUsd;
+          if (ageDays <= 2) item.d2_usd += revenueUsd;
           if (ageDays <= 3) item.d3_usd += revenueUsd;
-          if (ageDays <= 7) item.d7_usd += revenueUsd;
         }
         map.set(key, item);
         return map;
@@ -1183,13 +1183,13 @@ function MetricasMensagensView({
       revenue_brl: brlRate ? row.revenue_usd * brlRate : 0,
       d0_brl: brlRate ? row.d0_usd * brlRate : 0,
       d1_brl: brlRate ? row.d1_usd * brlRate : 0,
+      d2_brl: brlRate ? row.d2_usd * brlRate : 0,
       d3_brl: brlRate ? row.d3_usd * brlRate : 0,
-      d7_brl: brlRate ? row.d7_usd * brlRate : 0,
       ecpm: row.impressions > 0 ? (row.revenue_usd / row.impressions) * 1000 : null,
       d0_user_brl: calculateUserCommission(brlRate ? row.d0_usd * brlRate : 0, commissionPercent),
       d1_user_brl: calculateUserCommission(brlRate ? row.d1_usd * brlRate : 0, commissionPercent),
+      d2_user_brl: calculateUserCommission(brlRate ? row.d2_usd * brlRate : 0, commissionPercent),
       d3_user_brl: calculateUserCommission(brlRate ? row.d3_usd * brlRate : 0, commissionPercent),
-      d7_user_brl: calculateUserCommission(brlRate ? row.d7_usd * brlRate : 0, commissionPercent),
       user_commission_brl: calculateUserCommission(
         brlRate ? row.revenue_usd * brlRate : 0,
         commissionPercent
@@ -1273,12 +1273,12 @@ function MetricasMensagensView({
             revenue_brl: 0,
             d0_brl: 0,
             d1_brl: 0,
+            d2_brl: 0,
             d3_brl: 0,
-            d7_brl: 0,
             d0_user_brl: 0,
             d1_user_brl: 0,
+            d2_user_brl: 0,
             d3_user_brl: 0,
-            d7_user_brl: 0,
             user_commission_brl: 0,
           };
         item.leads += 1;
@@ -1290,12 +1290,12 @@ function MetricasMensagensView({
         item.revenue_brl += row.revenue_brl || 0;
         item.d0_brl += row.d0_brl || 0;
         item.d1_brl += row.d1_brl || 0;
+        item.d2_brl += row.d2_brl || 0;
         item.d3_brl += row.d3_brl || 0;
-        item.d7_brl += row.d7_brl || 0;
         item.d0_user_brl += row.d0_user_brl || 0;
         item.d1_user_brl += row.d1_user_brl || 0;
+        item.d2_user_brl += row.d2_user_brl || 0;
         item.d3_user_brl += row.d3_user_brl || 0;
-        item.d7_user_brl += row.d7_user_brl || 0;
         item.user_commission_brl += row.user_commission_brl || 0;
         if (adInfo.ad_name || row.ad_id) item.ads.add(adInfo.ad_name || row.ad_id);
         if (row.source_key) item.source_keys.add(row.source_key);
@@ -1334,12 +1334,12 @@ function MetricasMensagensView({
       acc.revenue_brl += row.revenue_brl || 0;
       acc.d0_brl += row.d0_brl || 0;
       acc.d1_brl += row.d1_brl || 0;
+      acc.d2_brl += row.d2_brl || 0;
       acc.d3_brl += row.d3_brl || 0;
-      acc.d7_brl += row.d7_brl || 0;
       acc.d0_user_brl += row.d0_user_brl || 0;
       acc.d1_user_brl += row.d1_user_brl || 0;
+      acc.d2_user_brl += row.d2_user_brl || 0;
       acc.d3_user_brl += row.d3_user_brl || 0;
-      acc.d7_user_brl += row.d7_user_brl || 0;
       acc.user_commission_brl += row.user_commission_brl || 0;
       acc.spend_brl += row.spend_brl || 0;
       Array.from(row.ads || []).forEach((ad) => acc.ads.add(ad));
@@ -1356,12 +1356,12 @@ function MetricasMensagensView({
       revenue_brl: 0,
       d0_brl: 0,
       d1_brl: 0,
+      d2_brl: 0,
       d3_brl: 0,
-      d7_brl: 0,
       d0_user_brl: 0,
       d1_user_brl: 0,
+      d2_user_brl: 0,
       d3_user_brl: 0,
-      d7_user_brl: 0,
       user_commission_brl: 0,
       spend_brl: 0,
       campaigns: new Set(),
@@ -1870,7 +1870,7 @@ function MetricasMensagensView({
         </div>
         <p className="muted small">
           Coorte real por <code>utm_term=lead_id</code>, agregada por campanha. O <code>lead_id</code>
-          continua sendo usado apenas como chave interna para ligar JoinAds ao Evo e calcular D0/D1/D3/D7.
+          continua sendo usado apenas como chave interna para ligar JoinAds ao Evo e calcular D0/D1/D2/D3.
           ${hasDailyLeadRevenue
             ? html`<strong> ${leadDailyRows.length} linhas diarias carregadas.</strong>`
             : html`<strong> Sem linhas diarias de lead no periodo.</strong>`}
@@ -1885,8 +1885,8 @@ function MetricasMensagensView({
                 <th>Anuncios</th>
                 <th>${showUserCommission ? "Lucro D0" : "Receita D0"}</th>
                 <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
+                <th>${showUserCommission ? "Lucro D2" : "Receita D2"}</th>
                 <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
-                <th>${showUserCommission ? "Lucro D7" : "Receita D7"}</th>
                 <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
                 ${showUserCommission
                   ? null
@@ -1931,8 +1931,8 @@ function MetricasMensagensView({
                         </td>
                         <td>${currencyBRL.format(showUserCommission ? row.d0_user_brl || 0 : row.d0_brl || 0)}</td>
                         <td>${currencyBRL.format(showUserCommission ? row.d1_user_brl || 0 : row.d1_brl || 0)}</td>
+                        <td>${currencyBRL.format(showUserCommission ? row.d2_user_brl || 0 : row.d2_brl || 0)}</td>
                         <td>${currencyBRL.format(showUserCommission ? row.d3_user_brl || 0 : row.d3_brl || 0)}</td>
-                        <td>${currencyBRL.format(showUserCommission ? row.d7_user_brl || 0 : row.d7_brl || 0)}</td>
                         <td>
                           ${showUserCommission
                             ? currencyBRL.format(row.user_commission_brl || 0)
@@ -1974,8 +1974,8 @@ function MetricasMensagensView({
                       <td><strong>${number.format(campaignLtvTotals.ads.size)}</strong></td>
                       <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d0_user_brl || 0 : campaignLtvTotals.d0_brl || 0)}</strong></td>
                       <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d1_user_brl || 0 : campaignLtvTotals.d1_brl || 0)}</strong></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d2_user_brl || 0 : campaignLtvTotals.d2_brl || 0)}</strong></td>
                       <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d3_user_brl || 0 : campaignLtvTotals.d3_brl || 0)}</strong></td>
-                      <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d7_user_brl || 0 : campaignLtvTotals.d7_brl || 0)}</strong></td>
                       <td><strong>${showUserCommission ? currencyBRL.format(campaignLtvTotals.user_commission_brl || 0) : currencyBRL.format(campaignLtvTotals.revenue_brl || 0)}</strong></td>
                       ${showUserCommission
                         ? null
@@ -2008,8 +2008,8 @@ function MetricasMensagensView({
                 <th>Anuncios</th>
                 <th>${showUserCommission ? "Lucro D0" : "Receita D0"}</th>
                 <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
+                <th>${showUserCommission ? "Lucro D2" : "Receita D2"}</th>
                 <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
-                <th>${showUserCommission ? "Lucro D7" : "Receita D7"}</th>
                 <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
                 ${showUserCommission
                   ? null
@@ -2045,8 +2045,8 @@ function MetricasMensagensView({
                 </td>
                 <td>${currencyBRL.format(82.2)}</td>
                 <td>${currencyBRL.format(146.9)}</td>
+                <td>${currencyBRL.format(214.6)}</td>
                 <td>${currencyBRL.format(251.4)}</td>
-                <td>${currencyBRL.format(333)}</td>
                 <td>${currencyBRL.format(333)}</td>
                 ${showUserCommission
                   ? null
