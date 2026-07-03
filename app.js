@@ -11,11 +11,12 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 109;
+const APP_VERSION_BUILD = 111;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const FX_FETCH_TIMEOUT_MS = 9000;
+const OPTIONAL_LTV_DAYS = [4, 5, 6, 7];
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -873,10 +874,16 @@ function MetricasMensagensView({
   bidLoading = {},
   allowBidControl = false,
   showLtvTable = true,
+  ltvExtraDays = [],
   attributionAudit = null,
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
+  const selectedLtvExtraDays = OPTIONAL_LTV_DAYS.filter((day) =>
+    (Array.isArray(ltvExtraDays) ? ltvExtraDays : []).map(Number).includes(day)
+  );
+  const visibleLtvDays = [0, 1, 2, 3, ...selectedLtvExtraDays];
+  const maxVisibleLtvDay = visibleLtvDays[visibleLtvDays.length - 1] || 3;
   const [messageBudgetInputs, setMessageBudgetInputs] = useState({});
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
@@ -1144,12 +1151,21 @@ function MetricasMensagensView({
             rows: 0,
             domains: new Set(),
             impressions: 0,
+            d3_impressions: 0,
+            d4_impressions: 0,
+            d5_impressions: 0,
+            d6_impressions: 0,
+            d7_impressions: 0,
             clicks: 0,
             revenue_usd: 0,
             d0_usd: 0,
             d1_usd: 0,
             d2_usd: 0,
             d3_usd: 0,
+            d4_usd: 0,
+            d5_usd: 0,
+            d6_usd: 0,
+            d7_usd: 0,
           };
         if (!item.first_seen_at && leadInfo.firstSeenAt) item.first_seen_at = leadInfo.firstSeenAt;
         if (!item.last_seen_at && leadInfo.lastSeenAt) item.last_seen_at = leadInfo.lastSeenAt;
@@ -1160,6 +1176,7 @@ function MetricasMensagensView({
         if (row.domain || row.name) item.domains.add(row.domain || row.name);
         item.impressions += toNumber(row.impressions);
         item.clicks += toNumber(row.clicks);
+        const rowImpressions = toNumber(row.impressions);
         const revenueUsd = toNumber(
           row.revenue_client != null ? row.revenue_client : row.revenue
         );
@@ -1171,7 +1188,26 @@ function MetricasMensagensView({
           if (ageDays <= 0) item.d0_usd += revenueUsd;
           if (ageDays <= 1) item.d1_usd += revenueUsd;
           if (ageDays <= 2) item.d2_usd += revenueUsd;
-          if (ageDays <= 3) item.d3_usd += revenueUsd;
+          if (ageDays <= 3) {
+            item.d3_usd += revenueUsd;
+            item.d3_impressions += rowImpressions;
+          }
+          if (ageDays <= 4) {
+            item.d4_usd += revenueUsd;
+            item.d4_impressions += rowImpressions;
+          }
+          if (ageDays <= 5) {
+            item.d5_usd += revenueUsd;
+            item.d5_impressions += rowImpressions;
+          }
+          if (ageDays <= 6) {
+            item.d6_usd += revenueUsd;
+            item.d6_impressions += rowImpressions;
+          }
+          if (ageDays <= 7) {
+            item.d7_usd += revenueUsd;
+            item.d7_impressions += rowImpressions;
+          }
         }
         map.set(key, item);
         return map;
@@ -1185,11 +1221,19 @@ function MetricasMensagensView({
       d1_brl: brlRate ? row.d1_usd * brlRate : 0,
       d2_brl: brlRate ? row.d2_usd * brlRate : 0,
       d3_brl: brlRate ? row.d3_usd * brlRate : 0,
+      d4_brl: brlRate ? row.d4_usd * brlRate : 0,
+      d5_brl: brlRate ? row.d5_usd * brlRate : 0,
+      d6_brl: brlRate ? row.d6_usd * brlRate : 0,
+      d7_brl: brlRate ? row.d7_usd * brlRate : 0,
       ecpm: row.impressions > 0 ? (row.revenue_usd / row.impressions) * 1000 : null,
       d0_user_brl: calculateUserCommission(brlRate ? row.d0_usd * brlRate : 0, commissionPercent),
       d1_user_brl: calculateUserCommission(brlRate ? row.d1_usd * brlRate : 0, commissionPercent),
       d2_user_brl: calculateUserCommission(brlRate ? row.d2_usd * brlRate : 0, commissionPercent),
       d3_user_brl: calculateUserCommission(brlRate ? row.d3_usd * brlRate : 0, commissionPercent),
+      d4_user_brl: calculateUserCommission(brlRate ? row.d4_usd * brlRate : 0, commissionPercent),
+      d5_user_brl: calculateUserCommission(brlRate ? row.d5_usd * brlRate : 0, commissionPercent),
+      d6_user_brl: calculateUserCommission(brlRate ? row.d6_usd * brlRate : 0, commissionPercent),
+      d7_user_brl: calculateUserCommission(brlRate ? row.d7_usd * brlRate : 0, commissionPercent),
       user_commission_brl: calculateUserCommission(
         brlRate ? row.revenue_usd * brlRate : 0,
         commissionPercent
@@ -1268,6 +1312,11 @@ function MetricasMensagensView({
             domains: new Set(),
             source_keys: new Set(),
             impressions: 0,
+            d3_impressions: 0,
+            d4_impressions: 0,
+            d5_impressions: 0,
+            d6_impressions: 0,
+            d7_impressions: 0,
             clicks: 0,
             revenue_usd: 0,
             revenue_brl: 0,
@@ -1275,16 +1324,29 @@ function MetricasMensagensView({
             d1_brl: 0,
             d2_brl: 0,
             d3_brl: 0,
+            d4_brl: 0,
+            d5_brl: 0,
+            d6_brl: 0,
+            d7_brl: 0,
             d0_user_brl: 0,
             d1_user_brl: 0,
             d2_user_brl: 0,
             d3_user_brl: 0,
+            d4_user_brl: 0,
+            d5_user_brl: 0,
+            d6_user_brl: 0,
+            d7_user_brl: 0,
             user_commission_brl: 0,
           };
         item.leads += 1;
         item.resolved += row.resolved ? 1 : 0;
         item.joinads_rows += row.rows || 0;
         item.impressions += row.impressions || 0;
+        item.d3_impressions += row.d3_impressions || 0;
+        item.d4_impressions += row.d4_impressions || 0;
+        item.d5_impressions += row.d5_impressions || 0;
+        item.d6_impressions += row.d6_impressions || 0;
+        item.d7_impressions += row.d7_impressions || 0;
         item.clicks += row.clicks || 0;
         item.revenue_usd += row.revenue_usd || 0;
         item.revenue_brl += row.revenue_brl || 0;
@@ -1292,10 +1354,18 @@ function MetricasMensagensView({
         item.d1_brl += row.d1_brl || 0;
         item.d2_brl += row.d2_brl || 0;
         item.d3_brl += row.d3_brl || 0;
+        item.d4_brl += row.d4_brl || 0;
+        item.d5_brl += row.d5_brl || 0;
+        item.d6_brl += row.d6_brl || 0;
+        item.d7_brl += row.d7_brl || 0;
         item.d0_user_brl += row.d0_user_brl || 0;
         item.d1_user_brl += row.d1_user_brl || 0;
         item.d2_user_brl += row.d2_user_brl || 0;
         item.d3_user_brl += row.d3_user_brl || 0;
+        item.d4_user_brl += row.d4_user_brl || 0;
+        item.d5_user_brl += row.d5_user_brl || 0;
+        item.d6_user_brl += row.d6_user_brl || 0;
+        item.d7_user_brl += row.d7_user_brl || 0;
         item.user_commission_brl += row.user_commission_brl || 0;
         if (adInfo.ad_name || row.ad_id) item.ads.add(adInfo.ad_name || row.ad_id);
         if (row.source_key) item.source_keys.add(row.source_key);
@@ -1312,6 +1382,9 @@ function MetricasMensagensView({
           : null;
       const spendBrl = metaDaily ? toNumber(metaDaily.spend_brl) : 0;
       const metaConversations = metaDaily ? toNumber(metaDaily.conversations) : 0;
+      const visibleWindowImpressions = hasDailyLeadRevenue
+        ? row[`d${maxVisibleLtvDay}_impressions`]
+        : null;
       const profitBrl = row.revenue_brl - spendBrl;
       return {
         ...row,
@@ -1321,10 +1394,17 @@ function MetricasMensagensView({
         roas_d1: spendBrl > 0 ? row.d1_brl / spendBrl : null,
         roas_d2: spendBrl > 0 ? row.d2_brl / spendBrl : null,
         roas_d3: spendBrl > 0 ? row.d3_brl / spendBrl : null,
+        roas_d4: spendBrl > 0 ? row.d4_brl / spendBrl : null,
+        roas_d5: spendBrl > 0 ? row.d5_brl / spendBrl : null,
+        roas_d6: spendBrl > 0 ? row.d6_brl / spendBrl : null,
+        roas_d7: spendBrl > 0 ? row.d7_brl / spendBrl : null,
         roas: spendBrl > 0 ? row.revenue_brl / spendBrl : null,
         profit_brl: profitBrl,
+        joinads_impressions_visible_window: visibleWindowImpressions,
         joinads_impressions_per_conversation:
-          metaConversations > 0 ? row.impressions / metaConversations : null,
+          metaConversations > 0 && visibleWindowImpressions != null
+            ? visibleWindowImpressions / metaConversations
+            : null,
         ecpm: row.impressions > 0 ? (row.revenue_usd / row.impressions) * 1000 : null,
       };
     })
@@ -1336,6 +1416,7 @@ function MetricasMensagensView({
       acc.resolved += row.resolved || 0;
       acc.joinads_rows += row.joinads_rows || 0;
       acc.impressions += row.impressions || 0;
+      acc.visible_window_impressions += row.joinads_impressions_visible_window || 0;
       acc.clicks += row.clicks || 0;
       acc.revenue_usd += row.revenue_usd || 0;
       acc.revenue_brl += row.revenue_brl || 0;
@@ -1343,10 +1424,18 @@ function MetricasMensagensView({
       acc.d1_brl += row.d1_brl || 0;
       acc.d2_brl += row.d2_brl || 0;
       acc.d3_brl += row.d3_brl || 0;
+      acc.d4_brl += row.d4_brl || 0;
+      acc.d5_brl += row.d5_brl || 0;
+      acc.d6_brl += row.d6_brl || 0;
+      acc.d7_brl += row.d7_brl || 0;
       acc.d0_user_brl += row.d0_user_brl || 0;
       acc.d1_user_brl += row.d1_user_brl || 0;
       acc.d2_user_brl += row.d2_user_brl || 0;
       acc.d3_user_brl += row.d3_user_brl || 0;
+      acc.d4_user_brl += row.d4_user_brl || 0;
+      acc.d5_user_brl += row.d5_user_brl || 0;
+      acc.d6_user_brl += row.d6_user_brl || 0;
+      acc.d7_user_brl += row.d7_user_brl || 0;
       acc.user_commission_brl += row.user_commission_brl || 0;
       acc.spend_brl += row.spend_brl || 0;
       acc.meta_conversations += row.meta_conversations || 0;
@@ -1359,6 +1448,7 @@ function MetricasMensagensView({
       resolved: 0,
       joinads_rows: 0,
       impressions: 0,
+      visible_window_impressions: 0,
       clicks: 0,
       revenue_usd: 0,
       revenue_brl: 0,
@@ -1366,10 +1456,18 @@ function MetricasMensagensView({
       d1_brl: 0,
       d2_brl: 0,
       d3_brl: 0,
+      d4_brl: 0,
+      d5_brl: 0,
+      d6_brl: 0,
+      d7_brl: 0,
       d0_user_brl: 0,
       d1_user_brl: 0,
       d2_user_brl: 0,
       d3_user_brl: 0,
+      d4_user_brl: 0,
+      d5_user_brl: 0,
+      d6_user_brl: 0,
+      d7_user_brl: 0,
       user_commission_brl: 0,
       spend_brl: 0,
       meta_conversations: 0,
@@ -1393,14 +1491,30 @@ function MetricasMensagensView({
     campaignLtvTotals.spend_brl > 0
       ? campaignLtvTotals.d3_brl / campaignLtvTotals.spend_brl
       : null;
+  campaignLtvTotals.roas_d4 =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.d4_brl / campaignLtvTotals.spend_brl
+      : null;
+  campaignLtvTotals.roas_d5 =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.d5_brl / campaignLtvTotals.spend_brl
+      : null;
+  campaignLtvTotals.roas_d6 =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.d6_brl / campaignLtvTotals.spend_brl
+      : null;
+  campaignLtvTotals.roas_d7 =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.d7_brl / campaignLtvTotals.spend_brl
+      : null;
   campaignLtvTotals.roas =
     campaignLtvTotals.spend_brl > 0
       ? campaignLtvTotals.revenue_brl / campaignLtvTotals.spend_brl
       : null;
   campaignLtvTotals.profit_brl = campaignLtvTotals.revenue_brl - campaignLtvTotals.spend_brl;
   campaignLtvTotals.joinads_impressions_per_conversation =
-    campaignLtvTotals.meta_conversations > 0
-      ? campaignLtvTotals.impressions / campaignLtvTotals.meta_conversations
+    campaignLtvTotals.meta_conversations > 0 && hasDailyLeadRevenue
+      ? campaignLtvTotals.visible_window_impressions / campaignLtvTotals.meta_conversations
       : null;
   campaignLtvTotals.ecpm =
     campaignLtvTotals.impressions > 0
@@ -1584,6 +1698,29 @@ function MetricasMensagensView({
     },
     samples: sampleRows,
   };
+  const exampleLtvRevenueByDay = {
+    0: 82.2,
+    1: 146.9,
+    2: 214.6,
+    3: 251.4,
+    4: 282.6,
+    5: 301.8,
+    6: 320.4,
+    7: 333,
+  };
+  const exampleLtvRoasByDay = {
+    0: "0.46x",
+    1: "0.82x",
+    2: "1.19x",
+    3: "1.40x",
+    4: "1.57x",
+    5: "1.68x",
+    6: "1.78x",
+    7: "1.85x",
+  };
+  const exampleLtvImpressionsByDay = { 3: 36200, 4: 40100, 5: 42650, 6: 45700, 7: 48320 };
+  const exampleWindowImpressions =
+    exampleLtvImpressionsByDay[maxVisibleLtvDay] || exampleLtvImpressionsByDay[3];
 
   return html`
     <main className="grid">
@@ -1899,7 +2036,7 @@ function MetricasMensagensView({
         </div>
         <p className="muted small">
           Coorte real por <code>utm_term=lead_id</code>, agregada por campanha. O <code>lead_id</code>
-          continua sendo usado apenas como chave interna para ligar JoinAds ao Evo e calcular D0/D1/D2/D3.
+          continua sendo usado apenas como chave interna para ligar JoinAds ao Evo e calcular D0-D${maxVisibleLtvDay}.
           ${hasDailyLeadRevenue
             ? html`<strong> ${leadDailyRows.length} linhas diarias carregadas.</strong>`
             : html`<strong> Sem linhas diarias de lead no periodo.</strong>`}
@@ -1916,6 +2053,9 @@ function MetricasMensagensView({
                 <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
                 <th>${showUserCommission ? "Lucro D2" : "Receita D2"}</th>
                 <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
+                ${selectedLtvExtraDays.map(
+                  (day) => html`<th>${showUserCommission ? `Lucro D${day}` : `Receita D${day}`}</th>`
+                )}
                 <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
                 ${showUserCommission
                   ? null
@@ -1925,11 +2065,12 @@ function MetricasMensagensView({
                       <th>ROAS D1</th>
                       <th>ROAS D2</th>
                       <th>ROAS D3</th>
+                      ${selectedLtvExtraDays.map((day) => html`<th>ROAS D${day}</th>`)}
                       <th>ROAS total</th>
                       <th>Lucro</th>
                     `}
                 <th>Imp. JoinAds</th>
-                <th>Imp. JoinAds / conversa</th>
+                <th>Imp. JoinAds / conversa D${maxVisibleLtvDay}</th>
                 <th>Cliques JoinAds</th>
                 <th>${label}</th>
                 <th>Status LTV</th>
@@ -1967,6 +2108,17 @@ function MetricasMensagensView({
                         <td>${currencyBRL.format(showUserCommission ? row.d1_user_brl || 0 : row.d1_brl || 0)}</td>
                         <td>${currencyBRL.format(showUserCommission ? row.d2_user_brl || 0 : row.d2_brl || 0)}</td>
                         <td>${currencyBRL.format(showUserCommission ? row.d3_user_brl || 0 : row.d3_brl || 0)}</td>
+                        ${selectedLtvExtraDays.map(
+                          (day) => html`
+                            <td>
+                              ${currencyBRL.format(
+                                showUserCommission
+                                  ? row[`d${day}_user_brl`] || 0
+                                  : row[`d${day}_brl`] || 0
+                              )}
+                            </td>
+                          `
+                        )}
                         <td>
                           ${showUserCommission
                             ? currencyBRL.format(row.user_commission_brl || 0)
@@ -1980,6 +2132,15 @@ function MetricasMensagensView({
                               <td>${row.roas_d1 != null ? `${row.roas_d1.toFixed(2)}x` : "-"}</td>
                               <td>${row.roas_d2 != null ? `${row.roas_d2.toFixed(2)}x` : "-"}</td>
                               <td>${row.roas_d3 != null ? `${row.roas_d3.toFixed(2)}x` : "-"}</td>
+                              ${selectedLtvExtraDays.map(
+                                (day) => html`
+                                  <td>
+                                    ${row[`roas_d${day}`] != null
+                                      ? `${row[`roas_d${day}`].toFixed(2)}x`
+                                      : "-"}
+                                  </td>
+                                `
+                              )}
                               <td>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</td>
                               <td>${currencyBRL.format(row.profit_brl || 0)}</td>
                             `}
@@ -2002,7 +2163,7 @@ function MetricasMensagensView({
                   )
                 : html`
                     <tr>
-                      <td colSpan=${showUserCommission ? 14 : 21}>
+                      <td colSpan=${showUserCommission ? 14 + selectedLtvExtraDays.length : 21 + selectedLtvExtraDays.length * 2}>
                         Sem <code>utm_term=ml_...</code> na JoinAds para o periodo.
                         Use <code>utm_term=${"{{entry.lead_id}}"}</code> nos links do Messenlead.
                       </td>
@@ -2019,6 +2180,19 @@ function MetricasMensagensView({
                       <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d1_user_brl || 0 : campaignLtvTotals.d1_brl || 0)}</strong></td>
                       <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d2_user_brl || 0 : campaignLtvTotals.d2_brl || 0)}</strong></td>
                       <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d3_user_brl || 0 : campaignLtvTotals.d3_brl || 0)}</strong></td>
+                      ${selectedLtvExtraDays.map(
+                        (day) => html`
+                          <td>
+                            <strong>
+                              ${currencyBRL.format(
+                                showUserCommission
+                                  ? campaignLtvTotals[`d${day}_user_brl`] || 0
+                                  : campaignLtvTotals[`d${day}_brl`] || 0
+                              )}
+                            </strong>
+                          </td>
+                        `
+                      )}
                       <td><strong>${showUserCommission ? currencyBRL.format(campaignLtvTotals.user_commission_brl || 0) : currencyBRL.format(campaignLtvTotals.revenue_brl || 0)}</strong></td>
                       ${showUserCommission
                         ? null
@@ -2028,6 +2202,17 @@ function MetricasMensagensView({
                             <td><strong>${campaignLtvTotals.roas_d1 != null ? `${campaignLtvTotals.roas_d1.toFixed(2)}x` : "-"}</strong></td>
                             <td><strong>${campaignLtvTotals.roas_d2 != null ? `${campaignLtvTotals.roas_d2.toFixed(2)}x` : "-"}</strong></td>
                             <td><strong>${campaignLtvTotals.roas_d3 != null ? `${campaignLtvTotals.roas_d3.toFixed(2)}x` : "-"}</strong></td>
+                            ${selectedLtvExtraDays.map(
+                              (day) => html`
+                                <td>
+                                  <strong>
+                                    ${campaignLtvTotals[`roas_d${day}`] != null
+                                      ? `${campaignLtvTotals[`roas_d${day}`].toFixed(2)}x`
+                                      : "-"}
+                                  </strong>
+                                </td>
+                              `
+                            )}
                             <td><strong>${campaignLtvTotals.roas != null ? `${campaignLtvTotals.roas.toFixed(2)}x` : "-"}</strong></td>
                             <td><strong>${currencyBRL.format(campaignLtvTotals.profit_brl || 0)}</strong></td>
                           `}
@@ -2064,6 +2249,9 @@ function MetricasMensagensView({
                 <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
                 <th>${showUserCommission ? "Lucro D2" : "Receita D2"}</th>
                 <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
+                ${selectedLtvExtraDays.map(
+                  (day) => html`<th>${showUserCommission ? `Lucro D${day}` : `Receita D${day}`}</th>`
+                )}
                 <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
                 ${showUserCommission
                   ? null
@@ -2073,11 +2261,12 @@ function MetricasMensagensView({
                       <th>ROAS D1</th>
                       <th>ROAS D2</th>
                       <th>ROAS D3</th>
+                      ${selectedLtvExtraDays.map((day) => html`<th>ROAS D${day}</th>`)}
                       <th>ROAS total</th>
                       <th>Lucro</th>
                     `}
                 <th>Imp. JoinAds</th>
-                <th>Imp. JoinAds / conversa</th>
+                <th>Imp. JoinAds / conversa D${maxVisibleLtvDay}</th>
                 <th>Cliques JoinAds</th>
                 <th>${label}</th>
                 <th>Status LTV</th>
@@ -2106,6 +2295,9 @@ function MetricasMensagensView({
                 <td>${currencyBRL.format(146.9)}</td>
                 <td>${currencyBRL.format(214.6)}</td>
                 <td>${currencyBRL.format(251.4)}</td>
+                ${selectedLtvExtraDays.map(
+                  (day) => html`<td>${currencyBRL.format(exampleLtvRevenueByDay[day] || 333)}</td>`
+                )}
                 <td>${currencyBRL.format(333)}</td>
                 ${showUserCommission
                   ? null
@@ -2115,11 +2307,14 @@ function MetricasMensagensView({
                       <td>0.82x</td>
                       <td>1.19x</td>
                       <td>1.40x</td>
+                      ${selectedLtvExtraDays.map(
+                        (day) => html`<td>${exampleLtvRoasByDay[day] || "1.85x"}</td>`
+                      )}
                       <td>1.85x</td>
                       <td>${currencyBRL.format(153)}</td>
                     `}
                 <td>${number.format(48320)}</td>
-                <td>${(48320 / 86).toFixed(2)}</td>
+                <td>${(exampleWindowImpressions / 86).toFixed(2)}</td>
                 <td>${number.format(1184)}</td>
                 <td>${currencyUSD.format(6.89)}</td>
                 <td>
@@ -6311,6 +6506,13 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [reportType, setReportType] = useState(settings.reportType || "Analytical");
   const [includeAssets, setIncludeAssets] = useState(!!settings.includeAssets);
   const [showMessagesLtvTable, setShowMessagesLtvTable] = useState(settings.showMessagesLtvTable !== false);
+  const [messagesLtvExtraDays, setMessagesLtvExtraDays] = useState(
+    OPTIONAL_LTV_DAYS.filter((day) =>
+      (Array.isArray(settings.messagesLtvExtraDays) ? settings.messagesLtvExtraDays : [])
+        .map(Number)
+        .includes(day)
+    )
+  );
   const [nichos, setNichos] = useState(Array.isArray(settings.nichos) ? settings.nichos : []);
   const [urls, setUrls] = useState(Array.isArray(settings.urls) ? settings.urls : []);
   const [users, setUsers] = useState(
@@ -6342,6 +6544,15 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const [editPaises, setEditPaises] = useState([]);
   const [editPaisInput, setEditPaisInput] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
+
+  const toggleMessagesLtvExtraDay = (day, checked) => {
+    setMessagesLtvExtraDays((prev) => {
+      const current = new Set((Array.isArray(prev) ? prev : []).map(Number));
+      if (checked) current.add(day);
+      else current.delete(day);
+      return OPTIONAL_LTV_DAYS.filter((item) => current.has(item));
+    });
+  };
 
   const toSlug = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
@@ -6460,6 +6671,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
         reportType,
         includeAssets,
         showMessagesLtvTable,
+        messagesLtvExtraDays,
         nichos,
         urls,
         users: users.map((user) => ({
@@ -6539,6 +6751,21 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             <span className="muted small">
               Exibe ou oculta a tabela de coortes por <code>utm_term=lead_id</code> em Metricas Mensagens.
             </span>
+            <div className="muted small" style=${{ marginTop: "10px" }}>
+              Colunas extras de LTV (D0-D3 ficam sempre ativos):
+            </div>
+            <div style=${{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "6px" }}>
+              ${OPTIONAL_LTV_DAYS.map((day) => html`
+                <label key=${day} className="checkbox checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked=${messagesLtvExtraDays.includes(day)}
+                    onChange=${(e) => toggleMessagesLtvExtraDay(day, e.target.checked)}
+                  />
+                  <span>D${day}</span>
+                </label>
+              `)}
+            </div>
           </div>
         </div>
 
@@ -7455,7 +7682,7 @@ function App() {
   const [settingsDomains, setSettingsDomains] = useState([...DEFAULT_DOMAINS]);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsData, setSettingsData] = useState({
-    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false, showMessagesLtvTable: true, nichos: [], urls: [], users: [],
+    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false, showMessagesLtvTable: true, messagesLtvExtraDays: [], nichos: [], urls: [], users: [],
   });
 
   useEffect(() => {
@@ -7467,6 +7694,11 @@ function App() {
           const s = {
             ...d.data,
             showMessagesLtvTable: d.data.showMessagesLtvTable !== false,
+            messagesLtvExtraDays: OPTIONAL_LTV_DAYS.filter((day) =>
+              (Array.isArray(d.data.messagesLtvExtraDays) ? d.data.messagesLtvExtraDays : [])
+                .map(Number)
+                .includes(day)
+            ),
           };
           setSettingsData(s);
           if (Array.isArray(s.domains) && s.domains.length) setSettingsDomains(s.domains);
@@ -7497,6 +7729,11 @@ function App() {
         const s = {
           ...d.data,
           showMessagesLtvTable: d.data.showMessagesLtvTable !== false,
+          messagesLtvExtraDays: OPTIONAL_LTV_DAYS.filter((day) =>
+            (Array.isArray(d.data.messagesLtvExtraDays) ? d.data.messagesLtvExtraDays : [])
+              .map(Number)
+              .includes(day)
+          ),
         };
         setSettingsData(s);
         if (Array.isArray(s.domains) && s.domains.length) setSettingsDomains(s.domains);
@@ -10329,6 +10566,7 @@ function App() {
                 leadRows=${messenleadLeads}
                 unresolvedLeadIds=${messenleadUnresolvedLeadIds}
                 showLtvTable=${settingsData.showMessagesLtvTable !== false}
+                ltvExtraDays=${settingsData.messagesLtvExtraDays || []}
                 allowBidControl=${false}
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
@@ -10527,6 +10765,7 @@ function App() {
             leadRows=${messenleadLeads}
             unresolvedLeadIds=${messenleadUnresolvedLeadIds}
             showLtvTable=${settingsData.showMessagesLtvTable !== false}
+            ltvExtraDays=${settingsData.messagesLtvExtraDays || []}
             onBudgetUpdate=${handleUpdateBudget}
             budgetLoading=${budgetLoading}
             onBidUpdate=${handleUpdateBid}

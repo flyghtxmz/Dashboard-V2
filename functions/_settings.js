@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS = {
   reportType: "Analytical",
   includeAssets: false,
   showMessagesLtvTable: true,
+  messagesLtvExtraDays: [],
   nichos: [],
   urls: [],
   users: [],
@@ -108,6 +109,17 @@ function normalizeUsers(values) {
     : [];
 }
 
+function normalizeMessagesLtvExtraDays(values) {
+  const allowed = new Set([4, 5, 6, 7]);
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => Number(value))
+        .filter((value) => allowed.has(value))
+    )
+  ).sort((a, b) => a - b);
+}
+
 function normalizeCommissionPercent(value) {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue) || numberValue < 0) return 0;
@@ -125,6 +137,7 @@ export function normalizeSettings(raw) {
       reportType: parsed.reportType || "Analytical",
       includeAssets: !!parsed.includeAssets,
       showMessagesLtvTable: parsed.showMessagesLtvTable !== false,
+      messagesLtvExtraDays: normalizeMessagesLtvExtraDays(parsed.messagesLtvExtraDays),
       nichos: normalizeNichos(parsed.nichos),
       urls: normalizeUrls(parsed.urls),
       users: normalizeUsers(parsed.users),
@@ -186,6 +199,7 @@ export function toPublicSettings(settings, session) {
     reportType: normalized.reportType,
     includeAssets: normalized.includeAssets,
     showMessagesLtvTable: normalized.showMessagesLtvTable,
+    messagesLtvExtraDays: normalized.messagesLtvExtraDays,
     nichos: normalized.nichos,
     urls: isAdmin ? normalized.urls : filterUrlsByDomains(normalized.urls, allowedDomains),
     users: isAdmin ? normalized.users.map(toPublicUser) : [],

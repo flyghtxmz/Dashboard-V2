@@ -164,6 +164,9 @@ export async function onRequest({ request, env }) {
       const reportType = body.reportType || "Analytical";
       const includeAssets = !!body.includeAssets;
       const showMessagesLtvTable = body.showMessagesLtvTable !== false;
+      const messagesLtvExtraDays = Array.isArray(body.messagesLtvExtraDays)
+        ? body.messagesLtvExtraDays
+        : [];
       const nichos = sanitizeNichos(body.nichos);
       const urls = sanitizeUrls(body.urls);
       const users = await sanitizeUsers(body.users, current.users, allowedDomainSet);
@@ -174,6 +177,7 @@ export async function onRequest({ request, env }) {
         reportType,
         includeAssets,
         showMessagesLtvTable,
+        messagesLtvExtraDays,
         nichos,
         urls,
         users,
