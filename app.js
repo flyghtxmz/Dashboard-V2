@@ -457,6 +457,40 @@ function formatError(err) {
   return err.message || "Erro inesperado";
 }
 
+function toggleTheme() {
+  try {
+    const root = document.documentElement;
+    let cur = root.getAttribute("data-theme");
+    if (!cur) {
+      cur = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+    }
+    const next = cur === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    localStorage.setItem("cd-theme", next);
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function ThemeToggle() {
+  return html`
+    <button
+      className="ghost theme-toggle"
+      type="button"
+      title="Alternar tema claro/escuro"
+      aria-label="Alternar tema claro/escuro"
+      onClick=${toggleTheme}
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"></circle>
+        <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"></path>
+      </svg>
+    </button>
+  `;
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function retryOnSubcode33(fn) {
@@ -1803,7 +1837,7 @@ function MetricasMensagensView({
                             <td>${row.meta_cost_per_result != null ? currencyBRL.format(row.meta_cost_per_result) : "-"}</td>
                             <td>${row.cost_per_conversation != null ? currencyBRL.format(row.cost_per_conversation) : "-"}</td>
                             <td>${row.revenue_per_conversation != null ? currencyBRL.format(row.revenue_per_conversation) : "-"}</td>
-                            <td>${row.profit_per_conversation != null ? currencyBRL.format(row.profit_per_conversation) : "-"}</td>
+                            <td>${row.profit_per_conversation != null ? html`<span className=${row.profit_per_conversation >= 0 ? "pos-pill" : "neg-pill"}>${currencyBRL.format(row.profit_per_conversation)}</span>` : "-"}</td>
                           `}
                       <td>${number.format(row.joinads_impressions || 0)}</td>
                       <td>${row.joinads_impressions_per_conversation != null ? row.joinads_impressions_per_conversation.toFixed(2) : "-"}</td>
@@ -1815,9 +1849,9 @@ function MetricasMensagensView({
                         : html`
                             <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
                             <td>${currencyBRL.format(row.revenue_brl || 0)}</td>
-                            <td>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</td>
-                            <td>${currencyBRL.format(row.profit_brl || 0)}</td>
-                            <td>${row.margin_pct != null ? `${row.margin_pct.toFixed(1)}%` : "-"}</td>
+                            <td>${row.roas != null ? html`<span className=${row.roas >= 1 ? "pos" : "neg"}>${row.roas.toFixed(2)}x</span>` : "-"}</td>
+                            <td><span className=${row.profit_brl > 0 ? "pos" : row.profit_brl < 0 ? "neg" : ""}>${currencyBRL.format(row.profit_brl || 0)}</span></td>
+                            <td>${row.margin_pct != null ? html`<span className=${row.margin_pct >= 0 ? "pos" : "neg"}>${row.margin_pct.toFixed(1)}%</span>` : "-"}</td>
                           `}
                       <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
                       ${allowBidControl
@@ -7301,6 +7335,7 @@ function EditorPlaceholderView({ session, onLogout }) {
           </p>
         </div>
         <div className="actions">
+          ${html`<${ThemeToggle} />`}
           <div className="login-topbar-user">
             <span className="login-topbar-email">${getSessionName(session)}</span>
             <button className="ghost" style=${{ fontSize: "0.8rem", padding: "5px 12px" }} onClick=${onLogout}>
@@ -10245,6 +10280,7 @@ function App() {
             </p>
           </div>
           <div className="actions">
+            ${html`<${ThemeToggle} />`}
             ${(activeTab === "dashboard" || activeTab === "metricas_mensagens")
               ? html`<div className="muted small">
                   ${formatFxLabel(fxInfo, fxStatus)}
@@ -10383,6 +10419,7 @@ function App() {
           </p>
         </div>
         <div className="actions">
+          ${html`<${ThemeToggle} />`}
           <div className="muted small">
             ${formatFxLabel(fxInfo, fxStatus)}
           </div>
