@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 106;
+const APP_VERSION_BUILD = 107;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1196,10 +1196,138 @@ function MetricasMensagensView({
       ),
     }))
     .sort((a, b) => b.revenue_usd - a.revenue_usd);
-  const leadLtvVisibleRows = leadLtvRows.slice(0, 50);
-  const leadLtvTotals = leadLtvRows.reduce(
+  const metaAdInfoById = new Map();
+  const metaCampaignDailyByKey = new Map();
+  safeRows.filter((row) => isMessageMetricsRow(row)).forEach((row) => {
+    const adId = normalizeKey(row.ad_id || "");
+    const campaignId = String(row.campaign_id || "").trim();
+    const campaignName = String(row.campaign_name || "").trim();
+    const campaignKey = normalizeKey(campaignId || campaignName || "");
+    const adName = String(row.ad_name || "").trim();
+    const rowDate = String(row.date_start || row.date || "").slice(0, 10);
+    const rowSpend = toNumber(row.spend_value || row.spend);
+
+    if (adId) {
+      const current =
+        metaAdInfoById.get(adId) || {
+          ad_id: row.ad_id || "",
+          ad_name: adName || row.ad_id || "",
+          campaign_id: campaignId,
+          campaign_name: campaignName || campaignId || "Sem campanha",
+        };
+      if (adName && (!current.ad_name || current.ad_name === current.ad_id)) current.ad_name = adName;
+      if (!current.campaign_id && campaignId) current.campaign_id = campaignId;
+      if (
+        campaignName &&
+        (!current.campaign_name ||
+          current.campaign_name === current.campaign_id ||
+          current.campaign_name === "Sem campanha")
+      ) {
+        current.campaign_name = campaignName;
+      }
+      metaAdInfoById.set(adId, current);
+    }
+
+    if (campaignKey && rowDate) {
+      const dailyKey = `${campaignKey}|||${rowDate}`;
+      const current =
+        metaCampaignDailyByKey.get(dailyKey) || {
+          spend_brl: 0,
+          conversations: 0,
+          impressions: 0,
+          clicks: 0,
+          ads: new Set(),
+        };
+      current.spend_brl += rowSpend;
+      current.conversations += toNumber(row.messaging_conversations_started);
+      current.impressions += toNumber(row.meta_impressions_value || row.impressions);
+      current.clicks += toNumber(row.meta_clicks_value || row.clicks);
+      if (row.ad_id || row.ad_name) current.ads.add(row.ad_id || row.ad_name);
+      metaCampaignDailyByKey.set(dailyKey, current);
+    }
+  });
+  const campaignLtvRows = Array.from(
+    leadLtvRows
+      .reduce((map, row) => {
+        const adInfo = metaAdInfoById.get(normalizeKey(row.ad_id || "")) || {};
+        const campaignId = adInfo.campaign_id || "";
+        const campaignName = adInfo.campaign_name || campaignId || "Sem campanha";
+        const campaignKey = normalizeKey(campaignId || campaignName || row.ad_id || row.source_key || "unattributed");
+        const cohortDate = row.first_seen_at ? String(row.first_seen_at).slice(0, 10) : "sem_coorte";
+        const key = `${campaignKey}|||${cohortDate}`;
+        const item =
+          map.get(key) || {
+            campaign_key: campaignKey,
+            campaign_id: campaignId,
+            campaign_name: campaignName,
+            cohort_date: cohortDate,
+            leads: 0,
+            resolved: 0,
+            joinads_rows: 0,
+            ads: new Set(),
+            domains: new Set(),
+            source_keys: new Set(),
+            impressions: 0,
+            clicks: 0,
+            revenue_usd: 0,
+            revenue_brl: 0,
+            d0_brl: 0,
+            d1_brl: 0,
+            d3_brl: 0,
+            d7_brl: 0,
+            d0_user_brl: 0,
+            d1_user_brl: 0,
+            d3_user_brl: 0,
+            d7_user_brl: 0,
+            user_commission_brl: 0,
+          };
+        item.leads += 1;
+        item.resolved += row.resolved ? 1 : 0;
+        item.joinads_rows += row.rows || 0;
+        item.impressions += row.impressions || 0;
+        item.clicks += row.clicks || 0;
+        item.revenue_usd += row.revenue_usd || 0;
+        item.revenue_brl += row.revenue_brl || 0;
+        item.d0_brl += row.d0_brl || 0;
+        item.d1_brl += row.d1_brl || 0;
+        item.d3_brl += row.d3_brl || 0;
+        item.d7_brl += row.d7_brl || 0;
+        item.d0_user_brl += row.d0_user_brl || 0;
+        item.d1_user_brl += row.d1_user_brl || 0;
+        item.d3_user_brl += row.d3_user_brl || 0;
+        item.d7_user_brl += row.d7_user_brl || 0;
+        item.user_commission_brl += row.user_commission_brl || 0;
+        if (adInfo.ad_name || row.ad_id) item.ads.add(adInfo.ad_name || row.ad_id);
+        if (row.source_key) item.source_keys.add(row.source_key);
+        Array.from(row.domains || []).forEach((domain) => item.domains.add(domain));
+        map.set(key, item);
+        return map;
+      }, new Map())
+      .values()
+  )
+    .map((row) => {
+      const metaDaily =
+        row.cohort_date && row.cohort_date !== "sem_coorte"
+          ? metaCampaignDailyByKey.get(`${row.campaign_key}|||${row.cohort_date}`)
+          : null;
+      const spendBrl = metaDaily ? toNumber(metaDaily.spend_brl) : 0;
+      const profitBrl = row.revenue_brl - spendBrl;
+      return {
+        ...row,
+        spend_brl: spendBrl,
+        meta_conversations: metaDaily ? toNumber(metaDaily.conversations) : 0,
+        roas: spendBrl > 0 ? row.revenue_brl / spendBrl : null,
+        profit_brl: profitBrl,
+        ecpm: row.impressions > 0 ? (row.revenue_usd / row.impressions) * 1000 : null,
+      };
+    })
+    .sort((a, b) => b.revenue_brl - a.revenue_brl);
+  const campaignLtvVisibleRows = campaignLtvRows.slice(0, 50);
+  const campaignLtvTotals = campaignLtvRows.reduce(
     (acc, row) => {
-      acc.rows += row.rows || 0;
+      acc.leads += row.leads || 0;
+      acc.resolved += row.resolved || 0;
+      acc.joinads_rows += row.joinads_rows || 0;
       acc.impressions += row.impressions || 0;
       acc.clicks += row.clicks || 0;
       acc.revenue_usd += row.revenue_usd || 0;
@@ -1213,11 +1341,15 @@ function MetricasMensagensView({
       acc.d3_user_brl += row.d3_user_brl || 0;
       acc.d7_user_brl += row.d7_user_brl || 0;
       acc.user_commission_brl += row.user_commission_brl || 0;
-      if (row.resolved) acc.resolved += 1;
+      acc.spend_brl += row.spend_brl || 0;
+      Array.from(row.ads || []).forEach((ad) => acc.ads.add(ad));
+      if (row.campaign_name || row.campaign_id) acc.campaigns.add(row.campaign_id || row.campaign_name);
       return acc;
     },
     {
-      rows: 0,
+      leads: 0,
+      resolved: 0,
+      joinads_rows: 0,
       impressions: 0,
       clicks: 0,
       revenue_usd: 0,
@@ -1231,12 +1363,19 @@ function MetricasMensagensView({
       d3_user_brl: 0,
       d7_user_brl: 0,
       user_commission_brl: 0,
-      resolved: 0,
+      spend_brl: 0,
+      campaigns: new Set(),
+      ads: new Set(),
     }
   );
-  leadLtvTotals.ecpm =
-    leadLtvTotals.impressions > 0
-      ? (leadLtvTotals.revenue_usd / leadLtvTotals.impressions) * 1000
+  campaignLtvTotals.roas =
+    campaignLtvTotals.spend_brl > 0
+      ? campaignLtvTotals.revenue_brl / campaignLtvTotals.spend_brl
+      : null;
+  campaignLtvTotals.profit_brl = campaignLtvTotals.revenue_brl - campaignLtvTotals.spend_brl;
+  campaignLtvTotals.ecpm =
+    campaignLtvTotals.impressions > 0
+      ? (campaignLtvTotals.revenue_usd / campaignLtvTotals.impressions) * 1000
       : null;
   const attributionLabel = (levels) => {
     const list = Array.from(levels || []);
@@ -1718,19 +1857,20 @@ function MetricasMensagensView({
             <h2 className="section-title">LTV Mensagens</h2>
           </div>
           <div className="chip-group">
+            <span className="chip neutral">${campaignLtvRows.length} campanhas/coortes</span>
             <span className="chip neutral">${leadLtvRows.length} leads com utm_term</span>
-            <span className="chip neutral">${leadLtvTotals.resolved} coortes resolvidas</span>
+            <span className="chip neutral">${campaignLtvTotals.resolved} leads resolvidos</span>
             ${unresolvedLeadIds.length
               ? html`<span className="chip warn">${unresolvedLeadIds.length} sem Messenlead</span>`
               : null}
-            ${leadLtvRows.length > leadLtvVisibleRows.length
-              ? html`<span className="chip warn">mostrando top ${leadLtvVisibleRows.length}</span>`
+            ${campaignLtvRows.length > campaignLtvVisibleRows.length
+              ? html`<span className="chip warn">mostrando top ${campaignLtvVisibleRows.length}</span>`
               : null}
           </div>
         </div>
         <p className="muted small">
-          Coorte real por <code>utm_term=lead_id</code>: o Evo retorna <code>firstSeenAt</code>
-          e a JoinAds e consultada por dia para separar receita D0/D1/D3/D7.
+          Coorte real por <code>utm_term=lead_id</code>, agregada por campanha. O <code>lead_id</code>
+          continua sendo usado apenas como chave interna para ligar JoinAds ao Evo e calcular D0/D1/D3/D7.
           ${hasDailyLeadRevenue
             ? html`<strong> ${leadDailyRows.length} linhas diarias carregadas.</strong>`
             : html`<strong> Sem linhas diarias de lead no periodo.</strong>`}
@@ -1739,14 +1879,22 @@ function MetricasMensagensView({
           <table>
             <thead>
               <tr>
-                <th>Lead ID</th>
+                <th>Campanha</th>
                 <th>Coorte</th>
-                <th>Anuncio</th>
+                <th>Leads</th>
+                <th>Anuncios</th>
                 <th>${showUserCommission ? "Lucro D0" : "Receita D0"}</th>
                 <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
                 <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
                 <th>${showUserCommission ? "Lucro D7" : "Receita D7"}</th>
                 <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
+                ${showUserCommission
+                  ? null
+                  : html`
+                      <th>Gasto Meta</th>
+                      <th>ROAS</th>
+                      <th>Lucro</th>
+                    `}
                 <th>Imp. JoinAds</th>
                 <th>Cliques JoinAds</th>
                 <th>${label}</th>
@@ -1754,65 +1902,91 @@ function MetricasMensagensView({
               </tr>
             </thead>
             <tbody>
-              ${leadLtvVisibleRows.length
-                ? leadLtvVisibleRows.map(
+              ${campaignLtvVisibleRows.length
+                ? campaignLtvVisibleRows.map(
                     (row) => html`
                       <tr>
                         <td>
-                          <code>${row.lead_id}</code>
+                          <strong>${row.campaign_name || "-"}</strong>
+                          ${row.campaign_id ? html`<div className="muted small">${row.campaign_id}</div>` : null}
                           ${row.domains.size
                             ? html`<div className="muted small">${Array.from(row.domains).slice(0, 2).join(", ")}</div>`
                             : null}
                         </td>
                         <td>
-                          ${row.first_seen_at ? String(row.first_seen_at).slice(0, 10) : "-"}
-                          ${row.last_seen_at
-                            ? html`<div className="muted small">ultimo ${String(row.last_seen_at).slice(0, 10)}</div>`
+                          ${row.cohort_date && row.cohort_date !== "sem_coorte" ? row.cohort_date : "-"}
+                          ${row.meta_conversations
+                            ? html`<div className="muted small">${number.format(row.meta_conversations)} conversas Meta</div>`
                             : null}
                         </td>
                         <td>
-                          ${row.ad_id || "-"}
-                          ${row.source_key ? html`<div className="muted small">${row.source_key}</div>` : null}
+                          ${number.format(row.leads || 0)}
+                          <div className="muted small">${number.format(row.resolved || 0)} com coorte</div>
+                        </td>
+                        <td>
+                          ${number.format(row.ads.size || 0)}
+                          ${row.ads.size
+                            ? html`<div className="muted small">${Array.from(row.ads).slice(0, 2).join(", ")}</div>`
+                            : null}
                         </td>
                         <td>${currencyBRL.format(showUserCommission ? row.d0_user_brl || 0 : row.d0_brl || 0)}</td>
                         <td>${currencyBRL.format(showUserCommission ? row.d1_user_brl || 0 : row.d1_brl || 0)}</td>
                         <td>${currencyBRL.format(showUserCommission ? row.d3_user_brl || 0 : row.d3_brl || 0)}</td>
                         <td>${currencyBRL.format(showUserCommission ? row.d7_user_brl || 0 : row.d7_brl || 0)}</td>
-                        <td>${showUserCommission ? currencyBRL.format(row.user_commission_brl || 0) : currencyBRL.format(row.revenue_brl || 0)}</td>
+                        <td>
+                          ${showUserCommission
+                            ? currencyBRL.format(row.user_commission_brl || 0)
+                            : currencyBRL.format(row.revenue_brl || 0)}
+                        </td>
+                        ${showUserCommission
+                          ? null
+                          : html`
+                              <td>${currencyBRL.format(row.spend_brl || 0)}</td>
+                              <td>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</td>
+                              <td>${currencyBRL.format(row.profit_brl || 0)}</td>
+                            `}
                         <td>${number.format(row.impressions || 0)}</td>
                         <td>${number.format(row.clicks || 0)}</td>
                         <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
                         <td>
-                          <span className=${`chip ${row.resolved ? "neutral" : "warn"}`}>
-                            ${row.resolved ? "coorte resolvida" : "sem coorte"}
+                          <span className=${`chip ${row.resolved === row.leads ? "neutral" : "warn"}`}>
+                            ${row.resolved === row.leads ? "coorte resolvida" : "coorte parcial"}
                           </span>
-                          <div className="muted small">${number.format(row.rows || 0)} linhas JoinAds</div>
+                          <div className="muted small">${number.format(row.joinads_rows || 0)} linhas JoinAds</div>
                         </td>
                       </tr>
                     `
                   )
                 : html`
                     <tr>
-                      <td colSpan="12">
+                      <td colSpan=${showUserCommission ? 13 : 16}>
                         Sem <code>utm_term=ml_...</code> na JoinAds para o periodo.
                         Use <code>utm_term=${"{{entry.lead_id}}"}</code> nos links do Messenlead.
                       </td>
                     </tr>
                   `}
-              ${leadLtvRows.length
+              ${campaignLtvRows.length
                 ? html`
                     <tr className="summary-row">
                       <td><strong>Total</strong></td>
-                      <td><strong>${number.format(leadLtvTotals.resolved)} coortes</strong></td>
-                      <td></td>
-                      <td><strong>${currencyBRL.format(showUserCommission ? leadLtvTotals.d0_user_brl || 0 : leadLtvTotals.d0_brl || 0)}</strong></td>
-                      <td><strong>${currencyBRL.format(showUserCommission ? leadLtvTotals.d1_user_brl || 0 : leadLtvTotals.d1_brl || 0)}</strong></td>
-                      <td><strong>${currencyBRL.format(showUserCommission ? leadLtvTotals.d3_user_brl || 0 : leadLtvTotals.d3_brl || 0)}</strong></td>
-                      <td><strong>${currencyBRL.format(showUserCommission ? leadLtvTotals.d7_user_brl || 0 : leadLtvTotals.d7_brl || 0)}</strong></td>
-                      <td><strong>${showUserCommission ? currencyBRL.format(leadLtvTotals.user_commission_brl || 0) : currencyBRL.format(leadLtvTotals.revenue_brl || 0)}</strong></td>
-                      <td><strong>${number.format(leadLtvTotals.impressions)}</strong></td>
-                      <td><strong>${number.format(leadLtvTotals.clicks)}</strong></td>
-                      <td><strong>${leadLtvTotals.ecpm != null ? currencyUSD.format(leadLtvTotals.ecpm) : "-"}</strong></td>
+                      <td><strong>${number.format(campaignLtvRows.length)} coortes</strong></td>
+                      <td><strong>${number.format(campaignLtvTotals.leads)}</strong></td>
+                      <td><strong>${number.format(campaignLtvTotals.ads.size)}</strong></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d0_user_brl || 0 : campaignLtvTotals.d0_brl || 0)}</strong></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d1_user_brl || 0 : campaignLtvTotals.d1_brl || 0)}</strong></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d3_user_brl || 0 : campaignLtvTotals.d3_brl || 0)}</strong></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d7_user_brl || 0 : campaignLtvTotals.d7_brl || 0)}</strong></td>
+                      <td><strong>${showUserCommission ? currencyBRL.format(campaignLtvTotals.user_commission_brl || 0) : currencyBRL.format(campaignLtvTotals.revenue_brl || 0)}</strong></td>
+                      ${showUserCommission
+                        ? null
+                        : html`
+                            <td><strong>${currencyBRL.format(campaignLtvTotals.spend_brl || 0)}</strong></td>
+                            <td><strong>${campaignLtvTotals.roas != null ? `${campaignLtvTotals.roas.toFixed(2)}x` : "-"}</strong></td>
+                            <td><strong>${currencyBRL.format(campaignLtvTotals.profit_brl || 0)}</strong></td>
+                          `}
+                      <td><strong>${number.format(campaignLtvTotals.impressions)}</strong></td>
+                      <td><strong>${number.format(campaignLtvTotals.clicks)}</strong></td>
+                      <td><strong>${campaignLtvTotals.ecpm != null ? currencyUSD.format(campaignLtvTotals.ecpm) : "-"}</strong></td>
                       <td></td>
                     </tr>
                   `
@@ -1828,14 +2002,22 @@ function MetricasMensagensView({
           <table>
             <thead>
               <tr>
-                <th>Lead ID</th>
+                <th>Campanha</th>
                 <th>Coorte</th>
-                <th>Anuncio</th>
+                <th>Leads</th>
+                <th>Anuncios</th>
                 <th>${showUserCommission ? "Lucro D0" : "Receita D0"}</th>
                 <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
                 <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
                 <th>${showUserCommission ? "Lucro D7" : "Receita D7"}</th>
                 <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
+                ${showUserCommission
+                  ? null
+                  : html`
+                      <th>Gasto Meta</th>
+                      <th>ROAS</th>
+                      <th>Lucro</th>
+                    `}
                 <th>Imp. JoinAds</th>
                 <th>Cliques JoinAds</th>
                 <th>${label}</th>
@@ -1845,28 +2027,40 @@ function MetricasMensagensView({
             <tbody>
               <tr>
                 <td>
-                  <code>ml_exemplo7d9a2k4p8q1</code>
+                  <strong>Elena | Chile | Messenger | Trafego</strong>
+                  <div className="muted small">120246900000000001</div>
                   <div className="muted small">es.remediototal.com.br</div>
                 </td>
                 <td>
                   2026-07-02
-                  <div className="muted small">ultimo 2026-07-05</div>
+                  <div className="muted small">86 conversas Meta</div>
                 </td>
                 <td>
-                  120247015017960378
-                  <div className="muted small">src_exemplo39yyf40</div>
+                  ${number.format(42)}
+                  <div className="muted small">42 com coorte</div>
                 </td>
-                <td>${currencyBRL.format(12.4)}</td>
-                <td>${currencyBRL.format(21.8)}</td>
-                <td>${currencyBRL.format(38.5)}</td>
-                <td>${currencyBRL.format(61.2)}</td>
-                <td>${currencyBRL.format(61.2)}</td>
-                <td>${number.format(8420)}</td>
-                <td>${number.format(312)}</td>
-                <td>${currencyUSD.format(7.27)}</td>
+                <td>
+                  ${number.format(3)}
+                  <div className="muted small">Messenger 01, Messenger 02</div>
+                </td>
+                <td>${currencyBRL.format(82.2)}</td>
+                <td>${currencyBRL.format(146.9)}</td>
+                <td>${currencyBRL.format(251.4)}</td>
+                <td>${currencyBRL.format(333)}</td>
+                <td>${currencyBRL.format(333)}</td>
+                ${showUserCommission
+                  ? null
+                  : html`
+                      <td>${currencyBRL.format(180)}</td>
+                      <td>1.85x</td>
+                      <td>${currencyBRL.format(153)}</td>
+                    `}
+                <td>${number.format(48320)}</td>
+                <td>${number.format(1184)}</td>
+                <td>${currencyUSD.format(6.89)}</td>
                 <td>
                   <span className="chip neutral">exemplo ficticio</span>
-                  <div className="muted small">4 linhas JoinAds</div>
+                  <div className="muted small">42 linhas JoinAds</div>
                 </td>
               </tr>
             </tbody>
