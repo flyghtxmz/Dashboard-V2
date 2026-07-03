@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 104;
+const APP_VERSION_BUILD = 105;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -263,6 +263,31 @@ const defaultDates = () => {
     endDate: formatDate(today),
   };
 };
+
+function parseIsoDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function listIsoDatesInRange(startDate, endDate, maxDays = 15) {
+  const start = parseIsoDate(startDate);
+  const end = parseIsoDate(endDate);
+  if (!start || !end || start > end) return [];
+  const dates = [];
+  for (let cursor = new Date(start); cursor <= end && dates.length < maxDays; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    dates.push(cursor.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+function daysBetweenIsoDates(startDate, endDate) {
+  const start = parseIsoDate(startDate);
+  const end = parseIsoDate(endDate);
+  if (!start || !end) return null;
+  return Math.floor((end.getTime() - start.getTime()) / 86400000);
+}
 
 function toNumber(value) {
   if (value === null || value === undefined) return 0;
@@ -839,6 +864,9 @@ function MetricasMensagensView({
   diagnostics = {},
   mediumRows = [],
   termRows = [],
+  termDailyRows = [],
+  leadRows = [],
+  unresolvedLeadIds = [],
   onBudgetUpdate,
   budgetLoading = {},
   onBidUpdate,
@@ -1088,28 +1116,62 @@ function MetricasMensagensView({
   const leadTermRows = (Array.isArray(termRows) ? termRows : []).filter((row) =>
     isLeadTerm(row.custom_value)
   );
+  const leadDailyRows = (Array.isArray(termDailyRows) ? termDailyRows : []).filter((row) =>
+    isLeadTerm(row.custom_value)
+  );
+  const hasDailyLeadRevenue = leadDailyRows.length > 0;
+  const leadInfoById = new Map(
+    (Array.isArray(leadRows) ? leadRows : [])
+      .filter((lead) => lead?.leadId)
+      .map((lead) => [normalizeKey(lead.leadId), lead])
+  );
   const leadLtvRows = Array.from(
-    leadTermRows
+    (hasDailyLeadRevenue ? leadDailyRows : leadTermRows)
       .reduce((map, row) => {
         const leadId = String(row.custom_value || "").trim();
         const key = normalizeKey(leadId);
         if (!key) return map;
+        const leadInfo = leadInfoById.get(key) || {};
         const item =
           map.get(key) || {
             lead_id: leadId,
+            first_seen_at: leadInfo.firstSeenAt || "",
+            last_seen_at: leadInfo.lastSeenAt || "",
+            ad_id: leadInfo.adId || "",
+            source_key: leadInfo.sourceKey || "",
+            resolved: Boolean(leadInfo.firstSeenAt),
             rows: 0,
             domains: new Set(),
             impressions: 0,
             clicks: 0,
             revenue_usd: 0,
+            d0_usd: 0,
+            d1_usd: 0,
+            d3_usd: 0,
+            d7_usd: 0,
           };
+        if (!item.first_seen_at && leadInfo.firstSeenAt) item.first_seen_at = leadInfo.firstSeenAt;
+        if (!item.last_seen_at && leadInfo.lastSeenAt) item.last_seen_at = leadInfo.lastSeenAt;
+        if (!item.ad_id && leadInfo.adId) item.ad_id = leadInfo.adId;
+        if (!item.source_key && leadInfo.sourceKey) item.source_key = leadInfo.sourceKey;
+        if (leadInfo.firstSeenAt) item.resolved = true;
         item.rows += 1;
         if (row.domain || row.name) item.domains.add(row.domain || row.name);
         item.impressions += toNumber(row.impressions);
         item.clicks += toNumber(row.clicks);
-        item.revenue_usd += toNumber(
+        const revenueUsd = toNumber(
           row.revenue_client != null ? row.revenue_client : row.revenue
         );
+        item.revenue_usd += revenueUsd;
+        const ageDays = item.first_seen_at && row.revenue_date
+          ? daysBetweenIsoDates(String(item.first_seen_at).slice(0, 10), row.revenue_date)
+          : null;
+        if (ageDays != null && ageDays >= 0) {
+          if (ageDays <= 0) item.d0_usd += revenueUsd;
+          if (ageDays <= 1) item.d1_usd += revenueUsd;
+          if (ageDays <= 3) item.d3_usd += revenueUsd;
+          if (ageDays <= 7) item.d7_usd += revenueUsd;
+        }
         map.set(key, item);
         return map;
       }, new Map())
@@ -1118,7 +1180,15 @@ function MetricasMensagensView({
     .map((row) => ({
       ...row,
       revenue_brl: brlRate ? row.revenue_usd * brlRate : 0,
+      d0_brl: brlRate ? row.d0_usd * brlRate : 0,
+      d1_brl: brlRate ? row.d1_usd * brlRate : 0,
+      d3_brl: brlRate ? row.d3_usd * brlRate : 0,
+      d7_brl: brlRate ? row.d7_usd * brlRate : 0,
       ecpm: row.impressions > 0 ? (row.revenue_usd / row.impressions) * 1000 : null,
+      d0_user_brl: calculateUserCommission(brlRate ? row.d0_usd * brlRate : 0, commissionPercent),
+      d1_user_brl: calculateUserCommission(brlRate ? row.d1_usd * brlRate : 0, commissionPercent),
+      d3_user_brl: calculateUserCommission(brlRate ? row.d3_usd * brlRate : 0, commissionPercent),
+      d7_user_brl: calculateUserCommission(brlRate ? row.d7_usd * brlRate : 0, commissionPercent),
       user_commission_brl: calculateUserCommission(
         brlRate ? row.revenue_usd * brlRate : 0,
         commissionPercent
@@ -1133,7 +1203,16 @@ function MetricasMensagensView({
       acc.clicks += row.clicks || 0;
       acc.revenue_usd += row.revenue_usd || 0;
       acc.revenue_brl += row.revenue_brl || 0;
+      acc.d0_brl += row.d0_brl || 0;
+      acc.d1_brl += row.d1_brl || 0;
+      acc.d3_brl += row.d3_brl || 0;
+      acc.d7_brl += row.d7_brl || 0;
+      acc.d0_user_brl += row.d0_user_brl || 0;
+      acc.d1_user_brl += row.d1_user_brl || 0;
+      acc.d3_user_brl += row.d3_user_brl || 0;
+      acc.d7_user_brl += row.d7_user_brl || 0;
       acc.user_commission_brl += row.user_commission_brl || 0;
+      if (row.resolved) acc.resolved += 1;
       return acc;
     },
     {
@@ -1142,7 +1221,16 @@ function MetricasMensagensView({
       clicks: 0,
       revenue_usd: 0,
       revenue_brl: 0,
+      d0_brl: 0,
+      d1_brl: 0,
+      d3_brl: 0,
+      d7_brl: 0,
+      d0_user_brl: 0,
+      d1_user_brl: 0,
+      d3_user_brl: 0,
+      d7_user_brl: 0,
       user_commission_brl: 0,
+      resolved: 0,
     }
   );
   leadLtvTotals.ecpm =
@@ -1308,6 +1396,7 @@ function MetricasMensagensView({
       utmUserRows: diagnostics.joinadsUserRowsCount || 0,
       utmTermRows: Array.isArray(termRows) ? termRows.length : 0,
       utmTermLeadRows: leadTermRows.length,
+      utmTermLeadDailyRows: leadDailyRows.length,
       utmMediumRows: Array.isArray(mediumRows) ? mediumRows.length : 0,
       utmMediumMessengerRows: messengerMediumRows.length,
       utmMediumOrganicRows: organicMediumRows.length,
@@ -1321,6 +1410,8 @@ function MetricasMensagensView({
     messenlead: {
       sources: diagnostics.messenleadSourcesCount || 0,
       unresolved: diagnostics.messenleadUnresolved || [],
+      leads: Array.isArray(leadRows) ? leadRows.length : 0,
+      unresolvedLeadIds,
     },
     samples: sampleRows,
   };
@@ -1625,30 +1716,36 @@ function MetricasMensagensView({
           </div>
           <div className="chip-group">
             <span className="chip neutral">${leadLtvRows.length} leads com utm_term</span>
+            <span className="chip neutral">${leadLtvTotals.resolved} coortes resolvidas</span>
+            ${unresolvedLeadIds.length
+              ? html`<span className="chip warn">${unresolvedLeadIds.length} sem Messenlead</span>`
+              : null}
             ${leadLtvRows.length > leadLtvVisibleRows.length
               ? html`<span className="chip warn">mostrando top ${leadLtvVisibleRows.length}</span>`
               : null}
           </div>
         </div>
         <p className="muted small">
-          Primeira base de coorte: agrupa receita JoinAds por <code>utm_term=lead_id</code>.
-          D0/D1/D3/D7 dependem do proximo passo: resolver <code>lead_id -> first_seen_at</code>
-          no Messenlead.
+          Coorte real por <code>utm_term=lead_id</code>: o Evo retorna <code>firstSeenAt</code>
+          e a JoinAds e consultada por dia para separar receita D0/D1/D3/D7.
+          ${hasDailyLeadRevenue
+            ? html`<strong> ${leadDailyRows.length} linhas diarias carregadas.</strong>`
+            : html`<strong> Sem linhas diarias de lead no periodo.</strong>`}
         </p>
         <div className="table-wrapper scroll-x">
           <table>
             <thead>
               <tr>
                 <th>Lead ID</th>
-                <th>Linhas JoinAds</th>
+                <th>Coorte</th>
+                <th>Anuncio</th>
+                <th>${showUserCommission ? "Lucro D0" : "Receita D0"}</th>
+                <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
+                <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
+                <th>${showUserCommission ? "Lucro D7" : "Receita D7"}</th>
+                <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
                 <th>Imp. JoinAds</th>
                 <th>Cliques JoinAds</th>
-                ${showUserCommission
-                  ? html`<th>Lucro do usuario</th>`
-                  : html`
-                      <th>Receita USD</th>
-                      <th>Receita BRL</th>
-                    `}
                 <th>${label}</th>
                 <th>Status LTV</th>
               </tr>
@@ -1664,26 +1761,36 @@ function MetricasMensagensView({
                             ? html`<div className="muted small">${Array.from(row.domains).slice(0, 2).join(", ")}</div>`
                             : null}
                         </td>
-                        <td>${number.format(row.rows || 0)}</td>
+                        <td>
+                          ${row.first_seen_at ? String(row.first_seen_at).slice(0, 10) : "-"}
+                          ${row.last_seen_at
+                            ? html`<div className="muted small">ultimo ${String(row.last_seen_at).slice(0, 10)}</div>`
+                            : null}
+                        </td>
+                        <td>
+                          ${row.ad_id || "-"}
+                          ${row.source_key ? html`<div className="muted small">${row.source_key}</div>` : null}
+                        </td>
+                        <td>${currencyBRL.format(showUserCommission ? row.d0_user_brl || 0 : row.d0_brl || 0)}</td>
+                        <td>${currencyBRL.format(showUserCommission ? row.d1_user_brl || 0 : row.d1_brl || 0)}</td>
+                        <td>${currencyBRL.format(showUserCommission ? row.d3_user_brl || 0 : row.d3_brl || 0)}</td>
+                        <td>${currencyBRL.format(showUserCommission ? row.d7_user_brl || 0 : row.d7_brl || 0)}</td>
+                        <td>${showUserCommission ? currencyBRL.format(row.user_commission_brl || 0) : currencyBRL.format(row.revenue_brl || 0)}</td>
                         <td>${number.format(row.impressions || 0)}</td>
                         <td>${number.format(row.clicks || 0)}</td>
-                        ${showUserCommission
-                          ? html`<td>${currencyBRL.format(row.user_commission_brl || 0)}</td>`
-                          : html`
-                              <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
-                              <td>${currencyBRL.format(row.revenue_brl || 0)}</td>
-                            `}
                         <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
                         <td>
-                          <span className="chip neutral">lead_id capturado</span>
-                          <div className="muted small">Aguardando data de coorte do Messenlead</div>
+                          <span className=${`chip ${row.resolved ? "neutral" : "warn"}`}>
+                            ${row.resolved ? "coorte resolvida" : "sem coorte"}
+                          </span>
+                          <div className="muted small">${number.format(row.rows || 0)} linhas JoinAds</div>
                         </td>
                       </tr>
                     `
                   )
                 : html`
                     <tr>
-                      <td colSpan=${showUserCommission ? 7 : 8}>
+                      <td colSpan="12">
                         Sem <code>utm_term=ml_...</code> na JoinAds para o periodo.
                         Use <code>utm_term=${"{{entry.lead_id}}"}</code> nos links do Messenlead.
                       </td>
@@ -1693,15 +1800,15 @@ function MetricasMensagensView({
                 ? html`
                     <tr className="summary-row">
                       <td><strong>Total</strong></td>
-                      <td><strong>${number.format(leadLtvTotals.rows)}</strong></td>
+                      <td><strong>${number.format(leadLtvTotals.resolved)} coortes</strong></td>
+                      <td></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? leadLtvTotals.d0_user_brl || 0 : leadLtvTotals.d0_brl || 0)}</strong></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? leadLtvTotals.d1_user_brl || 0 : leadLtvTotals.d1_brl || 0)}</strong></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? leadLtvTotals.d3_user_brl || 0 : leadLtvTotals.d3_brl || 0)}</strong></td>
+                      <td><strong>${currencyBRL.format(showUserCommission ? leadLtvTotals.d7_user_brl || 0 : leadLtvTotals.d7_brl || 0)}</strong></td>
+                      <td><strong>${showUserCommission ? currencyBRL.format(leadLtvTotals.user_commission_brl || 0) : currencyBRL.format(leadLtvTotals.revenue_brl || 0)}</strong></td>
                       <td><strong>${number.format(leadLtvTotals.impressions)}</strong></td>
                       <td><strong>${number.format(leadLtvTotals.clicks)}</strong></td>
-                      ${showUserCommission
-                        ? html`<td><strong>${currencyBRL.format(leadLtvTotals.user_commission_brl || 0)}</strong></td>`
-                        : html`
-                            <td><strong>${currencyUSD.format(leadLtvTotals.revenue_usd || 0)}</strong></td>
-                            <td><strong>${currencyBRL.format(leadLtvTotals.revenue_brl || 0)}</strong></td>
-                          `}
                       <td><strong>${leadLtvTotals.ecpm != null ? currencyUSD.format(leadLtvTotals.ecpm) : "-"}</strong></td>
                       <td></td>
                     </tr>
@@ -6860,6 +6967,8 @@ function App() {
   const [joinadsSuperFilterDiagnostics, setJoinadsSuperFilterDiagnostics] = useState({});
   const [messenleadSources, setMessenleadSources] = useState([]);
   const [messenleadUnresolved, setMessenleadUnresolved] = useState([]);
+  const [messenleadLeads, setMessenleadLeads] = useState([]);
+  const [messenleadUnresolvedLeadIds, setMessenleadUnresolvedLeadIds] = useState([]);
   const [topUrls, setTopUrls] = useState([]);
   const [earnings, setEarnings] = useState([]);
   const [earningsAll, setEarningsAll] = useState([]);
@@ -6879,6 +6988,7 @@ function App() {
   const [superKey, setSuperKey] = useState("utm_content");
   const [metaSourceRows, setMetaSourceRows] = useState([]);
   const [superTermRows, setSuperTermRows] = useState([]);
+  const [joinadsTermDailyRows, setJoinadsTermDailyRows] = useState([]);
   const [adStatusLoading, setAdStatusLoading] = useState({});
   const [budgetLoading, setBudgetLoading] = useState({});
   const [bidLoading, setBidLoading] = useState({});
@@ -6932,6 +7042,8 @@ function App() {
     setJoinadsSuperFilterDiagnostics({});
     setMessenleadSources([]);
     setMessenleadUnresolved([]);
+    setMessenleadLeads([]);
+    setMessenleadUnresolvedLeadIds([]);
     setTopUrls([]);
     setEarnings([]);
     setEarningsAll([]);
@@ -6946,6 +7058,7 @@ function App() {
     setParamPairs([]);
     setMetaSourceRows([]);
     setSuperTermRows([]);
+    setJoinadsTermDailyRows([]);
     setDupCampaigns([]);
     setDupError("");
     setDrafts([]);
@@ -7190,6 +7303,8 @@ function App() {
       let contentSuperRes = { data: [] };
       let campaignSuperRes = { data: [] };
       let messenleadRes = { sources: [], unresolved: [] };
+      let messenleadLeadRes = { leads: [], unresolvedLeadIds: [] };
+      let termDailyRows = [];
       let contentSuperError = null;
       let campaignSuperError = null;
       let superKeyUsed = "utm_content";
@@ -7258,6 +7373,7 @@ function App() {
             "utm_source",
             "utm_medium",
             "utm_content",
+            "utm_term",
             "land_uri",
           ],
           validGroups: ["custom_key", "country", "domain", "custom_value"],
@@ -7378,6 +7494,54 @@ function App() {
           }),
         }).catch((err) => { pushLog("joinads-utmuser", err); return { data: [] }; }),
       ]);
+
+      const superTermRowsData = Array.isArray(superTermRes?.data) ? superTermRes.data : [];
+      const leadIds = Array.from(
+        new Set(
+          superTermRowsData
+            .map((row) => String(row.custom_value || "").trim())
+            .filter((value) => normalizeKey(value).startsWith("ml_"))
+        )
+      );
+      if (leadIds.length) {
+        try {
+          messenleadLeadRes = await fetchJson(`${API_BASE}/messenlead-resolve`, {
+            method: "POST",
+            body: JSON.stringify({ leadIds }),
+          });
+        } catch (err) {
+          pushLog("messenlead-leads-resolve", err);
+        }
+
+        const dailyDates = listIsoDatesInRange(filters.startDate, filters.endDate, 15);
+        const dailyResults = await Promise.all(
+          dailyDates.map((day) =>
+            fetchJson(`${API_BASE}/super-filter`, {
+              method: "POST",
+              body: JSON.stringify({
+                start_date: day,
+                end_date: day,
+                "domain[]": [filters.domain.trim()],
+                custom_key: "utm_term",
+                group: ["domain", "custom_value"],
+              }),
+            })
+              .then((res) =>
+                (Array.isArray(res?.data) ? res.data : []).map((row) => ({
+                  ...row,
+                  revenue_date: day,
+                }))
+              )
+              .catch((err) => {
+                pushLog(`super-filter-term-daily:${day}`, err);
+                return [];
+              })
+          )
+        );
+        termDailyRows = dailyResults
+          .flat()
+          .filter((row) => normalizeKey(row.custom_value).startsWith("ml_"));
+      }
 
       // Reutiliza keyValueContentRes para paramPairs — elimina 2 fetches duplicados ao mesmo endpoint
       const kvMap = new Map();
@@ -7501,8 +7665,15 @@ function App() {
       setJoinadsMediumRows(Array.isArray(metaMediumRes?.data) ? metaMediumRes.data : []);
       setMessenleadSources(Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : []);
       setMessenleadUnresolved(Array.isArray(messenleadRes?.unresolved) ? messenleadRes.unresolved : []);
+      setMessenleadLeads(Array.isArray(messenleadLeadRes?.leads) ? messenleadLeadRes.leads : []);
+      setMessenleadUnresolvedLeadIds(
+        Array.isArray(messenleadLeadRes?.unresolvedLeadIds)
+          ? messenleadLeadRes.unresolvedLeadIds
+          : []
+      );
       setSuperKey(superKeyUsed || "utm_content");
-      setSuperTermRows(Array.isArray(superTermRes?.data) ? superTermRes.data : []);
+      setSuperTermRows(superTermRowsData);
+      setJoinadsTermDailyRows(termDailyRows);
       setTopUrls(Array.isArray(topRes?.data) ? topRes.data : []);
       setEarnings(Array.isArray(earningsRes?.data) ? earningsRes.data : []);
       setEarningsAll(Array.isArray(earningsAllRes?.data) ? earningsAllRes.data : []);
@@ -9817,6 +9988,9 @@ function App() {
                 showUserCommission=${true}
                 mediumRows=${joinadsMediumRows}
                 termRows=${superTermRows}
+                termDailyRows=${joinadsTermDailyRows}
+                leadRows=${messenleadLeads}
+                unresolvedLeadIds=${messenleadUnresolvedLeadIds}
                 allowBidControl=${false}
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
@@ -10011,6 +10185,9 @@ function App() {
             showUserCommission=${isGestorSession(session)}
             mediumRows=${joinadsMediumRows}
             termRows=${superTermRows}
+            termDailyRows=${joinadsTermDailyRows}
+            leadRows=${messenleadLeads}
+            unresolvedLeadIds=${messenleadUnresolvedLeadIds}
             onBudgetUpdate=${handleUpdateBudget}
             budgetLoading=${budgetLoading}
             onBidUpdate=${handleUpdateBid}

@@ -14,7 +14,7 @@ const SRC_MAP_KEY = "messenlead:src-adid-map:v1";
 // Teto de src_ por chamada ao Messenlead (ele tambem corta em 500). Loteamos para nao truncar.
 const MESSENLEAD_BATCH = 500;
 
-function cleanSourceKey(value) {
+function cleanMessenleadId(value) {
   return String(value || "").trim();
 }
 
@@ -53,7 +53,7 @@ function chunk(list, size) {
   return out;
 }
 
-async function resolveBatchFromMessenlead(baseUrl, token, keys) {
+async function resolveBatchFromMessenlead(baseUrl, token, payload) {
   const response = await fetch(`${baseUrl}/api/messenger-attributions/resolve`, {
     method: "POST",
     headers: {
@@ -61,7 +61,7 @@ async function resolveBatchFromMessenlead(baseUrl, token, keys) {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ sourceKeys: keys }),
+    body: JSON.stringify(payload),
   });
   const data = await safeJson(response);
   if (!response.ok) {
@@ -73,6 +73,8 @@ async function resolveBatchFromMessenlead(baseUrl, token, keys) {
   return {
     sources: Array.isArray(data?.sources) ? data.sources : [],
     unresolved: Array.isArray(data?.unresolved) ? data.unresolved : [],
+    leads: Array.isArray(data?.leads) ? data.leads : [],
+    unresolvedLeadIds: Array.isArray(data?.unresolvedLeadIds) ? data.unresolvedLeadIds : [],
   };
 }
 
@@ -97,11 +99,49 @@ export async function onRequest({ request, env }) {
   const body = await readJson(request);
   // Sem corte na lista inteira: o teto de 500 e aplicado por LOTE na chamada ao Messenlead.
   const sourceKeys = Array.from(
-    new Set((Array.isArray(body?.sourceKeys) ? body.sourceKeys : []).map(cleanSourceKey).filter(Boolean))
+    new Set((Array.isArray(body?.sourceKeys) ? body.sourceKeys : []).map(cleanMessenleadId).filter(Boolean))
+  );
+  const leadIds = Array.from(
+    new Set((Array.isArray(body?.leadIds) ? body.leadIds : []).map(cleanMessenleadId).filter(Boolean))
   );
 
+  if (!sourceKeys.length && !leadIds.length) {
+    return jsonResponse(200, { code: "success", sources: [], leads: [], unresolved: [], unresolvedLeadIds: [] });
+  }
+
+  const resolvedLeads = [];
+  const unresolvedLeadSet = new Set();
+  try {
+    for (const batch of chunk(leadIds, MESSENLEAD_BATCH)) {
+      const { leads, unresolvedLeadIds } = await resolveBatchFromMessenlead(baseUrl, token, { leadIds: batch });
+      const resolvedInBatch = new Set();
+      for (const lead of leads) {
+        if (lead?.leadId) {
+          resolvedLeads.push(lead);
+          resolvedInBatch.add(lead.leadId);
+        }
+      }
+      unresolvedLeadIds.forEach((leadId) => unresolvedLeadSet.add(leadId));
+      batch.forEach((leadId) => {
+        if (!resolvedInBatch.has(leadId)) unresolvedLeadSet.add(leadId);
+      });
+    }
+  } catch (error) {
+    return jsonResponse(error.status || 500, {
+      error: error.message || "Erro ao resolver leads Messenlead",
+      details: error.details || null,
+    });
+  }
+
   if (!sourceKeys.length) {
-    return jsonResponse(200, { code: "success", sources: [], unresolved: [] });
+    return jsonResponse(200, {
+      code: "success",
+      sources: [],
+      leads: resolvedLeads,
+      unresolved: [],
+      unresolvedLeadIds: Array.from(unresolvedLeadSet),
+      leadResolved: resolvedLeads.length,
+    });
   }
 
   const kv = getKv(env);
@@ -125,7 +165,10 @@ export async function onRequest({ request, env }) {
       sources: cachedSources,
       unresolved: [],
       cacheHits: cachedSources.length,
-      resolved: 0,
+    resolved: 0,
+    leads: resolvedLeads,
+    unresolvedLeadIds: Array.from(unresolvedLeadSet),
+    leadResolved: resolvedLeads.length,
     });
   }
 
@@ -134,7 +177,7 @@ export async function onRequest({ request, env }) {
   const unresolvedSet = new Set();
   try {
     for (const batch of chunk(missingKeys, MESSENLEAD_BATCH)) {
-      const { sources, unresolved } = await resolveBatchFromMessenlead(baseUrl, token, batch);
+      const { sources, unresolved } = await resolveBatchFromMessenlead(baseUrl, token, { sourceKeys: batch });
       const resolvedInBatch = new Set();
       for (const source of sources) {
         if (source?.sourceKey && source?.adId) {
@@ -168,8 +211,11 @@ export async function onRequest({ request, env }) {
   return jsonResponse(200, {
     code: "success",
     sources: [...cachedSources, ...resolvedSources],
+    leads: resolvedLeads,
     unresolved: Array.from(unresolvedSet),
+    unresolvedLeadIds: Array.from(unresolvedLeadSet),
     cacheHits: cachedSources.length,
     resolved: resolvedSources.length,
+    leadResolved: resolvedLeads.length,
   });
 }
