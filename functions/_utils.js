@@ -39,7 +39,11 @@ export function getMetaAppSecret(env) {
 }
 
 export function getMessenleadBaseUrl(env) {
-  return env.MESSENLEAD_API_BASE_URL;
+  const value = String(env.MESSENLEAD_API_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (!value || value === "https://messenlead.pages.dev") {
+    return "https://evomessenlead.pages.dev";
+  }
+  return value;
 }
 
 export function getMessenleadToken(env) {
