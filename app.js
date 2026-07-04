@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 112;
+const APP_VERSION_BUILD = 113;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1731,30 +1731,6 @@ function MetricasMensagensView({
     },
     samples: sampleRows,
   };
-  const exampleLtvRevenueByDay = {
-    0: 82.2,
-    1: 146.9,
-    2: 214.6,
-    3: 251.4,
-    4: 282.6,
-    5: 301.8,
-    6: 320.4,
-    7: 333,
-  };
-  const exampleLtvRoasByDay = {
-    0: "0.46x",
-    1: "0.82x",
-    2: "1.19x",
-    3: "1.40x",
-    4: "1.57x",
-    5: "1.68x",
-    6: "1.78x",
-    7: "1.85x",
-  };
-  const exampleLtvImpressionsByDay = { 3: 36200, 4: 40100, 5: 42650, 6: 45700, 7: 48320 };
-  const exampleWindowImpressions =
-    exampleLtvImpressionsByDay[maxVisibleLtvDay] || exampleLtvImpressionsByDay[3];
-
   return html`
     <main className="grid">
       <section className="card wide">
@@ -2263,98 +2239,6 @@ function MetricasMensagensView({
                     </tr>
                   `
                 : null}
-            </tbody>
-          </table>
-        </div>
-        <div className="table-wrapper scroll-x" style=${{ marginTop: "14px" }}>
-          <div className="muted small" style=${{ padding: "10px 12px" }}>
-            <strong>Exemplo ficticio da tabela.</strong>
-            Os valores abaixo sao ilustrativos e nao entram nos totais reais.
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Campanha</th>
-                <th>Coorte</th>
-                <th>Leads</th>
-                <th>Anuncios</th>
-                <th>${showUserCommission ? "Lucro D0" : "Receita D0"}</th>
-                <th>${showUserCommission ? "Lucro D1" : "Receita D1"}</th>
-                <th>${showUserCommission ? "Lucro D2" : "Receita D2"}</th>
-                <th>${showUserCommission ? "Lucro D3" : "Receita D3"}</th>
-                ${selectedLtvExtraDays.map(
-                  (day) => html`<th>${showUserCommission ? `Lucro D${day}` : `Receita D${day}`}</th>`
-                )}
-                <th>${showUserCommission ? "Lucro total" : "Receita total"}</th>
-                ${showUserCommission
-                  ? null
-                  : html`
-                      <th>Gasto Meta</th>
-                      <th>ROAS D0</th>
-                      <th>ROAS D1</th>
-                      <th>ROAS D2</th>
-                      <th>ROAS D3</th>
-                      ${selectedLtvExtraDays.map((day) => html`<th>ROAS D${day}</th>`)}
-                      <th>ROAS total</th>
-                      <th>Lucro</th>
-                    `}
-                <th>Imp. JoinAds</th>
-                <th>Imp. JoinAds / conversa D${maxVisibleLtvDay}</th>
-                <th>Cliques JoinAds</th>
-                <th>${label}</th>
-                <th>Status LTV</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>
-                  <strong>Elena | Chile | Messenger | Trafego</strong>
-                  <div className="muted small">120246900000000001</div>
-                  <div className="muted small">es.remediototal.com.br</div>
-                </td>
-                <td>
-                  2026-07-02
-                  <div className="muted small">86 conversas Meta</div>
-                </td>
-                <td>
-                  ${number.format(42)}
-                  <div className="muted small">42 com coorte</div>
-                </td>
-                <td>
-                  ${number.format(3)}
-                  <div className="muted small">Messenger 01, Messenger 02</div>
-                </td>
-                <td>${currencyBRL.format(82.2)}</td>
-                <td>${currencyBRL.format(146.9)}</td>
-                <td>${currencyBRL.format(214.6)}</td>
-                <td>${currencyBRL.format(251.4)}</td>
-                ${selectedLtvExtraDays.map(
-                  (day) => html`<td>${currencyBRL.format(exampleLtvRevenueByDay[day] || 333)}</td>`
-                )}
-                <td>${currencyBRL.format(333)}</td>
-                ${showUserCommission
-                  ? null
-                  : html`
-                      <td>${currencyBRL.format(180)}</td>
-                      <td>0.46x</td>
-                      <td>0.82x</td>
-                      <td>1.19x</td>
-                      <td>1.40x</td>
-                      ${selectedLtvExtraDays.map(
-                        (day) => html`<td>${exampleLtvRoasByDay[day] || "1.85x"}</td>`
-                      )}
-                      <td>1.85x</td>
-                      <td>${currencyBRL.format(153)}</td>
-                    `}
-                <td>${number.format(48320)}</td>
-                <td>${(exampleWindowImpressions / 86).toFixed(2)}</td>
-                <td>${number.format(1184)}</td>
-                <td>${currencyUSD.format(6.89)}</td>
-                <td>
-                  <span className="chip neutral">exemplo ficticio</span>
-                  <div className="muted small">42 linhas JoinAds</div>
-                </td>
-              </tr>
             </tbody>
           </table>
         </div>
