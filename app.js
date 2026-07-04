@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 113;
+const APP_VERSION_BUILD = 114;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1153,19 +1153,28 @@ function MetricasMensagensView({
   const organicMedium = buildMediumSummary("organic", 0);
   const messengerMediumRows = messengerMedium.rows;
   const organicMediumRows = organicMedium.rows;
-  const isLeadTerm = (value) => normalizeKey(value).startsWith("ml_");
-  const leadTermRows = (Array.isArray(termRows) ? termRows : []).filter((row) =>
-    isLeadTerm(row.custom_value)
+  const allTermRows = Array.isArray(termRows) ? termRows : [];
+  const allTermDailyRows = Array.isArray(termDailyRows) ? termDailyRows : [];
+  const candidateTermRows = allTermRows.filter((row) =>
+    looksLikeMessenleadLeadId(row.custom_value)
   );
-  const leadDailyRows = (Array.isArray(termDailyRows) ? termDailyRows : []).filter((row) =>
-    isLeadTerm(row.custom_value)
-  );
-  const hasDailyLeadRevenue = leadDailyRows.length > 0;
+  const normalizedLeadRows = (Array.isArray(leadRows) ? leadRows : [])
+    .map(normalizeMessenleadLead)
+    .filter(Boolean);
   const leadInfoById = new Map(
-    (Array.isArray(leadRows) ? leadRows : [])
-      .filter((lead) => lead?.leadId)
-      .map((lead) => [normalizeKey(lead.leadId), lead])
+    normalizedLeadRows.map((lead) => [normalizeKey(lead.leadId), lead])
   );
+  const resolvedLeadIdSet = new Set(leadInfoById.keys());
+  const isLeadTerm = (value) => {
+    const key = normalizeKey(value);
+    if (!key) return false;
+    if (resolvedLeadIdSet.has(key)) return true;
+    // Fallback legado: antes o Evo usava/planejava lead_id com prefixo ml_.
+    return resolvedLeadIdSet.size === 0 && key.startsWith("ml_");
+  };
+  const leadTermRows = allTermRows.filter((row) => isLeadTerm(row.custom_value));
+  const leadDailyRows = allTermDailyRows.filter((row) => isLeadTerm(row.custom_value));
+  const hasDailyLeadRevenue = leadDailyRows.length > 0;
   const leadLtvRows = Array.from(
     (hasDailyLeadRevenue ? leadDailyRows : leadTermRows)
       .reduce((map, row) => {
@@ -2033,8 +2042,10 @@ function MetricasMensagensView({
           </div>
           <div className="chip-group">
             <span className="chip neutral">${campaignLtvRows.length} campanhas/coortes</span>
+            <span className="chip neutral">${allTermRows.length} linhas utm_term</span>
+            <span className="chip neutral">${candidateTermRows.length} candidatos</span>
             <span className="chip neutral">${leadLtvRows.length} leads com utm_term</span>
-            <span className="chip neutral">${campaignLtvTotals.resolved} leads resolvidos</span>
+            <span className="chip neutral">${normalizedLeadRows.length} leads resolvidos Evo</span>
             ${unresolvedLeadIds.length
               ? html`<span className="chip warn">${unresolvedLeadIds.length} sem Messenlead</span>`
               : null}
@@ -2049,6 +2060,9 @@ function MetricasMensagensView({
           ${hasDailyLeadRevenue
             ? html`<strong> ${leadDailyRows.length} linhas diarias carregadas.</strong>`
             : html`<strong> Sem linhas diarias de lead no periodo.</strong>`}
+          ${candidateTermRows.length && !resolvedLeadIdSet.size
+            ? html`<strong> Existem candidatos em utm_term, mas nenhum foi resolvido pelo Evo/Messenlead.</strong>`
+            : null}
         </p>
         <div className="table-wrapper scroll-x">
           <table>
@@ -2173,8 +2187,8 @@ function MetricasMensagensView({
                 : html`
                     <tr>
                       <td colSpan=${showUserCommission ? 14 + selectedLtvExtraDays.length : 21 + selectedLtvExtraDays.length * 2}>
-                        Sem <code>utm_term=ml_...</code> na JoinAds para o periodo.
-                        Use <code>utm_term=${"{{entry.lead_id}}"}</code> nos links do Messenlead.
+                        Sem <code>lead_id</code> resolvido em <code>utm_term</code> para o periodo.
+                        Use <code>utm_term=${"{{entry.lead_id}}"}</code> nos links do Messenlead e confirme se o Evo esta resolvendo esses IDs.
                       </td>
                     </tr>
                   `}
@@ -3080,6 +3094,45 @@ const normalizeKey = (value) =>
     .toString()
     .trim()
     .toLowerCase();
+
+const INVALID_LEAD_TERMS = new Set(["", "none", "null", "undefined", "unassigned", "-"]);
+
+function cleanTermValue(value) {
+  return String(value ?? "").trim();
+}
+
+function looksLikeMessenleadLeadId(value) {
+  const raw = cleanTermValue(value);
+  const key = normalizeKey(raw);
+  if (!key || INVALID_LEAD_TERMS.has(key)) return false;
+  if (key.startsWith("ml_")) return true;
+  // Evita mandar nomes de conjunto/campanha para o Evo. O lead_id do Messenlead deve ser URL-safe.
+  return /^[a-z0-9_-]{6,128}$/i.test(raw);
+}
+
+function normalizeMessenleadLead(lead) {
+  if (!lead || typeof lead !== "object") return null;
+  const leadId = cleanTermValue(lead.leadId ?? lead.lead_id ?? lead.id);
+  if (!leadId) return null;
+  return {
+    ...lead,
+    leadId,
+    firstSeenAt:
+      lead.firstSeenAt ??
+      lead.first_seen_at ??
+      lead.createdAt ??
+      lead.created_at ??
+      "",
+    lastSeenAt:
+      lead.lastSeenAt ??
+      lead.last_seen_at ??
+      lead.updatedAt ??
+      lead.updated_at ??
+      "",
+    adId: cleanTermValue(lead.adId ?? lead.ad_id ?? ""),
+    sourceKey: cleanTermValue(lead.sourceKey ?? lead.source_key ?? ""),
+  };
+}
 
 const DASHBOARD_USER_PARAMS = ["utm_user", "dashboard_user", "username", "user"];
 
@@ -7807,8 +7860,8 @@ function App() {
       const leadIds = Array.from(
         new Set(
           superTermRowsData
-            .map((row) => String(row.custom_value || "").trim())
-            .filter((value) => normalizeKey(value).startsWith("ml_"))
+            .map((row) => cleanTermValue(row.custom_value))
+            .filter(looksLikeMessenleadLeadId)
         )
       );
       if (leadIds.length) {
@@ -7820,6 +7873,21 @@ function App() {
         } catch (err) {
           pushLog("messenlead-leads-resolve", err);
         }
+
+        const resolvedLeadKeySet = new Set(
+          (Array.isArray(messenleadLeadRes?.leads) ? messenleadLeadRes.leads : [])
+            .map(normalizeMessenleadLead)
+            .filter(Boolean)
+            .map((lead) => normalizeKey(lead.leadId))
+        );
+        const fallbackLegacyLeadKeySet = new Set(
+          leadIds
+            .map((leadId) => normalizeKey(leadId))
+            .filter((leadId) => leadId.startsWith("ml_"))
+        );
+        const dailyLeadKeySet = resolvedLeadKeySet.size
+          ? resolvedLeadKeySet
+          : fallbackLegacyLeadKeySet;
 
         const dailyDates = listIsoDatesInRange(filters.startDate, filters.endDate, 15);
         const dailyResults = await Promise.all(
@@ -7848,7 +7916,7 @@ function App() {
         );
         termDailyRows = dailyResults
           .flat()
-          .filter((row) => normalizeKey(row.custom_value).startsWith("ml_"));
+          .filter((row) => dailyLeadKeySet.has(normalizeKey(row.custom_value)));
       }
 
       // Reutiliza keyValueContentRes para paramPairs — elimina 2 fetches duplicados ao mesmo endpoint
