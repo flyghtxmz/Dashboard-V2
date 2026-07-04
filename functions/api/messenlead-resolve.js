@@ -18,6 +18,38 @@ function cleanMessenleadId(value) {
   return String(value || "").trim();
 }
 
+function normalizeMessenleadLead(lead) {
+  if (!lead || typeof lead !== "object") return null;
+  const leadId = cleanMessenleadId(lead.leadId ?? lead.lead_id ?? lead.id);
+  if (!leadId) return null;
+  return {
+    ...lead,
+    leadId,
+    firstSeenAt: lead.firstSeenAt ?? lead.first_seen_at ?? lead.createdAt ?? lead.created_at ?? "",
+    lastSeenAt: lead.lastSeenAt ?? lead.last_seen_at ?? lead.updatedAt ?? lead.updated_at ?? "",
+    adId: cleanMessenleadId(lead.adId ?? lead.ad_id ?? ""),
+    sourceKey: cleanMessenleadId(lead.sourceKey ?? lead.source_key ?? ""),
+    pageId: cleanMessenleadId(lead.pageId ?? lead.page_id ?? ""),
+  };
+}
+
+function leadDiagnostics(leadIds, resolvedLeads, unresolvedLeadSet) {
+  return {
+    requested: leadIds.length,
+    resolved: resolvedLeads.length,
+    unresolved: unresolvedLeadSet.size,
+    requestedSamples: leadIds.slice(0, 20),
+    resolvedSamples: resolvedLeads.slice(0, 20).map((lead) => ({
+      leadId: lead.leadId,
+      firstSeenAt: lead.firstSeenAt || "",
+      adId: lead.adId || "",
+      sourceKey: lead.sourceKey || "",
+      pageId: lead.pageId || "",
+    })),
+    unresolvedSamples: Array.from(unresolvedLeadSet).slice(0, 20),
+  };
+}
+
 function normalizeBaseUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
@@ -74,7 +106,11 @@ async function resolveBatchFromMessenlead(baseUrl, token, payload) {
     sources: Array.isArray(data?.sources) ? data.sources : [],
     unresolved: Array.isArray(data?.unresolved) ? data.unresolved : [],
     leads: Array.isArray(data?.leads) ? data.leads : [],
-    unresolvedLeadIds: Array.isArray(data?.unresolvedLeadIds) ? data.unresolvedLeadIds : [],
+    unresolvedLeadIds: Array.isArray(data?.unresolvedLeadIds)
+      ? data.unresolvedLeadIds
+      : Array.isArray(data?.unresolved_lead_ids)
+      ? data.unresolved_lead_ids
+      : [],
   };
 }
 
@@ -116,9 +152,10 @@ export async function onRequest({ request, env }) {
       const { leads, unresolvedLeadIds } = await resolveBatchFromMessenlead(baseUrl, token, { leadIds: batch });
       const resolvedInBatch = new Set();
       for (const lead of leads) {
-        if (lead?.leadId) {
-          resolvedLeads.push(lead);
-          resolvedInBatch.add(lead.leadId);
+        const normalizedLead = normalizeMessenleadLead(lead);
+        if (normalizedLead?.leadId) {
+          resolvedLeads.push(normalizedLead);
+          resolvedInBatch.add(normalizedLead.leadId);
         }
       }
       unresolvedLeadIds.forEach((leadId) => unresolvedLeadSet.add(leadId));
@@ -141,6 +178,7 @@ export async function onRequest({ request, env }) {
       unresolved: [],
       unresolvedLeadIds: Array.from(unresolvedLeadSet),
       leadResolved: resolvedLeads.length,
+      leadDiagnostics: leadDiagnostics(leadIds, resolvedLeads, unresolvedLeadSet),
     });
   }
 
@@ -169,6 +207,7 @@ export async function onRequest({ request, env }) {
     leads: resolvedLeads,
     unresolvedLeadIds: Array.from(unresolvedLeadSet),
     leadResolved: resolvedLeads.length,
+    leadDiagnostics: leadDiagnostics(leadIds, resolvedLeads, unresolvedLeadSet),
     });
   }
 
@@ -217,5 +256,6 @@ export async function onRequest({ request, env }) {
     cacheHits: cachedSources.length,
     resolved: resolvedSources.length,
     leadResolved: resolvedLeads.length,
+    leadDiagnostics: leadDiagnostics(leadIds, resolvedLeads, unresolvedLeadSet),
   });
 }

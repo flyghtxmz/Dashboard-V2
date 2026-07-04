@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 114;
+const APP_VERSION_BUILD = 115;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1168,9 +1168,7 @@ function MetricasMensagensView({
   const isLeadTerm = (value) => {
     const key = normalizeKey(value);
     if (!key) return false;
-    if (resolvedLeadIdSet.has(key)) return true;
-    // Fallback legado: antes o Evo usava/planejava lead_id com prefixo ml_.
-    return resolvedLeadIdSet.size === 0 && key.startsWith("ml_");
+    return resolvedLeadIdSet.has(key);
   };
   const leadTermRows = allTermRows.filter((row) => isLeadTerm(row.custom_value));
   const leadDailyRows = allTermDailyRows.filter((row) => isLeadTerm(row.custom_value));
@@ -1562,6 +1560,37 @@ function MetricasMensagensView({
     campaignLtvTotals.impressions > 0
       ? (campaignLtvTotals.revenue_usd / campaignLtvTotals.impressions) * 1000
       : null;
+  const ltvDiagnostics = {
+    appBuild: APP_VERSION_BUILD,
+    allTermRows: allTermRows.length,
+    candidateTermRows: candidateTermRows.length,
+    leadTermRows: leadTermRows.length,
+    leadDailyRows: leadDailyRows.length,
+    resolvedLeadRows: normalizedLeadRows.length,
+    unresolvedLeadIds: unresolvedLeadIds.slice(0, 30),
+    termSamples: allTermRows.slice(0, 20).map((row) => ({
+      value: row.custom_value || "",
+      domain: row.domain || row.name || "",
+      revenueClient: row.revenue_client ?? row.revenue ?? null,
+      impressions: row.impressions ?? null,
+      clicks: row.clicks ?? null,
+    })),
+    candidateSamples: candidateTermRows.slice(0, 20).map((row) => ({
+      value: row.custom_value || "",
+      domain: row.domain || row.name || "",
+      revenueClient: row.revenue_client ?? row.revenue ?? null,
+      impressions: row.impressions ?? null,
+      clicks: row.clicks ?? null,
+    })),
+    resolvedLeadSamples: normalizedLeadRows.slice(0, 20).map((lead) => ({
+      leadId: lead.leadId,
+      firstSeenAt: lead.firstSeenAt,
+      adId: lead.adId,
+      sourceKey: lead.sourceKey,
+      pageId: lead.pageId || "",
+    })),
+    resolveRequest: diagnostics.messenleadLeadDiagnostics || {},
+  };
   const attributionLabel = (levels) => {
     const list = Array.from(levels || []);
     if (!list.length) return "-";
@@ -2064,6 +2093,12 @@ function MetricasMensagensView({
             ? html`<strong> Existem candidatos em utm_term, mas nenhum foi resolvido pelo Evo/Messenlead.</strong>`
             : null}
         </p>
+        <div className="diagnostic-box" style=${{ marginBottom: "14px" }}>
+          <div className="muted small" style=${{ marginBottom: "8px" }}>
+            Diagnostico LTV. Copie este bloco se continuar aparecendo <strong>Sem campanha</strong>.
+          </div>
+          <pre className="debug-log">${JSON.stringify(ltvDiagnostics, null, 2)}</pre>
+        </div>
         <div className="table-wrapper scroll-x">
           <table>
             <thead>
@@ -7319,6 +7354,7 @@ function App() {
   const [messenleadUnresolved, setMessenleadUnresolved] = useState([]);
   const [messenleadLeads, setMessenleadLeads] = useState([]);
   const [messenleadUnresolvedLeadIds, setMessenleadUnresolvedLeadIds] = useState([]);
+  const [messenleadLeadDiagnostics, setMessenleadLeadDiagnostics] = useState({});
   const [topUrls, setTopUrls] = useState([]);
   const [earnings, setEarnings] = useState([]);
   const [earningsAll, setEarningsAll] = useState([]);
@@ -7391,6 +7427,7 @@ function App() {
     setMessenleadUnresolved([]);
     setMessenleadLeads([]);
     setMessenleadUnresolvedLeadIds([]);
+    setMessenleadLeadDiagnostics({});
     setTopUrls([]);
     setEarnings([]);
     setEarningsAll([]);
@@ -7665,6 +7702,7 @@ function App() {
       let campaignSuperRes = { data: [] };
       let messenleadRes = { sources: [], unresolved: [] };
       let messenleadLeadRes = { leads: [], unresolvedLeadIds: [] };
+      let leadResolveDiagnostics = {};
       let termDailyRows = [];
       let contentSuperError = null;
       let campaignSuperError = null;
@@ -7864,14 +7902,59 @@ function App() {
             .filter(looksLikeMessenleadLeadId)
         )
       );
+      leadResolveDiagnostics = {
+        status: leadIds.length ? "pending" : "sem_candidatos",
+        superTermRows: superTermRowsData.length,
+        requestedLeadIds: leadIds.length,
+        termSamples: superTermRowsData.slice(0, 20).map((row) => ({
+          value: row.custom_value || "",
+          domain: row.domain || row.name || "",
+          revenueClient: row.revenue_client ?? row.revenue ?? null,
+          impressions: row.impressions ?? null,
+          clicks: row.clicks ?? null,
+        })),
+        leadIdSamples: leadIds.slice(0, 30),
+      };
       if (leadIds.length) {
         try {
           messenleadLeadRes = await fetchJson(`${API_BASE}/messenlead-resolve`, {
             method: "POST",
             body: JSON.stringify({ leadIds }),
           });
+          const resolvedLeadSamples = (Array.isArray(messenleadLeadRes?.leads)
+            ? messenleadLeadRes.leads
+            : [])
+            .map(normalizeMessenleadLead)
+            .filter(Boolean)
+            .slice(0, 20)
+            .map((lead) => ({
+              leadId: lead.leadId,
+              firstSeenAt: lead.firstSeenAt,
+              adId: lead.adId,
+              sourceKey: lead.sourceKey,
+              pageId: lead.pageId || "",
+            }));
+          leadResolveDiagnostics = {
+            ...leadResolveDiagnostics,
+            status: "ok",
+            responseKeys: Object.keys(messenleadLeadRes || {}),
+            resolvedLeads: Array.isArray(messenleadLeadRes?.leads)
+              ? messenleadLeadRes.leads.length
+              : 0,
+            unresolvedLeadIds: Array.isArray(messenleadLeadRes?.unresolvedLeadIds)
+              ? messenleadLeadRes.unresolvedLeadIds
+              : [],
+            leadResolved: messenleadLeadRes?.leadResolved ?? null,
+            endpointDiagnostics: messenleadLeadRes?.leadDiagnostics || null,
+            resolvedLeadSamples,
+          };
         } catch (err) {
           pushLog("messenlead-leads-resolve", err);
+          leadResolveDiagnostics = {
+            ...leadResolveDiagnostics,
+            status: "erro",
+            error: formatError(err),
+          };
         }
 
         const resolvedLeadKeySet = new Set(
@@ -8047,6 +8130,7 @@ function App() {
           ? messenleadLeadRes.unresolvedLeadIds
           : []
       );
+      setMessenleadLeadDiagnostics(leadResolveDiagnostics);
       setSuperKey(superKeyUsed || "utm_content");
       setSuperTermRows(superTermRowsData);
       setJoinadsTermDailyRows(termDailyRows);
@@ -10351,6 +10435,7 @@ function App() {
                   joinadsSuperFilterDiagnostics,
                   messenleadSourcesCount: messenleadSources.length,
                   messenleadUnresolved,
+                  messenleadLeadDiagnostics,
                   metaDiagnostics,
                   messageSourceRowsCount: metaMessageFiltered.length,
                 }}
@@ -10549,6 +10634,7 @@ function App() {
               joinadsSuperFilterDiagnostics,
               messenleadSourcesCount: messenleadSources.length,
               messenleadUnresolved,
+              messenleadLeadDiagnostics,
               metaDiagnostics,
               messageSourceRowsCount: metaMessageFiltered.length,
             }}
