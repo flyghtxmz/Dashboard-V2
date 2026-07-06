@@ -13,6 +13,8 @@ import { getSession } from "../_auth.js";
 const SRC_MAP_KEY = "messenlead:src-adid-map:v1";
 // Teto de src_ por chamada ao Messenlead (ele tambem corta em 500). Loteamos para nao truncar.
 const MESSENLEAD_BATCH = 500;
+// leadIds viram filtros SQL no D1 do Messenlead; lote menor evita "too many SQL variables".
+const MESSENLEAD_LEAD_BATCH = 50;
 
 function cleanMessenleadId(value) {
   return String(value || "").trim();
@@ -148,7 +150,7 @@ export async function onRequest({ request, env }) {
   const resolvedLeads = [];
   const unresolvedLeadSet = new Set();
   try {
-    for (const batch of chunk(leadIds, MESSENLEAD_BATCH)) {
+    for (const batch of chunk(leadIds, MESSENLEAD_LEAD_BATCH)) {
       const { leads, unresolvedLeadIds } = await resolveBatchFromMessenlead(baseUrl, token, { leadIds: batch });
       const resolvedInBatch = new Set();
       for (const lead of leads) {
