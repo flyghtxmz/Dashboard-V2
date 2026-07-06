@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 118;
+const APP_VERSION_BUILD = 119;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -499,6 +499,23 @@ function ThemeToggle() {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function withTimeout(promise, ms, fallback) {
+  let timer = null;
+  return new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      }
+    );
+  });
+}
 
 async function retryOnSubcode33(fn) {
   const delays = [1500, 3000, 5000];
@@ -7979,32 +7996,36 @@ function App() {
       if (settingsData.showMessagesLtvTable !== false && ltvDailyDates.length) {
         const dailyResults = await Promise.all(
           ltvDailyDates.map((day) =>
-            fetchJson(`${API_BASE}/super-filter`, {
-              method: "POST",
-              body: JSON.stringify({
-                start_date: day,
-                end_date: day,
-                "domain[]": [filters.domain.trim()],
-                custom_key: "utm_term",
-                group: ["domain", "custom_value"],
-              }),
-            })
-              .then((res) =>
-                (Array.isArray(res?.data) ? res.data : []).map((row) => ({
-                  ...row,
-                  revenue_date: day,
-                }))
-              )
-              .catch((err) => {
-                pushLog(`super-filter-term-ltv:${day}`, err);
-                return [];
+            withTimeout(
+              fetchJson(`${API_BASE}/super-filter`, {
+                method: "POST",
+                body: JSON.stringify({
+                  start_date: day,
+                  end_date: day,
+                  "domain[]": [filters.domain.trim()],
+                  custom_key: "utm_term",
+                  group: ["domain", "custom_value"],
+                }),
               })
+                .then((res) =>
+                  (Array.isArray(res?.data) ? res.data : []).map((row) => ({
+                    ...row,
+                    revenue_date: day,
+                  }))
+                )
+                .catch((err) => {
+                  pushLog(`super-filter-term-ltv:${day}`, err);
+                  return [];
+                }),
+              10000,
+              []
+            )
           )
         );
         termDailyCandidateRows = dailyResults.flat();
       }
 
-      const leadIdSourceRows = termDailyCandidateRows.length ? termDailyCandidateRows : superTermRowsData;
+      const leadIdSourceRows = [...termDailyCandidateRows, ...superTermRowsData];
       const leadIds = Array.from(
         new Set(
           leadIdSourceRows
