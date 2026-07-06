@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 117;
+const APP_VERSION_BUILD = 118;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -287,6 +287,13 @@ function daysBetweenIsoDates(startDate, endDate) {
   const end = parseIsoDate(endDate);
   if (!start || !end) return null;
   return Math.floor((end.getTime() - start.getTime()) / 86400000);
+}
+
+function addIsoDays(dateString, days) {
+  const date = parseIsoDate(dateString);
+  if (!date) return "";
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return date.toISOString().slice(0, 10);
 }
 
 function toNumber(value) {
@@ -900,6 +907,7 @@ function MetricasMensagensView({
   termRows = [],
   termDailyRows = [],
   leadRows = [],
+  ltvMetaRows = [],
   unresolvedLeadIds = [],
   onBudgetUpdate,
   budgetLoading = {},
@@ -917,6 +925,9 @@ function MetricasMensagensView({
   );
   const visibleLtvDays = [0, 1, 2, 3, ...selectedLtvExtraDays];
   const maxVisibleLtvDay = visibleLtvDays[visibleLtvDays.length - 1] || 3;
+  const ltvWindow = diagnostics?.messenleadLeadDiagnostics?.ltvWindow || {};
+  const ltvWindowStart = ltvWindow.startDate || "";
+  const ltvWindowEnd = ltvWindow.endDate || "";
   const [messageBudgetInputs, setMessageBudgetInputs] = useState({});
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
@@ -1180,6 +1191,9 @@ function MetricasMensagensView({
         const key = normalizeKey(leadId);
         if (!key) return map;
         const leadInfo = leadInfoById.get(key) || {};
+        const cohortDate = leadInfo.firstSeenAt ? String(leadInfo.firstSeenAt).slice(0, 10) : "";
+        if (cohortDate && ltvWindowStart && cohortDate < ltvWindowStart) return map;
+        if (cohortDate && ltvWindowEnd && cohortDate > ltvWindowEnd) return map;
         const item =
           map.get(key) || {
             lead_id: leadId,
@@ -1282,7 +1296,8 @@ function MetricasMensagensView({
     .sort((a, b) => b.revenue_usd - a.revenue_usd);
   const metaAdInfoById = new Map();
   const metaCampaignDailyByKey = new Map();
-  safeRows.filter((row) => isMessageMetricsRow(row)).forEach((row) => {
+  const metaRowsForLtv = Array.isArray(ltvMetaRows) && ltvMetaRows.length ? ltvMetaRows : safeRows;
+  metaRowsForLtv.filter((row) => isMessageMetricsRow(row)).forEach((row) => {
     const adId = normalizeKey(row.ad_id || "");
     const campaignId = String(row.campaign_id || "").trim();
     const campaignName = String(row.campaign_name || "").trim();
@@ -1314,6 +1329,10 @@ function MetricasMensagensView({
 
     if (campaignKey && rowDate) {
       const dailyKey = `${campaignKey}|||${rowDate}`;
+      const rowConversations =
+        row.messaging_conversations_started != null
+          ? toNumber(row.messaging_conversations_started)
+          : getMessagingConversationStarts(row);
       const current =
         metaCampaignDailyByKey.get(dailyKey) || {
           spend_brl: 0,
@@ -1323,7 +1342,7 @@ function MetricasMensagensView({
           ads: new Set(),
         };
       current.spend_brl += rowSpend;
-      current.conversations += toNumber(row.messaging_conversations_started);
+      current.conversations += rowConversations;
       current.impressions += toNumber(row.meta_impressions_value || row.impressions);
       current.clicks += toNumber(row.meta_clicks_value || row.clicks);
       if (row.ad_id || row.ad_name) current.ads.add(row.ad_id || row.ad_name);
@@ -1338,13 +1357,16 @@ function MetricasMensagensView({
         const campaignName = adInfo.campaign_name || campaignId || "Sem campanha";
         const campaignKey = normalizeKey(campaignId || campaignName || row.ad_id || row.source_key || "unattributed");
         const cohortDate = row.first_seen_at ? String(row.first_seen_at).slice(0, 10) : "sem_coorte";
-        const key = `${campaignKey}|||${cohortDate}`;
+        const key = campaignKey;
         const item =
           map.get(key) || {
             campaign_key: campaignKey,
             campaign_id: campaignId,
             campaign_name: campaignName,
-            cohort_date: cohortDate,
+            cohort_date: "",
+            first_cohort_date: "",
+            last_cohort_date: "",
+            cohort_dates: new Set(),
             leads: 0,
             resolved: 0,
             joinads_rows: 0,
@@ -1378,6 +1400,14 @@ function MetricasMensagensView({
             d7_user_brl: 0,
             user_commission_brl: 0,
           };
+        if (cohortDate && cohortDate !== "sem_coorte") {
+          item.cohort_dates.add(cohortDate);
+          if (!item.first_cohort_date || cohortDate < item.first_cohort_date) item.first_cohort_date = cohortDate;
+          if (!item.last_cohort_date || cohortDate > item.last_cohort_date) item.last_cohort_date = cohortDate;
+          item.cohort_date = item.first_cohort_date === item.last_cohort_date
+            ? item.first_cohort_date
+            : `${item.first_cohort_date} a ${item.last_cohort_date}`;
+        }
         item.leads += 1;
         item.resolved += row.resolved ? 1 : 0;
         item.joinads_rows += row.rows || 0;
@@ -1416,12 +1446,21 @@ function MetricasMensagensView({
       .values()
   )
     .map((row) => {
-      const metaDaily =
-        row.cohort_date && row.cohort_date !== "sem_coorte"
-          ? metaCampaignDailyByKey.get(`${row.campaign_key}|||${row.cohort_date}`)
-          : null;
-      const spendBrl = metaDaily ? toNumber(metaDaily.spend_brl) : 0;
-      const metaConversations = metaDaily ? toNumber(metaDaily.conversations) : 0;
+      const metaDailyTotals = Array.from(row.cohort_dates || []).reduce(
+        (acc, cohortDate) => {
+          const metaDaily = metaCampaignDailyByKey.get(`${row.campaign_key}|||${cohortDate}`);
+          if (!metaDaily) return acc;
+          acc.spend_brl += toNumber(metaDaily.spend_brl);
+          acc.conversations += toNumber(metaDaily.conversations);
+          acc.impressions += toNumber(metaDaily.impressions);
+          acc.clicks += toNumber(metaDaily.clicks);
+          Array.from(metaDaily.ads || []).forEach((ad) => acc.ads.add(ad));
+          return acc;
+        },
+        { spend_brl: 0, conversations: 0, impressions: 0, clicks: 0, ads: new Set() }
+      );
+      const spendBrl = metaDailyTotals.spend_brl;
+      const metaConversations = metaDailyTotals.conversations;
       const visibleWindowImpressions = hasDailyLeadRevenue
         ? row[`d${maxVisibleLtvDay}_impressions`]
         : null;
@@ -1430,6 +1469,8 @@ function MetricasMensagensView({
         ...row,
         spend_brl: spendBrl,
         meta_conversations: metaConversations,
+        meta_impressions: metaDailyTotals.impressions,
+        meta_clicks: metaDailyTotals.clicks,
         roas_d0: spendBrl > 0 ? row.d0_brl / spendBrl : null,
         roas_d1: spendBrl > 0 ? row.d1_brl / spendBrl : null,
         roas_d2: spendBrl > 0 ? row.d2_brl / spendBrl : null,
@@ -1481,6 +1522,7 @@ function MetricasMensagensView({
       acc.meta_conversations += row.meta_conversations || 0;
       Array.from(row.ads || []).forEach((ad) => acc.ads.add(ad));
       if (row.campaign_name || row.campaign_id) acc.campaigns.add(row.campaign_id || row.campaign_name);
+      Array.from(row.cohort_dates || []).forEach((date) => acc.cohorts.add(`${row.campaign_key || row.campaign_id || row.campaign_name}|||${date}`));
       return acc;
     },
     {
@@ -1512,6 +1554,7 @@ function MetricasMensagensView({
       spend_brl: 0,
       meta_conversations: 0,
       campaigns: new Set(),
+      cohorts: new Set(),
       ads: new Set(),
     }
   );
@@ -1590,6 +1633,12 @@ function MetricasMensagensView({
       pageId: lead.pageId || "",
     })),
     resolveRequest: diagnostics.messenleadLeadDiagnostics || {},
+  };
+  const formatCampaignLtvCohorts = (row) => {
+    const dates = Array.from(row.cohort_dates || []).sort();
+    if (!dates.length) return "-";
+    if (dates.length === 1) return dates[0];
+    return `${dates[0]} a ${dates[dates.length - 1]}`;
   };
   const attributionLabel = (levels) => {
     const list = Array.from(levels || []);
@@ -2070,10 +2119,14 @@ function MetricasMensagensView({
             <h2 className="section-title">LTV Mensagens</h2>
           </div>
           <div className="chip-group">
-            <span className="chip neutral">${campaignLtvRows.length} campanhas/coortes</span>
+            <span className="chip neutral">${campaignLtvRows.length} campanhas</span>
+            <span className="chip neutral">${campaignLtvTotals.cohorts.size} coortes</span>
             <span className="chip neutral">${allTermRows.length} linhas utm_term</span>
             <span className="chip neutral">${candidateTermRows.length} candidatos</span>
             <span className="chip neutral">${leadLtvRows.length} leads com utm_term</span>
+            ${ltvWindowStart && ltvWindowEnd
+              ? html`<span className="chip neutral">janela LTV ${ltvWindowStart} a ${ltvWindowEnd}</span>`
+              : null}
             <span className="chip neutral">${normalizedLeadRows.length} leads resolvidos Evo</span>
             ${unresolvedLeadIds.length
               ? html`<span className="chip warn">${unresolvedLeadIds.length} sem Messenlead</span>`
@@ -2084,8 +2137,9 @@ function MetricasMensagensView({
           </div>
         </div>
         <p className="muted small">
-          Coorte real por <code>utm_term=lead_id</code>, agregada por campanha. O <code>lead_id</code>
-          continua sendo usado apenas como chave interna para ligar JoinAds ao Evo e calcular D0-D${maxVisibleLtvDay}.
+          Coorte real por <code>utm_term=lead_id</code>, agregada por campanha. Quando o filtro esta em hoje,
+          a janela LTV tambem busca dias anteriores para preencher D0-D${maxVisibleLtvDay}; o <code>lead_id</code>
+          continua sendo usado apenas como chave interna para ligar JoinAds ao Evo.
           ${hasDailyLeadRevenue
             ? html`<strong> ${leadDailyRows.length} linhas diarias carregadas.</strong>`
             : html`<strong> Sem linhas diarias de lead no periodo.</strong>`}
@@ -2104,7 +2158,7 @@ function MetricasMensagensView({
             <thead>
               <tr>
                 <th>Campanha</th>
-                <th>Coorte</th>
+                <th>Coortes</th>
                 <th>Leads</th>
                 <th>Anuncios</th>
                 <th>${showUserCommission ? "Lucro D0" : "Receita D0"}</th>
@@ -2147,7 +2201,10 @@ function MetricasMensagensView({
                             : null}
                         </td>
                         <td>
-                          ${row.cohort_date && row.cohort_date !== "sem_coorte" ? row.cohort_date : "-"}
+                          ${formatCampaignLtvCohorts(row)}
+                          ${row.cohort_dates.size
+                            ? html`<div className="muted small">${number.format(row.cohort_dates.size)} coorte${row.cohort_dates.size === 1 ? "" : "s"} acoplada${row.cohort_dates.size === 1 ? "" : "s"}</div>`
+                            : null}
                           ${row.meta_conversations
                             ? html`<div className="muted small">${number.format(row.meta_conversations)} conversas Meta</div>`
                             : null}
@@ -2231,7 +2288,7 @@ function MetricasMensagensView({
                 ? html`
                     <tr className="summary-row">
                       <td><strong>Total</strong></td>
-                      <td><strong>${number.format(campaignLtvRows.length)} coortes</strong></td>
+                      <td><strong>${number.format(campaignLtvTotals.cohorts.size)} coortes</strong></td>
                       <td><strong>${number.format(campaignLtvTotals.leads)}</strong></td>
                       <td><strong>${number.format(campaignLtvTotals.ads.size)}</strong></td>
                       <td><strong>${currencyBRL.format(showUserCommission ? campaignLtvTotals.d0_user_brl || 0 : campaignLtvTotals.d0_brl || 0)}</strong></td>
@@ -7366,6 +7423,7 @@ function App() {
   const [domainsLoading, setDomainsLoading] = useState(false);
   const [logs, setLogs] = useState([]);
   const [metaRows, setMetaRows] = useState([]);
+  const [metaLtvRows, setMetaLtvRows] = useState([]);
   const [metaDiagnostics, setMetaDiagnostics] = useState({});
   const [fxInfo, setFxInfo] = useState(() => readCachedFxInfo());
   const [fxStatus, setFxStatus] = useState("idle");
@@ -7650,6 +7708,28 @@ function App() {
     const end = new Date(filters.endDate);
     const diffMs = end.getTime() - start.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const selectedLtvExtraDays = OPTIONAL_LTV_DAYS.filter((day) =>
+      (Array.isArray(settingsData.messagesLtvExtraDays) ? settingsData.messagesLtvExtraDays : [])
+        .map(Number)
+        .includes(day)
+    );
+    const maxLtvDay = [0, 1, 2, 3, ...selectedLtvExtraDays].at(-1) || 3;
+    const requestedLtvStartDate = addIsoDays(filters.startDate, -maxLtvDay) || filters.startDate;
+    const requestedLtvSpan = daysBetweenIsoDates(requestedLtvStartDate, filters.endDate);
+    const ltvStartDate =
+      requestedLtvSpan != null && requestedLtvSpan >= 15
+        ? addIsoDays(filters.endDate, -14)
+        : requestedLtvStartDate;
+    const ltvEndDate = filters.endDate;
+    const ltvDailyDates = listIsoDatesInRange(ltvStartDate, ltvEndDate, 15);
+    const ltvWindow = {
+      startDate: ltvStartDate,
+      endDate: ltvEndDate,
+      requestedStartDate: requestedLtvStartDate,
+      maxDay: maxLtvDay,
+      dates: ltvDailyDates,
+      truncated: Boolean(ltvStartDate && requestedLtvStartDate && ltvStartDate !== requestedLtvStartDate),
+    };
     if (diffDays > 15) {
       setError("Intervalo máximo permitido é de 15 dias.");
       return;
@@ -7895,9 +7975,39 @@ function App() {
       ]);
 
       const superTermRowsData = Array.isArray(superTermRes?.data) ? superTermRes.data : [];
+      let termDailyCandidateRows = [];
+      if (settingsData.showMessagesLtvTable !== false && ltvDailyDates.length) {
+        const dailyResults = await Promise.all(
+          ltvDailyDates.map((day) =>
+            fetchJson(`${API_BASE}/super-filter`, {
+              method: "POST",
+              body: JSON.stringify({
+                start_date: day,
+                end_date: day,
+                "domain[]": [filters.domain.trim()],
+                custom_key: "utm_term",
+                group: ["domain", "custom_value"],
+              }),
+            })
+              .then((res) =>
+                (Array.isArray(res?.data) ? res.data : []).map((row) => ({
+                  ...row,
+                  revenue_date: day,
+                }))
+              )
+              .catch((err) => {
+                pushLog(`super-filter-term-ltv:${day}`, err);
+                return [];
+              })
+          )
+        );
+        termDailyCandidateRows = dailyResults.flat();
+      }
+
+      const leadIdSourceRows = termDailyCandidateRows.length ? termDailyCandidateRows : superTermRowsData;
       const leadIds = Array.from(
         new Set(
-          superTermRowsData
+          leadIdSourceRows
             .map((row) => cleanTermValue(row.custom_value))
             .filter(looksLikeMessenleadLeadId)
         )
@@ -7905,13 +8015,16 @@ function App() {
       leadResolveDiagnostics = {
         status: leadIds.length ? "pending" : "sem_candidatos",
         superTermRows: superTermRowsData.length,
+        ltvTermDailyRows: termDailyCandidateRows.length,
+        ltvWindow,
         requestedLeadIds: leadIds.length,
-        termSamples: superTermRowsData.slice(0, 20).map((row) => ({
+        termSamples: leadIdSourceRows.slice(0, 20).map((row) => ({
           value: row.custom_value || "",
           domain: row.domain || row.name || "",
           revenueClient: row.revenue_client ?? row.revenue ?? null,
           impressions: row.impressions ?? null,
           clicks: row.clicks ?? null,
+          revenueDate: row.revenue_date || null,
         })),
         leadIdSamples: leadIds.slice(0, 30),
       };
@@ -7974,33 +8087,7 @@ function App() {
           ? resolvedLeadKeySet
           : fallbackLegacyLeadKeySet;
 
-        const dailyDates = listIsoDatesInRange(filters.startDate, filters.endDate, 15);
-        const dailyResults = await Promise.all(
-          dailyDates.map((day) =>
-            fetchJson(`${API_BASE}/super-filter`, {
-              method: "POST",
-              body: JSON.stringify({
-                start_date: day,
-                end_date: day,
-                "domain[]": [filters.domain.trim()],
-                custom_key: "utm_term",
-                group: ["domain", "custom_value"],
-              }),
-            })
-              .then((res) =>
-                (Array.isArray(res?.data) ? res.data : []).map((row) => ({
-                  ...row,
-                  revenue_date: day,
-                }))
-              )
-              .catch((err) => {
-                pushLog(`super-filter-term-daily:${day}`, err);
-                return [];
-              })
-          )
-        );
-        termDailyRows = dailyResults
-          .flat()
+        termDailyRows = termDailyCandidateRows
           .filter((row) => dailyLeadKeySet.has(normalizeKey(row.custom_value)));
       }
 
@@ -8048,32 +8135,74 @@ function App() {
         );
         const insightRows = Array.isArray(metaRes?.data) ? metaRes.data : [];
         const structureRows = Array.isArray(editListRes?.data) ? editListRes.data : [];
-        const insightAdIds = new Set(
-          insightRows.map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
-        );
-        const messageFallbackRows = structureRows
-          .filter((row) => isMessageMetricsRow(row))
-          .filter((row) => !insightAdIds.has(normalizeKey(row.ad_id || row.id || "")))
-          .map((row) => ({
-            ...row,
-            ad_id: row.ad_id || row.id,
-            ad_name: row.ad_name || row.name,
-            date_start: filters.endDate,
-            date: filters.endDate,
-            spend: row.spend || 0,
-            results: row.results || null,
-            cost_per_result: row.cost_per_result || null,
-            meta_source: "structure_fallback",
-          }));
+        const buildMessageFallbackRows = (rowsForRange, fallbackDate) => {
+          const insightAdIds = new Set(
+            (rowsForRange || []).map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
+          );
+          return structureRows
+            .filter((row) => isMessageMetricsRow(row))
+            .filter((row) => !insightAdIds.has(normalizeKey(row.ad_id || row.id || "")))
+            .map((row) => ({
+              ...row,
+              ad_id: row.ad_id || row.id,
+              ad_name: row.ad_name || row.name,
+              date_start: fallbackDate,
+              date: fallbackDate,
+              spend: row.spend || 0,
+              results: row.results || null,
+              cost_per_result: row.cost_per_result || null,
+              meta_source: "structure_fallback",
+            }));
+        };
+        const messageFallbackRows = buildMessageFallbackRows(insightRows, filters.endDate);
         const mergedMetaRows = [
           ...insightRows.map((row) => ({ ...row, meta_source: "insights" })),
           ...messageFallbackRows,
         ];
+        let mergedLtvMetaRows = mergedMetaRows;
+        let ltvInsightRows = insightRows;
+        let ltvMetaSource = "selected_range";
+        if (ltvWindow.startDate && ltvWindow.endDate && (ltvWindow.startDate !== filters.startDate || ltvWindow.endDate !== filters.endDate)) {
+          try {
+            const ltvMetaParams = new URLSearchParams({
+              account_id: filters.metaAccountId.trim(),
+              start_date: ltvWindow.startDate,
+              end_date: ltvWindow.endDate,
+              include_assets: filters.includeAssets ? "1" : "0",
+              schema: "message-metrics-v2",
+            });
+            if (ltvWindow.endDate === formatDate(new Date())) {
+              ltvMetaParams.set("_ts", String(Date.now()));
+            }
+            const ltvMetaRes = await fetchJson(
+              `${API_BASE}/meta-insights?${ltvMetaParams.toString()}`,
+              {
+                cacheTtlMs: filters.includeAssets ? 2 * 60 * 1000 : 8 * 60 * 1000,
+                cacheKey: `meta-insights-ltv:${ltvMetaParams.toString()}`,
+              }
+            );
+            ltvInsightRows = Array.isArray(ltvMetaRes?.data) ? ltvMetaRes.data : [];
+            mergedLtvMetaRows = [
+              ...ltvInsightRows.map((row) => ({ ...row, meta_source: "insights_ltv" })),
+              ...buildMessageFallbackRows(ltvInsightRows, ltvWindow.endDate),
+            ];
+            ltvMetaSource = "ltv_window";
+          } catch (err) {
+            pushLog("meta-ltv", err);
+            mergedLtvMetaRows = mergedMetaRows;
+            ltvMetaSource = "fallback_selected_range";
+          }
+        }
         setMetaRows(mergedMetaRows);
+        setMetaLtvRows(mergedLtvMetaRows);
         setMetaDiagnostics({
           accountId: filters.metaAccountId.trim(),
           startDate: filters.startDate,
           endDate: filters.endDate,
+          ltvStartDate: ltvWindow.startDate,
+          ltvEndDate: ltvWindow.endDate,
+          ltvMetaSource,
+          ltvInsightsRows: ltvInsightRows.length,
           insightsRows: insightRows.length,
           structureRows: structureRows.length,
           structureEngagementRows: structureRows.filter((row) => isEngagementObjective(row.objective)).length,
@@ -8105,6 +8234,7 @@ function App() {
       } catch (err) {
         pushLog("meta", err);
         setMetaRows([]);
+        setMetaLtvRows([]);
         setMetaDiagnostics({
           accountId: filters.metaAccountId.trim(),
           startDate: filters.startDate,
@@ -10426,6 +10556,7 @@ function App() {
                 termRows=${superTermRows}
                 termDailyRows=${joinadsTermDailyRows}
                 leadRows=${messenleadLeads}
+                ltvMetaRows=${metaLtvRows}
                 unresolvedLeadIds=${messenleadUnresolvedLeadIds}
                 showLtvTable=${settingsData.showMessagesLtvTable !== false}
                 ltvExtraDays=${settingsData.messagesLtvExtraDays || []}
@@ -10620,6 +10751,7 @@ function App() {
             termRows=${superTermRows}
             termDailyRows=${joinadsTermDailyRows}
             leadRows=${messenleadLeads}
+            ltvMetaRows=${metaLtvRows}
             unresolvedLeadIds=${messenleadUnresolvedLeadIds}
             showLtvTable=${settingsData.showMessagesLtvTable !== false}
             ltvExtraDays=${settingsData.messagesLtvExtraDays || []}
