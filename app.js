@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 119;
+const APP_VERSION_BUILD = 120;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1208,9 +1208,6 @@ function MetricasMensagensView({
         const key = normalizeKey(leadId);
         if (!key) return map;
         const leadInfo = leadInfoById.get(key) || {};
-        const cohortDate = leadInfo.firstSeenAt ? String(leadInfo.firstSeenAt).slice(0, 10) : "";
-        if (cohortDate && ltvWindowStart && cohortDate < ltvWindowStart) return map;
-        if (cohortDate && ltvWindowEnd && cohortDate > ltvWindowEnd) return map;
         const item =
           map.get(key) || {
             lead_id: leadId,
@@ -7725,27 +7722,13 @@ function App() {
     const end = new Date(filters.endDate);
     const diffMs = end.getTime() - start.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    const selectedLtvExtraDays = OPTIONAL_LTV_DAYS.filter((day) =>
-      (Array.isArray(settingsData.messagesLtvExtraDays) ? settingsData.messagesLtvExtraDays : [])
-        .map(Number)
-        .includes(day)
-    );
-    const maxLtvDay = [0, 1, 2, 3, ...selectedLtvExtraDays].at(-1) || 3;
-    const requestedLtvStartDate = addIsoDays(filters.startDate, -maxLtvDay) || filters.startDate;
-    const requestedLtvSpan = daysBetweenIsoDates(requestedLtvStartDate, filters.endDate);
-    const ltvStartDate =
-      requestedLtvSpan != null && requestedLtvSpan >= 15
-        ? addIsoDays(filters.endDate, -14)
-        : requestedLtvStartDate;
-    const ltvEndDate = filters.endDate;
-    const ltvDailyDates = listIsoDatesInRange(ltvStartDate, ltvEndDate, 15);
     const ltvWindow = {
-      startDate: ltvStartDate,
-      endDate: ltvEndDate,
-      requestedStartDate: requestedLtvStartDate,
-      maxDay: maxLtvDay,
-      dates: ltvDailyDates,
-      truncated: Boolean(ltvStartDate && requestedLtvStartDate && ltvStartDate !== requestedLtvStartDate),
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      requestedStartDate: filters.startDate,
+      maxDay: 0,
+      dates: listIsoDatesInRange(filters.startDate, filters.endDate, 15),
+      truncated: false,
     };
     if (diffDays > 15) {
       setError("Intervalo máximo permitido é de 15 dias.");
@@ -7992,40 +7975,7 @@ function App() {
       ]);
 
       const superTermRowsData = Array.isArray(superTermRes?.data) ? superTermRes.data : [];
-      let termDailyCandidateRows = [];
-      if (settingsData.showMessagesLtvTable !== false && ltvDailyDates.length) {
-        const dailyResults = await Promise.all(
-          ltvDailyDates.map((day) =>
-            withTimeout(
-              fetchJson(`${API_BASE}/super-filter`, {
-                method: "POST",
-                body: JSON.stringify({
-                  start_date: day,
-                  end_date: day,
-                  "domain[]": [filters.domain.trim()],
-                  custom_key: "utm_term",
-                  group: ["domain", "custom_value"],
-                }),
-              })
-                .then((res) =>
-                  (Array.isArray(res?.data) ? res.data : []).map((row) => ({
-                    ...row,
-                    revenue_date: day,
-                  }))
-                )
-                .catch((err) => {
-                  pushLog(`super-filter-term-ltv:${day}`, err);
-                  return [];
-                }),
-              10000,
-              []
-            )
-          )
-        );
-        termDailyCandidateRows = dailyResults.flat();
-      }
-
-      const leadIdSourceRows = [...termDailyCandidateRows, ...superTermRowsData];
+      const leadIdSourceRows = superTermRowsData;
       const leadIds = Array.from(
         new Set(
           leadIdSourceRows
@@ -8036,7 +7986,6 @@ function App() {
       leadResolveDiagnostics = {
         status: leadIds.length ? "pending" : "sem_candidatos",
         superTermRows: superTermRowsData.length,
-        ltvTermDailyRows: termDailyCandidateRows.length,
         ltvWindow,
         requestedLeadIds: leadIds.length,
         termSamples: leadIdSourceRows.slice(0, 20).map((row) => ({
@@ -8108,7 +8057,37 @@ function App() {
           ? resolvedLeadKeySet
           : fallbackLegacyLeadKeySet;
 
-        termDailyRows = termDailyCandidateRows
+        const dailyDates = listIsoDatesInRange(filters.startDate, filters.endDate, 15);
+        const dailyResults = await Promise.all(
+          dailyDates.map((day) =>
+            withTimeout(
+              fetchJson(`${API_BASE}/super-filter`, {
+                method: "POST",
+                body: JSON.stringify({
+                  start_date: day,
+                  end_date: day,
+                  "domain[]": [filters.domain.trim()],
+                  custom_key: "utm_term",
+                  group: ["domain", "custom_value"],
+                }),
+              })
+                .then((res) =>
+                  (Array.isArray(res?.data) ? res.data : []).map((row) => ({
+                    ...row,
+                    revenue_date: day,
+                  }))
+                )
+                .catch((err) => {
+                  pushLog(`super-filter-term-daily:${day}`, err);
+                  return [];
+                }),
+              10000,
+              []
+            )
+          )
+        );
+        termDailyRows = dailyResults
+          .flat()
           .filter((row) => dailyLeadKeySet.has(normalizeKey(row.custom_value)));
       }
 
@@ -8180,50 +8159,16 @@ function App() {
           ...insightRows.map((row) => ({ ...row, meta_source: "insights" })),
           ...messageFallbackRows,
         ];
-        let mergedLtvMetaRows = mergedMetaRows;
-        let ltvInsightRows = insightRows;
-        let ltvMetaSource = "selected_range";
-        if (ltvWindow.startDate && ltvWindow.endDate && (ltvWindow.startDate !== filters.startDate || ltvWindow.endDate !== filters.endDate)) {
-          try {
-            const ltvMetaParams = new URLSearchParams({
-              account_id: filters.metaAccountId.trim(),
-              start_date: ltvWindow.startDate,
-              end_date: ltvWindow.endDate,
-              include_assets: filters.includeAssets ? "1" : "0",
-              schema: "message-metrics-v2",
-            });
-            if (ltvWindow.endDate === formatDate(new Date())) {
-              ltvMetaParams.set("_ts", String(Date.now()));
-            }
-            const ltvMetaRes = await fetchJson(
-              `${API_BASE}/meta-insights?${ltvMetaParams.toString()}`,
-              {
-                cacheTtlMs: filters.includeAssets ? 2 * 60 * 1000 : 8 * 60 * 1000,
-                cacheKey: `meta-insights-ltv:${ltvMetaParams.toString()}`,
-              }
-            );
-            ltvInsightRows = Array.isArray(ltvMetaRes?.data) ? ltvMetaRes.data : [];
-            mergedLtvMetaRows = [
-              ...ltvInsightRows.map((row) => ({ ...row, meta_source: "insights_ltv" })),
-              ...buildMessageFallbackRows(ltvInsightRows, ltvWindow.endDate),
-            ];
-            ltvMetaSource = "ltv_window";
-          } catch (err) {
-            pushLog("meta-ltv", err);
-            mergedLtvMetaRows = mergedMetaRows;
-            ltvMetaSource = "fallback_selected_range";
-          }
-        }
         setMetaRows(mergedMetaRows);
-        setMetaLtvRows(mergedLtvMetaRows);
+        setMetaLtvRows(mergedMetaRows);
         setMetaDiagnostics({
           accountId: filters.metaAccountId.trim(),
           startDate: filters.startDate,
           endDate: filters.endDate,
           ltvStartDate: ltvWindow.startDate,
           ltvEndDate: ltvWindow.endDate,
-          ltvMetaSource,
-          ltvInsightsRows: ltvInsightRows.length,
+          ltvMetaSource: "selected_range",
+          ltvInsightsRows: insightRows.length,
           insightsRows: insightRows.length,
           structureRows: structureRows.length,
           structureEngagementRows: structureRows.filter((row) => isEngagementObjective(row.objective)).length,
