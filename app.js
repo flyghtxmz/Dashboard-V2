@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 121;
+const APP_VERSION_BUILD = 122;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -494,6 +494,61 @@ function ThemeToggle() {
         <circle cx="12" cy="12" r="4.2"></circle>
         <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"></path>
       </svg>
+    </button>
+  `;
+}
+
+function TabButton({ tab, label, activeTab, onSelect, style }) {
+  const touchRef = useRef(null);
+  const active = activeTab === tab;
+  const select = () => onSelect(tab);
+
+  const handleTouchStart = (event) => {
+    const touch = event.touches && event.touches[0];
+    if (!touch) return;
+    touchRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      moved: false,
+    };
+  };
+
+  const handleTouchMove = (event) => {
+    const start = touchRef.current;
+    const touch = event.touches && event.touches[0];
+    if (!start || !touch) return;
+    if (
+      Math.abs(touch.clientX - start.x) > 12 ||
+      Math.abs(touch.clientY - start.y) > 12
+    ) {
+      start.moved = true;
+    }
+  };
+
+  const handleTouchEnd = (event) => {
+    const start = touchRef.current;
+    const touch = event.changedTouches && event.changedTouches[0];
+    touchRef.current = null;
+    if (!start || !touch || start.moved) return;
+    if (
+      Math.abs(touch.clientX - start.x) <= 12 &&
+      Math.abs(touch.clientY - start.y) <= 12
+    ) {
+      event.preventDefault();
+      select();
+    }
+  };
+
+  return html`
+    <button
+      className=${`tab ${active ? "active" : ""}`}
+      onClick=${select}
+      onTouchStart=${handleTouchStart}
+      onTouchMove=${handleTouchMove}
+      onTouchEnd=${handleTouchEnd}
+      style=${style}
+    >
+      ${label}
     </button>
   `;
 }
@@ -7660,6 +7715,32 @@ function App() {
     [session?.role]
   );
   const usePmLabels = isGestorSession(session);
+  const selectTab = (tab) => {
+    if (!availableTabs.includes(tab)) return;
+    setActiveTab(tab);
+  };
+  const renderTabBar = () => html`
+    <div className="tabs">
+      ${availableTabs.map((tab) => {
+        const createStyle =
+          tab === "criar"
+            ? {
+                background: activeTab === "criar" ? "var(--accent)" : "#e8f5e9",
+                borderColor: activeTab === "criar" ? "transparent" : "#a5d6a7",
+                color: activeTab === "criar" ? "#fff" : "#1b5e20",
+              }
+            : undefined;
+        return html`<${TabButton}
+          key=${tab}
+          tab=${tab}
+          label=${TAB_LABELS[tab] || tab}
+          activeTab=${activeTab}
+          onSelect=${selectTab}
+          style=${createStyle}
+        />`;
+      })}
+    </div>
+  `;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -10443,31 +10524,7 @@ function App() {
           </div>
         </header>
 
-        <div className="tabs">
-          <button
-            className=${`tab ${activeTab === "dashboard" ? "active" : ""}`}
-            onClick=${() => setActiveTab("dashboard")}
-          >
-            Dashboard
-          </button>
-          <button
-            className=${`tab ${activeTab === "metricas_mensagens" ? "active" : ""}`}
-            onClick=${() => setActiveTab("metricas_mensagens")}
-          >
-            Metricas Mensagens
-          </button>
-          <button
-            className=${`tab ${activeTab === "criar" ? "active" : ""}`}
-            onClick=${() => setActiveTab("criar")}
-            style=${{
-              background: activeTab === "criar" ? "var(--accent)" : "#e8f5e9",
-              borderColor: activeTab === "criar" ? "transparent" : "#a5d6a7",
-              color: activeTab === "criar" ? "#fff" : "#1b5e20",
-            }}
-          >
-            + Criar campanha
-          </button>
-        </div>
+        ${renderTabBar()}
 
         ${(activeTab === "dashboard" || activeTab === "metricas_mensagens")
           ? html`<${Status} error=${error} lastRefreshed=${lastRefreshed} />`
@@ -10580,7 +10637,8 @@ function App() {
         </div>
       </header>
 
-      <div className="tabs">
+      ${renderTabBar()}
+      <div className="tabs legacy-tabs-hidden" aria-hidden="true">
         <button
           hidden=${!availableTabs.includes("dashboard")}
           className=${`tab ${activeTab === "dashboard" ? "active" : ""}`}

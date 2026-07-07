@@ -744,8 +744,12 @@ tbody tr:last-child td {
   border-radius: 0;
   width: 100%;
   max-width: 100%;
+  touch-action: pan-x;
 }
 .tabs::-webkit-scrollbar { display: none; }
+.legacy-tabs-hidden {
+  display: none;
+}
 .tab {
   position: relative;
   flex-shrink: 0;
@@ -759,6 +763,9 @@ tbody tr:last-child td {
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .tab.active {
   color: var(--accent);
