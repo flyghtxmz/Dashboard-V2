@@ -989,6 +989,7 @@ function MetricasMensagensView({
   showLtvTable = true,
   ltvExtraDays = [],
   attributionAudit = null,
+  pageScoped = false,
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -1232,10 +1233,37 @@ function MetricasMensagensView({
       summary.impressions > 0 ? (summary.revenue_usd / summary.impressions) * 1000 : null;
     return summary;
   };
-  const messengerMedium = buildMediumSummary("messenger", totalsRow.spend_brl || 0);
-  const organicMedium = buildMediumSummary("organic", 0);
+  let messengerMedium = buildMediumSummary("messenger", totalsRow.spend_brl || 0);
+  let organicMedium = buildMediumSummary("organic", 0);
   const messengerMediumRows = messengerMedium.rows;
   const organicMediumRows = organicMedium.rows;
+  // Com filtro de Pagina ativo, a receita por utm_medium e global (todas as paginas) e vazaria
+  // ROAS/lucro/eCPM de outras paginas. Nesse caso usamos os totais ja escopados por pagina
+  // (atribuicao por campanha) e zeramos o organico, que nao e atribuivel a uma pagina.
+  if (pageScoped) {
+    messengerMedium = {
+      ...messengerMedium,
+      impressions: totalsRow.joinads_impressions || 0,
+      clicks: totalsRow.joinads_clicks || 0,
+      revenue_usd: totalsRow.revenue_usd || 0,
+      revenue_brl: totalsRow.revenue_brl || 0,
+      spend_brl: totalsRow.spend_brl || 0,
+      profit_brl: totalsRow.profit_brl || 0,
+      roas: totalsRow.roas,
+      ecpm: totalsRow.ecpm,
+    };
+    organicMedium = {
+      ...organicMedium,
+      impressions: 0,
+      clicks: 0,
+      revenue_usd: 0,
+      revenue_brl: 0,
+      spend_brl: 0,
+      profit_brl: 0,
+      roas: null,
+      ecpm: null,
+    };
+  }
   const allTermRows = Array.isArray(termRows) ? termRows : [];
   const allTermDailyRows = Array.isArray(termDailyRows) ? termDailyRows : [];
   const candidateTermRows = allTermRows.filter((row) =>
@@ -2432,8 +2460,11 @@ function MetricasMensagensView({
           </div>
         </div>
         <p className="muted small">
-          Receita por <code>utm_medium</code> vem da JoinAds. Gasto, ROAS e lucro cruzam
-          <code>utm_medium=messenger</code> com o gasto Meta das campanhas de mensagem no periodo.
+          ${pageScoped
+            ? html`<strong>Filtro de Página ativo:</strong> os números abaixo usam a atribuição por
+                campanha da página selecionada (não o total por <code>utm_medium</code>, que é global).`
+            : html`Receita por <code>utm_medium</code> vem da JoinAds. Gasto, ROAS e lucro cruzam
+                <code>utm_medium=messenger</code> com o gasto Meta das campanhas de mensagem no periodo.`}
         </p>
         <div className="metrics-grid">
           <div className="metric-card">
@@ -2921,7 +2952,7 @@ function TopUrlTable({ rows, totals }) {
         <span className="chip neutral">${rows.length} itens</span>
       </div>
       <div className="table-wrapper">
-        <table>
+        <table className="top-urls">
           <thead>
             <tr>
               <th>#</th>
@@ -2946,9 +2977,9 @@ function TopUrlTable({ rows, totals }) {
                   (row, idx) => html`
                     <tr key=${row.url || idx}>
                       <td>${idx + 1}</td>
-                      <td className="url-cell">
+                      <td className="url-cell" title=${row.url || ""}>
                         <div className="url">${row.url || "-"}</div>
-                        <div className="muted small">${row.domain || ""}</div>
+                        ${row.domain ? html`<div className="muted small">${row.domain}</div>` : null}
                       </td>
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
@@ -10729,6 +10760,7 @@ function App() {
           : html`
               <${MetricasMensagensView}
                 rows=${metaMessageFiltered}
+                pageScoped=${!!filters.pageId}
                 usePmLabels=${true}
                 brlRate=${brlRate}
                 commissionPercent=${session?.commissionPercent || 0}
@@ -10927,6 +10959,7 @@ function App() {
         : activeTab === "metricas_mensagens"
         ? html`<${MetricasMensagensView}
             rows=${metaMessageFiltered}
+            pageScoped=${!!filters.pageId}
             usePmLabels=${usePmLabels}
             brlRate=${brlRate}
             commissionPercent=${session?.commissionPercent || 0}

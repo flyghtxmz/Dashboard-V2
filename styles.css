@@ -646,12 +646,49 @@ tbody tr:last-child td {
 }
 
 .url-cell .url {
-  word-break: break-all;
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 500;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .url-cell .muted {
-  margin-top: 4px;
+  margin-top: 3px;
+}
+
+/* Top URLs: coluna URL espaçosa e mono; colunas numéricas alinhadas à direita e sem quebra. */
+.top-urls {
+  table-layout: auto;
+}
+.top-urls th,
+.top-urls td {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+.top-urls th:first-child,
+.top-urls td:first-child {
+  text-align: center;
+  width: 46px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.top-urls th:nth-child(2),
+.top-urls .url-cell {
+  text-align: left;
+  white-space: normal;
+  min-width: 300px;
+  max-width: 560px;
+}
+.top-urls .summary-row td {
+  text-align: right;
+}
+.top-urls .summary-row td:first-child {
+  text-align: left;
+  width: auto;
 }
 
 .budget-cell {
