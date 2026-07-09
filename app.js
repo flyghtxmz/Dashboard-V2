@@ -8430,6 +8430,116 @@ function App() {
     }
   };
 
+  // ---- Cache local dos ultimos dados carregados (sobrevive a recarregar a pagina) ----
+  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v1";
+  const snapshotRestoredRef = useRef(false);
+
+  // Salva um snapshot dos dados brutos sempre que uma carga completa (lastRefreshed muda).
+  useEffect(() => {
+    if (!lastRefreshed) return;
+    try {
+      const snapshot = {
+        v: 1,
+        savedAt: Date.now(),
+        scope: (typeof window !== "undefined" && window.__cd_session_scope__) || "anon",
+        filters,
+        appliedFilters,
+        lastRefreshed:
+          lastRefreshed instanceof Date ? lastRefreshed.toISOString() : lastRefreshed,
+        data: {
+          metaRows,
+          earnings,
+          earningsAll,
+          joinadsContentRows,
+          joinadsCampaignRows,
+          joinadsUserRows,
+          joinadsMediumRows,
+          joinadsSuperFilterDiagnostics,
+          messenleadSources,
+          messenleadUnresolved,
+          messenleadLeads,
+          messenleadUnresolvedLeadIds,
+          messenleadLeadDiagnostics,
+          superKey,
+          superTermRows,
+          joinadsTermDailyRows,
+          topUrls,
+          keyValueContent,
+          metaSourceRows,
+          metaDiagnostics,
+          adDestMap,
+        },
+      };
+      localStorage.setItem(DASHBOARD_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    } catch (e) {
+      // Quota estourada / falha de serializacao: descarta para nao deixar cache pela metade.
+      try {
+        localStorage.removeItem(DASHBOARD_SNAPSHOT_KEY);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastRefreshed]);
+
+  // Restaura o snapshot uma unica vez apos o login, se ainda nao houver dados carregados.
+  useEffect(() => {
+    if (authed !== true || snapshotRestoredRef.current) return;
+    if (metaRows.length) {
+      snapshotRestoredRef.current = true;
+      return;
+    }
+    let snapshot = null;
+    try {
+      const raw = localStorage.getItem(DASHBOARD_SNAPSHOT_KEY);
+      if (raw) snapshot = JSON.parse(raw);
+    } catch (e) {
+      snapshot = null;
+    }
+    if (!snapshot || snapshot.v !== 1) return;
+    const scope = (typeof window !== "undefined" && window.__cd_session_scope__) || "anon";
+    if (snapshot.scope && snapshot.scope !== scope) return; // cache de outra sessao/usuario
+    if (snapshot.savedAt && Date.now() - snapshot.savedAt > 7 * 24 * 60 * 60 * 1000) return; // > 7 dias
+
+    snapshotRestoredRef.current = true;
+    const d = snapshot.data || {};
+    const arr = (x) => (Array.isArray(x) ? x : []);
+    const obj = (x) => (x && typeof x === "object" ? x : {});
+    setMetaRows(arr(d.metaRows));
+    setMetaLtvRows(arr(d.metaRows));
+    setEarnings(arr(d.earnings));
+    setEarningsAll(arr(d.earningsAll));
+    setJoinadsContentRows(arr(d.joinadsContentRows));
+    setJoinadsCampaignRows(arr(d.joinadsCampaignRows));
+    setJoinadsUserRows(arr(d.joinadsUserRows));
+    setJoinadsMediumRows(arr(d.joinadsMediumRows));
+    setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
+    setMessenleadSources(arr(d.messenleadSources));
+    setMessenleadUnresolved(arr(d.messenleadUnresolved));
+    setMessenleadLeads(arr(d.messenleadLeads));
+    setMessenleadUnresolvedLeadIds(arr(d.messenleadUnresolvedLeadIds));
+    setMessenleadLeadDiagnostics(obj(d.messenleadLeadDiagnostics));
+    setSuperKey(d.superKey || "utm_content");
+    setSuperTermRows(arr(d.superTermRows));
+    setJoinadsTermDailyRows(arr(d.joinadsTermDailyRows));
+    setTopUrls(arr(d.topUrls));
+    setKeyValueContent(arr(d.keyValueContent));
+    setMetaSourceRows(arr(d.metaSourceRows));
+    setMetaDiagnostics(obj(d.metaDiagnostics));
+    setAdDestMap(obj(d.adDestMap));
+    // superFilter e derivado das linhas de conteudo/campanha da JoinAds.
+    const contentRows = arr(d.joinadsContentRows);
+    const campaignRows = arr(d.joinadsCampaignRows);
+    setSuperFilter(contentRows.length ? contentRows : campaignRows);
+    if (snapshot.appliedFilters) setAppliedFilters(snapshot.appliedFilters);
+    if (snapshot.filters) setFilters((prev) => ({ ...prev, ...snapshot.filters }));
+    if (snapshot.lastRefreshed) {
+      const dt = new Date(snapshot.lastRefreshed);
+      if (!Number.isNaN(dt.getTime())) setLastRefreshed(dt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed]);
+
   const handleLoadDomains = async () => {
     setDomainsLoading(true);
     try {
