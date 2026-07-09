@@ -130,7 +130,7 @@ export async function onRequest({ request, env }) {
       ),
       Promise.all(
         adsetChunks.map((chunk) =>
-          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints&access_token=${token}`)
+          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object&access_token=${token}`)
             .then(safeJson)
             .catch(() => ({}))
         )
@@ -171,6 +171,7 @@ export async function onRequest({ request, env }) {
               value.bid_strategy ||
               value.optimization_goal ||
               value.bid_constraints ||
+              value.promoted_object ||
               value.status ||
               value.effective_status)
           ) {
@@ -184,6 +185,9 @@ export async function onRequest({ request, env }) {
               adset_bid_constraints: value.bid_constraints,
               adset_status: value.status,
               adset_effective_status: value.effective_status,
+              adset_page_id: value.promoted_object && value.promoted_object.page_id
+                ? String(value.promoted_object.page_id)
+                : "",
             });
           }
         });
@@ -244,6 +248,9 @@ export async function onRequest({ request, env }) {
         if (budgetInfo.adset_effective_status) {
           enriched.adset_effective_status = budgetInfo.adset_effective_status;
         }
+        if (budgetInfo.adset_page_id) {
+          enriched.page_id = budgetInfo.adset_page_id;
+        }
       }
       const campaignBudgetInfo = campaignBudgetMap.get(row.campaign_id);
       if (campaignBudgetInfo) {
@@ -260,6 +267,34 @@ export async function onRequest({ request, env }) {
       }
       return enriched;
     });
+
+    // Nome das Paginas (Facebook) para segmentar Metricas Mensagens por Pagina.
+    // Uma unica chamada em lote por ate 50 ids; o page_id vem do promoted_object do conjunto.
+    const pageIds = Array.from(
+      new Set(baseRows.map((row) => row.page_id).filter(Boolean))
+    );
+    if (pageIds.length) {
+      const pageChunks = [];
+      for (let i = 0; i < pageIds.length; i += chunkSize) pageChunks.push(pageIds.slice(i, i + chunkSize));
+      const pageNameResults = await Promise.all(
+        pageChunks.map((chunk) =>
+          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=name&access_token=${token}`)
+            .then(safeJson)
+            .catch(() => ({}))
+        )
+      );
+      const pageNameMap = new Map();
+      pageNameResults.forEach((json) => {
+        if (json && typeof json === "object") {
+          Object.entries(json).forEach(([id, value]) => {
+            if (value && value.name) pageNameMap.set(id, value.name);
+          });
+        }
+      });
+      baseRows.forEach((row) => {
+        if (row.page_id) row.page_name = pageNameMap.get(row.page_id) || "";
+      });
+    }
 
     if (!include_assets) {
       return jsonResponse(200, { code: "success", data: baseRows });

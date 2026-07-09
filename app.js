@@ -2700,6 +2700,8 @@ function Filters({
   loading,
   domains,
   domainsLoading,
+  pages = [],
+  showPageFilter = false,
 }) {
   const setDate = (key, value) => {
     setFilters((prev) => {
@@ -2800,6 +2802,27 @@ function Filters({
             ? html`<span className="muted small">Carregando Dominios...</span>`
             : null}
         </label>
+        ${showPageFilter
+          ? html`
+              <label className="field">
+                <span>Página (Meta)</span>
+                <select
+                  value=${filters.pageId || ""}
+                  onChange=${(e) =>
+                    setFilters((p) => ({ ...p, pageId: e.target.value }))}
+                  disabled=${!pages.length}
+                >
+                  <option value="">Todas as páginas</option>
+                  ${pages.map(
+                    (pg) => html`<option value=${pg.id} key=${pg.id}>${pg.name}</option>`
+                  )}
+                </select>
+                ${!pages.length
+                  ? html`<span className="muted small">Carregue os dados para listar as páginas.</span>`
+                  : null}
+              </label>
+            `
+          : null}
       </div>
       <div className="actions presets">
         <span className="muted small">Atalhos:</span>
@@ -7468,6 +7491,7 @@ function App() {
     reportType: "Analytical",
     metaAccountId: "act_728792692620145",
     adsetFilter: "",
+    pageId: "",
     includeAssets: false,
   });
   const [superFilter, setSuperFilter] = useState([]);
@@ -10127,6 +10151,7 @@ function App() {
 
   const metaMessageFiltered = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
+    const pageId = String(filters.pageId || "").trim();
     const base = mergedMeta.filter((row) => {
       if (hiddenCampaigns.has(row.campaign_id)) return false;
       return true;
@@ -10134,8 +10159,11 @@ function App() {
     const scopedBase = isGestorSession(session)
       ? base.filter((row) => rowMatchesDashboardUser(row, session?.username))
       : base;
-    if (!term) return scopedBase;
-    return scopedBase.filter((row) =>
+    const pageFiltered = pageId
+      ? scopedBase.filter((row) => String(row.page_id || "") === pageId)
+      : scopedBase;
+    if (!term) return pageFiltered;
+    return pageFiltered.filter((row) =>
       [row.campaign_name, row.adset_name, row.ad_name, row.name]
         .join(" ")
         .toLowerCase()
@@ -10144,10 +10172,28 @@ function App() {
   }, [
     mergedMeta,
     filters.adsetFilter,
+    filters.pageId,
     hiddenCampaigns,
     session?.role,
     session?.username,
   ]);
+
+  // Paginas (Facebook) presentes nas linhas de mensagem, para o filtro por Pagina.
+  const messagePageOptions = useMemo(() => {
+    const gestor = isGestorSession(session);
+    const map = new Map();
+    (mergedMeta || []).forEach((row) => {
+      if (!isMessageMetricsRow(row)) return;
+      if (gestor && !rowMatchesDashboardUser(row, session?.username)) return;
+      const id = String(row.page_id || "").trim();
+      if (!id) return;
+      const name = row.page_name || "";
+      if (!map.has(id) || (!map.get(id) && name)) map.set(id, name);
+    });
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name: name || id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [mergedMeta, session?.role, session?.username]);
 
   const filteredMeta = useMemo(() => {
     if (isTodaySelected) {
@@ -10538,6 +10584,8 @@ function App() {
             loading=${loading}
             domains=${mergedDomains}
             domainsLoading=${domainsLoading}
+            pages=${messagePageOptions}
+            showPageFilter=${activeTab === "metricas_mensagens"}
           />
         ` : null}
 
@@ -10729,6 +10777,8 @@ function App() {
           loading=${loading}
           domains=${mergedDomains}
           domainsLoading=${domainsLoading}
+          pages=${messagePageOptions}
+          showPageFilter=${activeTab === "metricas_mensagens"}
         />
       ` : null}
 
