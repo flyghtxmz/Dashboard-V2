@@ -12,6 +12,7 @@ const ADMIN_OR_GESTOR_PATHS = new Set([
   "/api/domains",
   "/api/earnings",
   "/api/key-value",
+  "/api/key-value-country",
   "/api/media-labels",
   "/api/messenlead-resolve",
   "/api/meta-campaign-create",

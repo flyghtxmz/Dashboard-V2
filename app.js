@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 126;
+const APP_VERSION_BUILD = 127;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1154,6 +1154,7 @@ function MetricasMensagensView({
           source,
           status: adId ? (meta.ad_name ? "Atribuido" : "Anuncio fora do recorte Meta") : "Sem resolucao Messenlead",
           ad_unit: resolveAdUnit(row),
+          joinads_country: row.country || row.COUNTRY || "Nao informado",
           domain: row.name || row.domain || reportFilters.domain || "",
           ad_id: adId,
           ad_name: meta.ad_name || "",
@@ -1174,11 +1175,12 @@ function MetricasMensagensView({
     detail.forEach((row) => {
       const key = normalizeKey(row.ad_id || row.source);
       const item = joinByAd.get(key) || {
-        sources: new Set(), blocks: new Set(), impressions: 0, clicks: 0,
+        sources: new Set(), blocks: new Set(), countries: new Set(), impressions: 0, clicks: 0,
         earnings_usd: 0, earnings_client_usd: 0,
       };
       item.sources.add(row.source);
       item.blocks.add(row.ad_unit);
+      if (row.joinads_country) item.countries.add(row.joinads_country);
       item.impressions += row.impressions;
       item.clicks += row.clicks;
       item.earnings_usd += row.earnings_usd;
@@ -1196,6 +1198,7 @@ function MetricasMensagensView({
         ...dimensions,
         sources: join.sources ? Array.from(join.sources).join(" | ") : "Sem atribuicao JoinAds",
         ad_units: join.blocks ? Array.from(join.blocks).sort().join(" | ") : "",
+        joinads_countries: join.countries ? Array.from(join.countries).sort().join(" | ") : "",
         frequency: meta.frequency_weight > 0 ? meta.frequency_weighted / meta.frequency_weight : 0,
         meta_cpm: meta.meta_impressions > 0 ? meta.meta_cpm_weighted / meta.meta_impressions : 0,
         conversations_reach_percent: meta.reach > 0 ? meta.conversations / meta.reach : 0,
@@ -1350,7 +1353,7 @@ function MetricasMensagensView({
     const metaColumns = [
       ["normalized_name", "Campanha Meta (padronizada)"], ["account", "Conta"], ["country", "Pais"], ["platform", "Plataforma"],
       ["campaign_id", "ID campanha"], ["adset_name", "Conjunto Meta"], ["adset_id", "ID conjunto"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio"],
-      ["sources", "Atribuicao Messenlead (src_)"], ["ad_units", "Blocos JoinAds (ad_unit)"],
+      ["sources", "Atribuicao Messenlead (src_)"], ["ad_units", "Blocos JoinAds (ad_unit)"], ["joinads_countries", "Paises JoinAds"],
       ["meta_impressions", "Impressoes Meta"], ["meta_clicks", "Cliques Meta"], ["reach", "Alcance Meta"], ["frequency", "Frequencia Meta"], ["meta_cpm", "CPM Meta BRL"],
       ["conversations_reach_percent", "Conversas / alcance"], ["conversations", "Conversas iniciadas"], ["spend_brl", "Gasto Meta BRL"],
       ["joinads_impressions", "Impressoes JoinAds"], ["joinads_clicks", "Cliques JoinAds"], ["revenue_client_usd", "Receita cliente USD"],
@@ -1361,7 +1364,7 @@ function MetricasMensagensView({
       ["delivery_relevance", "Qualidade da amostra"],
     ].map(([key, label]) => ({ key, label }));
     const detailColumns = [
-      ["date", "Data"], ["source", "Atribuicao Messenlead (src_)"], ["status", "Status do cruzamento"], ["ad_unit", "Bloco JoinAds (ad_unit)"],
+      ["date", "Data"], ["source", "Atribuicao Messenlead (src_)"], ["status", "Status do cruzamento"], ["ad_unit", "Bloco JoinAds (ad_unit)"], ["joinads_country", "Pais JoinAds"],
       ["domain", "Dominio"], ["campaign_name", "Campanha Meta"], ["adset_name", "Conjunto Meta"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio Meta"],
       ["impressions", "Impressoes JoinAds"], ["clicks", "Cliques JoinAds"], ["earnings_usd", "Receita bruta USD"],
       ["earnings_client_usd", "Receita cliente USD"], ["ecpm_client_usd", "eCPM cliente USD"], ["ctr_percent", "CTR (%)"], ["active_view_percent", "Active View (%)"],
@@ -8477,7 +8480,7 @@ function App() {
           }),
         }).catch((err) => { pushLog("super-filter-term", err); return { data: [] }; }),
         fetchJson(
-          `${API_BASE}/key-value?${new URLSearchParams({
+          `${API_BASE}/key-value-country?${new URLSearchParams({
             start_date: filters.startDate,
             end_date: filters.endDate,
             domain: filters.domain.trim(),
@@ -8487,7 +8490,7 @@ function App() {
           }).toString()}`,
           {
             cacheTtlMs: 3 * 60 * 1000,
-            cacheKey: `key-value:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
+            cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
         ).catch((err) => { pushLog("key-value-content", err); return { data: [] }; }),
         fetchJson(`${API_BASE}/super-filter`, {

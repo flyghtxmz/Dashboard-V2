@@ -1,0 +1,61 @@
+import {
+  jsonResponse,
+  getQuery,
+  getJoinadsToken,
+  safeJson,
+} from "../_utils.js";
+import { getSession, requireDomainAccess } from "../_auth.js";
+
+const API_BASE = "https://office.joinads.me/api/clients-endpoints";
+
+export async function onRequest({ request, env }) {
+  const session = await getSession(request, env);
+  if (!session) {
+    return jsonResponse(401, { code: "error", message: "Sessao invalida ou expirada." });
+  }
+  if (request.method !== "GET") {
+    return jsonResponse(405, { error: "Method not allowed" });
+  }
+  const token = getJoinadsToken(env);
+  if (!token) {
+    return jsonResponse(500, { error: "JOINADS_ACCESS_TOKEN nao configurado" });
+  }
+
+  const params = getQuery(request);
+  const start_date = params.get("start_date");
+  const end_date = params.get("end_date");
+  const domain = params.get("domain");
+  const access = requireDomainAccess(session, domain);
+  if (!access.ok) return access.response;
+  const report_type = params.get("report_type");
+  const custom_key = params.get("custom_key");
+  const missing = [];
+  if (!start_date) missing.push("start_date");
+  if (!end_date) missing.push("end_date");
+  if (!access.domains[0]) missing.push("domain");
+  if (!report_type) missing.push("report_type");
+  if (!custom_key) missing.push("custom_key");
+  if (missing.length) {
+    return jsonResponse(400, { error: `Parametros obrigatorios: ${missing.join(", ")}` });
+  }
+
+  const q = new URLSearchParams({
+    start_date,
+    end_date,
+    domain: access.domains[0],
+    report_type,
+    custom_key,
+  });
+  try {
+    const response = await fetch(`${API_BASE}/key-value-country?${q.toString()}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    const data = await safeJson(response);
+    if (!response.ok) {
+      return jsonResponse(response.status, { error: "Erro JoinAds", details: data });
+    }
+    return jsonResponse(200, data);
+  } catch (error) {
+    return jsonResponse(500, { error: "Erro ao consultar JoinAds por pais", details: error.message });
+  }
+}
