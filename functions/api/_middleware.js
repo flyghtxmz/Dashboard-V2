@@ -15,6 +15,7 @@ const ADMIN_OR_GESTOR_PATHS = new Set([
   "/api/key-value-country",
   "/api/media-labels",
   "/api/messenlead-resolve",
+  "/api/report-cache",
   "/api/meta-campaign-create",
   "/api/meta-insights",
   "/api/meta-media",

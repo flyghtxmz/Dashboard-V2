@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 127;
+const APP_VERSION_BUILD = 128;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -7957,6 +7957,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState(null);
+  const restoredSnapshotRef = useRef(false);
   const [domains, setDomains] = useState([]);
   const [domainsLoading, setDomainsLoading] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -8252,6 +8253,37 @@ function App() {
     setLogs((prev) => [entry, ...prev].slice(0, 50));
   };
 
+  const applyDashboardDataSnapshot = (snapshot) => {
+    const d = snapshot?.data || snapshot || {};
+    const arr = (value) => (Array.isArray(value) ? value : []);
+    const obj = (value) => (value && typeof value === "object" ? value : {});
+    setMetaRows(arr(d.metaRows));
+    setMetaLtvRows(arr(d.metaRows));
+    setEarnings(arr(d.earnings));
+    setEarningsAll(arr(d.earningsAll));
+    setJoinadsContentRows(arr(d.joinadsContentRows));
+    setJoinadsCampaignRows(arr(d.joinadsCampaignRows));
+    setJoinadsUserRows(arr(d.joinadsUserRows));
+    setJoinadsMediumRows(arr(d.joinadsMediumRows));
+    setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
+    setMessenleadSources(arr(d.messenleadSources));
+    setMessenleadUnresolved(arr(d.messenleadUnresolved));
+    setMessenleadLeads(arr(d.messenleadLeads));
+    setMessenleadUnresolvedLeadIds(arr(d.messenleadUnresolvedLeadIds));
+    setMessenleadLeadDiagnostics(obj(d.messenleadLeadDiagnostics));
+    setSuperKey(d.superKey || "utm_content");
+    setSuperTermRows(arr(d.superTermRows));
+    setJoinadsTermDailyRows(arr(d.joinadsTermDailyRows));
+    setTopUrls(arr(d.topUrls));
+    setKeyValueContent(arr(d.keyValueContent));
+    setMetaSourceRows(arr(d.metaSourceRows));
+    setMetaDiagnostics(obj(d.metaDiagnostics));
+    setAdDestMap(obj(d.adDestMap));
+    const contentRows = arr(d.joinadsContentRows);
+    const campaignRows = arr(d.joinadsCampaignRows);
+    setSuperFilter(contentRows.length ? contentRows : campaignRows);
+  };
+
   const handleLoad = async () => {
     if (domainsLoading && !filters.domain.trim()) {
       setError("Aguarde carregar os Dominios ou selecione manualmente.");
@@ -8289,6 +8321,33 @@ function App() {
     setError("");
 
     try {
+      // Primeiro mostra o snapshot persistente. Periodos consolidados encerram aqui;
+      // hoje/ontem continuam abaixo e sao atualizados sem deixar a tela vazia.
+      try {
+        const cacheParams = new URLSearchParams({
+          domain: filters.domain.trim(),
+          account_id: filters.metaAccountId.trim(),
+          start_date: filters.startDate,
+          end_date: filters.endDate,
+          include_assets: filters.includeAssets ? "1" : "0",
+        });
+        const cached = await fetchJson(`${API_BASE}/report-cache?${cacheParams.toString()}`);
+        if (cached?.hit && cached.snapshot) {
+          restoredSnapshotRef.current = true;
+          applyDashboardDataSnapshot(cached.snapshot);
+          setAppliedFilters({ ...filters });
+          const cachedDate = new Date(cached.fetchedAt || cached.snapshot.lastRefreshed || Date.now());
+          setLastRefreshed(Number.isNaN(cachedDate.getTime()) ? new Date() : cachedDate);
+          if (cached.fresh) {
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (cacheError) {
+        // Banco ainda nao vinculado ou indisponivel: o carregamento normal segue funcionando.
+        if (cacheError?.status !== 503) pushLog("report-cache-read", cacheError);
+      }
+
       const topPromise = fetchJson(
         `${API_BASE}/top-url?${new URLSearchParams({
           start_date: filters.startDate,
@@ -8917,6 +8976,27 @@ function App() {
         },
       };
       localStorage.setItem(DASHBOARD_SNAPSHOT_KEY, JSON.stringify(snapshot));
+      if (restoredSnapshotRef.current) {
+        restoredSnapshotRef.current = false;
+        return;
+      }
+      const persistedFilters = snapshot.appliedFilters || snapshot.filters || {};
+      if (persistedFilters.domain && persistedFilters.metaAccountId && persistedFilters.startDate && persistedFilters.endDate) {
+        fetchJson(`${API_BASE}/report-cache`, {
+          method: "POST",
+          body: JSON.stringify({
+            domain: persistedFilters.domain,
+            account_id: persistedFilters.metaAccountId,
+            start_date: persistedFilters.startDate,
+            end_date: persistedFilters.endDate,
+            include_assets: !!persistedFilters.includeAssets,
+            snapshot,
+          }),
+        }).catch((cacheError) => {
+          // Mantem o cache local como fallback quando o D1 ainda nao estiver vinculado.
+          if (cacheError?.status !== 503) pushLog("report-cache-write", cacheError);
+        });
+      }
     } catch (e) {
       // Quota estourada / falha de serializacao: descarta para nao deixar cache pela metade.
       try {
@@ -8980,6 +9060,7 @@ function App() {
     if (snapshot.appliedFilters) setAppliedFilters(snapshot.appliedFilters);
     if (snapshot.filters) setFilters((prev) => ({ ...prev, ...snapshot.filters }));
     if (snapshot.lastRefreshed) {
+      restoredSnapshotRef.current = true;
       const dt = new Date(snapshot.lastRefreshed);
       if (!Number.isNaN(dt.getTime())) setLastRefreshed(dt);
     }
