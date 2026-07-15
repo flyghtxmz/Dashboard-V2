@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 122;
+const APP_VERSION_BUILD = 123;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -96,6 +96,48 @@ const parseFxRate = (value) => {
 };
 
 const compactDate = (value) => String(value || "").replaceAll("-", "");
+
+const excelXmlEscape = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+
+function downloadExcelWorkbook(fileName, sheets) {
+  const cellXml = (value, header = false) => {
+    const numeric = typeof value === "number" && Number.isFinite(value);
+    const type = numeric ? "Number" : "String";
+    const style = header ? ' ss:StyleID="Header"' : numeric ? ' ss:StyleID="Number"' : "";
+    return `<Cell${style}><Data ss:Type="${type}">${excelXmlEscape(value)}</Data></Cell>`;
+  };
+  const worksheetXml = sheets
+    .map(({ name, columns, rows }) => {
+      const widths = columns.map((column) => {
+        const longest = Math.max(
+          String(column.label).length,
+          ...rows.slice(0, 250).map((row) => String(row[column.key] ?? "").length)
+        );
+        return Math.min(320, Math.max(75, longest * 7 + 18));
+      });
+      return `<Worksheet ss:Name="${excelXmlEscape(name.slice(0, 31))}"><Table>${widths
+        .map((width) => `<Column ss:AutoFitWidth="0" ss:Width="${width}"/>`)
+        .join("")}<Row>${columns.map((column) => cellXml(column.label, true)).join("")}</Row>${rows
+        .map((row) => `<Row>${columns.map((column) => cellXml(row[column.key])).join("")}</Row>`)
+        .join("")}</Table><WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane><ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios></WorksheetOptions></Worksheet>`;
+    })
+    .join("");
+  const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:x="urn:schemas-microsoft-com:office:excel"><Styles><Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11"/></Style><Style ss:ID="Header"><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#2563EB" ss:Pattern="Solid"/><Alignment ss:Vertical="Center" ss:WrapText="1"/></Style><Style ss:ID="Number"><NumberFormat ss:Format="0.00########"/></Style></Styles>${worksheetXml}</Workbook>`;
+  const blob = new Blob(["\ufeff", xml], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 const fetchJsonForFx = async (url, signal) => {
   const response = await fetch(url, { signal });
@@ -970,6 +1012,9 @@ function buildMessengerAttributionAudit({
 
 function MetricasMensagensView({
   rows = [],
+  joinadsDetailRows = [],
+  messenleadSources = [],
+  reportFilters = {},
   usePmLabels = false,
   brlRate = 0,
   commissionPercent = 0,
@@ -1004,6 +1049,135 @@ function MetricasMensagensView({
   const [messageBudgetInputs, setMessageBudgetInputs] = useState({});
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
+  const exportMessagesExcel = () => {
+    const sourceToAd = new Map(
+      (Array.isArray(messenleadSources) ? messenleadSources : [])
+        .filter((item) => item?.sourceKey && item?.adId)
+        .map((item) => [normalizeKey(item.sourceKey), String(item.adId)])
+    );
+    const metaByAd = new Map();
+    safeRows.filter(isMessageMetricsRow).forEach((row) => {
+      const adId = String(row.ad_id || "");
+      const key = normalizeKey(adId || row.ad_name || "sem_anuncio");
+      const item = metaByAd.get(key) || {
+        ad_id: adId,
+        ad_name: row.ad_name || "-",
+        adset_id: row.adset_id || "",
+        adset_name: row.adset_name || "-",
+        campaign_id: row.campaign_id || "",
+        campaign_name: row.campaign_name || "-",
+        meta_impressions: 0,
+        meta_clicks: 0,
+        conversations: 0,
+        spend_brl: 0,
+      };
+      item.meta_impressions += toNumber(row.meta_impressions_value ?? row.impressions);
+      item.meta_clicks += toNumber(row.meta_clicks_value ?? row.clicks);
+      item.conversations += toNumber(row.messaging_conversations_started);
+      item.spend_brl += toNumber(row.spend_value ?? row.spend);
+      metaByAd.set(key, item);
+    });
+
+    const detail = (Array.isArray(joinadsDetailRows) ? joinadsDetailRows : [])
+      .filter((row) => normalizeKey(row.custon_value ?? row.custom_value).startsWith("src_"))
+      .map((row) => {
+        const source = String(row.custon_value ?? row.custom_value ?? "");
+        const adId = sourceToAd.get(normalizeKey(source)) || "";
+        const meta = metaByAd.get(normalizeKey(adId)) || {};
+        return {
+          date: row.date || "",
+          source,
+          status: adId ? (meta.ad_name ? "Atribuido" : "Anuncio fora do recorte Meta") : "Sem resolucao Messenlead",
+          ad_unit: row.ad_unit || "Sem bloco informado",
+          domain: row.name || row.domain || reportFilters.domain || "",
+          ad_id: adId,
+          ad_name: meta.ad_name || "",
+          adset_name: meta.adset_name || "",
+          campaign_name: meta.campaign_name || "",
+          impressions: toNumber(row.impressions),
+          clicks: toNumber(row.clicks),
+          earnings_usd: toNumber(row.earnings ?? row.revenue),
+          earnings_client_usd: toNumber(row.earnings_client ?? row.revenue_client),
+          ecpm_client_usd: toNumber(row.ecpm_client ?? row.ecpm),
+          ctr_percent: toNumber(row.ctr),
+          active_view_percent: toNumber(row.active_view_viewable ?? row.active_view),
+        };
+      });
+
+    const joinByAd = new Map();
+    detail.forEach((row) => {
+      const key = normalizeKey(row.ad_id || row.source);
+      const item = joinByAd.get(key) || {
+        sources: new Set(), blocks: new Set(), impressions: 0, clicks: 0,
+        earnings_usd: 0, earnings_client_usd: 0,
+      };
+      item.sources.add(row.source);
+      item.blocks.add(row.ad_unit);
+      item.impressions += row.impressions;
+      item.clicks += row.clicks;
+      item.earnings_usd += row.earnings_usd;
+      item.earnings_client_usd += row.earnings_client_usd;
+      joinByAd.set(key, item);
+    });
+    const crossing = Array.from(metaByAd.values()).map((meta) => {
+      const join = joinByAd.get(normalizeKey(meta.ad_id)) || {};
+      const revenueBrl = toNumber(join.earnings_client_usd) * toNumber(brlRate);
+      return {
+        ...meta,
+        sources: join.sources ? Array.from(join.sources).join(" | ") : "Sem atribuicao JoinAds",
+        ad_units: join.blocks ? Array.from(join.blocks).sort().join(" | ") : "",
+        joinads_impressions: toNumber(join.impressions),
+        joinads_clicks: toNumber(join.clicks),
+        revenue_client_usd: toNumber(join.earnings_client_usd),
+        revenue_client_brl: revenueBrl,
+        roas: meta.spend_brl > 0 ? revenueBrl / meta.spend_brl : 0,
+        profit_brl: revenueBrl - meta.spend_brl,
+      };
+    });
+    const blockMap = new Map();
+    detail.forEach((row) => {
+      const key = row.ad_unit || "Sem bloco informado";
+      const item = blockMap.get(key) || { ad_unit: key, sources: new Set(), ads: new Set(), impressions: 0, clicks: 0, earnings_client_usd: 0 };
+      item.sources.add(row.source);
+      if (row.ad_name) item.ads.add(row.ad_name);
+      item.impressions += row.impressions;
+      item.clicks += row.clicks;
+      item.earnings_client_usd += row.earnings_client_usd;
+      blockMap.set(key, item);
+    });
+    const blocks = Array.from(blockMap.values()).map((item) => ({
+      ...item, sources: Array.from(item.sources).join(" | "), ads: Array.from(item.ads).join(" | "),
+      ecpm_client_usd: item.impressions > 0 ? (item.earnings_client_usd / item.impressions) * 1000 : 0,
+    }));
+    const pending = detail.filter((row) => row.status !== "Atribuido");
+    const metaColumns = [
+      ["campaign_name", "Campanha Meta"], ["campaign_id", "ID campanha"], ["adset_name", "Conjunto Meta"],
+      ["adset_id", "ID conjunto"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio"], ["sources", "Atribuicao Messenlead (src_)"],
+      ["ad_units", "Blocos JoinAds (ad_unit)"], ["meta_impressions", "Impressoes Meta"], ["meta_clicks", "Cliques Meta"],
+      ["conversations", "Conversas iniciadas"], ["spend_brl", "Gasto Meta BRL"], ["joinads_impressions", "Impressoes JoinAds"],
+      ["joinads_clicks", "Cliques JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"],
+      ["roas", "ROAS"], ["profit_brl", "Lucro operacional BRL"],
+    ].map(([key, label]) => ({ key, label }));
+    const detailColumns = [
+      ["date", "Data"], ["source", "Atribuicao Messenlead (src_)"], ["status", "Status do cruzamento"], ["ad_unit", "Bloco JoinAds (ad_unit)"],
+      ["domain", "Dominio"], ["campaign_name", "Campanha Meta"], ["adset_name", "Conjunto Meta"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio Meta"],
+      ["impressions", "Impressoes JoinAds"], ["clicks", "Cliques JoinAds"], ["earnings_usd", "Receita bruta USD"],
+      ["earnings_client_usd", "Receita cliente USD"], ["ecpm_client_usd", "eCPM cliente USD"], ["ctr_percent", "CTR (%)"], ["active_view_percent", "Active View (%)"],
+    ].map(([key, label]) => ({ key, label }));
+    const blockColumns = [
+      ["ad_unit", "Bloco JoinAds (ad_unit)"], ["sources", "Atribuicoes src_"], ["ads", "Anuncios Meta vinculados"],
+      ["impressions", "Impressoes"], ["clicks", "Cliques"], ["earnings_client_usd", "Receita cliente USD"], ["ecpm_client_usd", "eCPM cliente USD"],
+    ].map(([key, label]) => ({ key, label }));
+    downloadExcelWorkbook(
+      `metricas-mensagens_${reportFilters.domain || "dominio"}_${reportFilters.startDate || "inicio"}_${reportFilters.endDate || "fim"}.xls`,
+      [
+        { name: "Meta x JoinAds", columns: metaColumns, rows: crossing },
+        { name: "JoinAds por src e bloco", columns: detailColumns, rows: detail },
+        { name: "Resumo por ad_unit", columns: blockColumns, rows: blocks },
+        { name: "Pendencias atribuicao", columns: detailColumns, rows: pending },
+      ]
+    );
+  };
   const campaignRows = Array.from(
     safeRows
       .filter((row) => isMessageMetricsRow(row))
@@ -1923,7 +2097,17 @@ function MetricasMensagensView({
             <span className="eyebrow">Mensagens</span>
             <h2 className="section-title">Metricas Mensagens</h2>
           </div>
-          <span className="chip neutral">${campaignRows.length} campanhas de mensagem</span>
+          <div className="inline-actions">
+            <span className="chip neutral">${campaignRows.length} campanhas de mensagem</span>
+            <button
+              className="primary"
+              onClick=${exportMessagesExcel}
+              disabled=${safeRows.length === 0 && joinadsDetailRows.length === 0}
+              title="Baixa o cruzamento Meta, Messenlead e JoinAds no periodo selecionado"
+            >
+              Baixar Excel
+            </button>
+          </div>
         </div>
         <div className="table-wrapper scroll-x">
           <table>
@@ -8070,12 +8254,13 @@ function App() {
             start_date: filters.startDate,
             end_date: filters.endDate,
             domain: filters.domain.trim(),
-            report_type: filters.reportType || "Analytical",
+            // A exportacao de Metricas Mensagens precisa preservar cada ad_unit.
+            report_type: "Analytical",
             custom_key: "utm_campaign",
           }).toString()}`,
           {
             cacheTtlMs: 3 * 60 * 1000,
-            cacheKey: `key-value:${filters.domain}:${filters.startDate}:${filters.endDate}:${filters.reportType}`,
+            cacheKey: `key-value:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
         ).catch((err) => { pushLog("key-value-content", err); return { data: [] }; }),
         fetchJson(`${API_BASE}/super-filter`, {
@@ -10760,6 +10945,9 @@ function App() {
           : html`
               <${MetricasMensagensView}
                 rows=${metaMessageFiltered}
+                joinadsDetailRows=${keyValueContent}
+                messenleadSources=${messenleadSources}
+                reportFilters=${appliedFilters || filters}
                 pageScoped=${!!filters.pageId}
                 usePmLabels=${true}
                 brlRate=${brlRate}
@@ -10959,6 +11147,9 @@ function App() {
         : activeTab === "metricas_mensagens"
         ? html`<${MetricasMensagensView}
             rows=${metaMessageFiltered}
+            joinadsDetailRows=${keyValueContent}
+            messenleadSources=${messenleadSources}
+            reportFilters=${appliedFilters || filters}
             pageScoped=${!!filters.pageId}
             usePmLabels=${usePmLabels}
             brlRate=${brlRate}
