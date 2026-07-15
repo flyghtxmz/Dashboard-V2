@@ -40,8 +40,8 @@ function previousIsoDay(iso) {
   return date.toISOString().slice(0, 10);
 }
 
-function cacheKey({ domain, accountId, startDate, endDate, includeAssets }) {
-  return [domain.toLowerCase(), accountId, startDate, endDate, includeAssets ? "1" : "0"].join("|");
+function cacheKey({ domain, accountId, startDate, endDate, includeAssets, schema }) {
+  return [schema || "v1", domain.toLowerCase(), accountId, startDate, endDate, includeAssets ? "1" : "0"].join("|");
 }
 
 function cachePolicy(row, env, now = new Date()) {
@@ -102,6 +102,7 @@ export async function onRequest({ request, env }) {
       startDate: clean(params.get("start_date")),
       endDate: clean(params.get("end_date")),
       includeAssets: params.get("include_assets") === "1",
+      schema: clean(params.get("schema")) || "v1",
     };
     if (!values.accountId || !values.startDate || !values.endDate) {
       return jsonResponse(400, { error: "Parametros obrigatorios: account_id, start_date, end_date" });
@@ -129,6 +130,7 @@ export async function onRequest({ request, env }) {
       startDate: clean(body?.start_date),
       endDate: clean(body?.end_date),
       includeAssets: !!body?.include_assets,
+      schema: clean(body?.schema) || "v1",
     };
     if (!values.accountId || !values.startDate || !values.endDate || !body?.snapshot) {
       return jsonResponse(400, { error: "Dados obrigatorios ausentes para salvar o snapshot." });

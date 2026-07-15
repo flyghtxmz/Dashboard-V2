@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 128;
+const APP_VERSION_BUILD = 129;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -2319,6 +2319,41 @@ function MetricasMensagensView({
     },
     samples: sampleRows,
   };
+  const blockDiagnosticRows = (Array.isArray(joinadsDetailRows) ? joinadsDetailRows : [])
+    .map((row, index) => {
+      const source = String(row.custon_value ?? row.custom_value ?? "");
+      const directEntries = [
+        ["ad_unit", row.ad_unit], ["adUnit", row.adUnit], ["AD_UNIT", row.AD_UNIT],
+        ["ad_unit_name", row.ad_unit_name], ["AD_UNIT_NAME", row.AD_UNIT_NAME],
+        ["block", row.block], ["placement", row.placement],
+      ].filter(([, value]) => value != null && String(value).trim());
+      const searchable = Object.values(row || {}).filter((value) => typeof value === "string").join(" ");
+      const inferredMatch = searchable.match(/(?:^|[_\s-])(Anchor|Content\s*[1-9]|Interstitial|Rewards?)(?:[_\s-]|$)/i);
+      const direct = directEntries[0];
+      const resolved = direct ? String(direct[1]) : inferredMatch ? inferredMatch[1].replace(/\s+/g, "") : "";
+      return {
+        index: index + 1,
+        date: row.date || "-",
+        source: source || "-",
+        isSource: normalizeKey(source).startsWith("src_"),
+        country: row.country || row.COUNTRY || "-",
+        rawField: direct?.[0] || "-",
+        rawValue: direct ? String(direct[1]) : "-",
+        resolved: resolved || "Sem bloco informado",
+        reason: direct
+          ? `Recebido diretamente em ${direct[0]}`
+          : inferredMatch
+          ? "Inferido a partir de outro texto da linha"
+          : "A API nao enviou campo de bloco nem texto reconhecivel",
+        keys: Object.keys(row || {}).sort().join(", "),
+        raw: row,
+      };
+    })
+    .sort((a, b) => Number(b.resolved === "Sem bloco informado") - Number(a.resolved === "Sem bloco informado"));
+  const blockDiagnosticMissing = blockDiagnosticRows.filter((row) => row.resolved === "Sem bloco informado").length;
+  const blockDiagnosticDirect = blockDiagnosticRows.filter((row) => row.rawField !== "-").length;
+  const blockDiagnosticInferred = blockDiagnosticRows.length - blockDiagnosticDirect - blockDiagnosticMissing;
+  const keyValueCountryDiagnostic = diagnostics?.joinadsSuperFilterDiagnostics?.keyValueCountry || {};
   return html`
     <main className="grid">
       <section className="card wide">
@@ -2992,6 +3027,53 @@ function MetricasMensagensView({
           Copie este bloco e me envie se as campanhas de mensagem nao aparecerem.
         </p>
         <pre className="debug-log">${JSON.stringify(debugPayload, null, 2)}</pre>
+      </section>
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Diagnostico</span>
+            <h2 className="section-title">Blocos recebidos da JoinAds</h2>
+          </div>
+          <div className="chip-group">
+            <span className="chip neutral">${blockDiagnosticRows.length} linhas brutas</span>
+            <span className="chip neutral">${blockDiagnosticDirect} com campo direto</span>
+            <span className="chip neutral">${blockDiagnosticInferred} inferidas</span>
+            <span className=${`chip ${blockDiagnosticMissing ? "danger" : "neutral"}`}>${blockDiagnosticMissing} sem bloco</span>
+            ${keyValueCountryDiagnostic.error ? html`<span className="chip danger">erro no endpoint</span>` : null}
+          </div>
+        </div>
+        <p className="muted small">
+          Resposta bruta de <code>/key-value-country</code>. A coluna "Campos presentes" confirma exatamente
+          quais propriedades a JoinAds enviou; nenhuma linha desta tabela depende da planilha exportada.
+        </p>
+        ${keyValueCountryDiagnostic.error
+          ? html`<div className="status error"><strong>Falha ao consultar a JoinAds:</strong> ${keyValueCountryDiagnostic.error}</div>`
+          : html`<p className="muted small">Endpoint confirmou ${keyValueCountryDiagnostic.rows ?? blockDiagnosticRows.length} linhas. Campos encontrados no lote: ${(keyValueCountryDiagnostic.fields || []).join(", ") || "nenhum"}.</p>`}
+        <div className="table-wrapper scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Data</th><th>src_ / custom_value</th><th>Pais</th><th>Campo bruto</th>
+                <th>Valor bruto</th><th>Bloco resolvido</th><th>Diagnostico</th><th>Campos presentes</th><th>JSON bruto</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${blockDiagnosticRows.length
+                ? blockDiagnosticRows.slice(0, 200).map((row) => html`
+                    <tr key=${`${row.index}:${row.source}`}>
+                      <td>${row.index}</td><td>${row.date}</td>
+                      <td><code>${row.source}</code>${row.isSource ? null : html`<div className="muted small">nao inicia com src_</div>`}</td>
+                      <td>${row.country}</td><td><code>${row.rawField}</code></td><td>${row.rawValue}</td>
+                      <td><span className=${`chip ${row.resolved === "Sem bloco informado" ? "danger" : "neutral"}`}>${row.resolved}</span></td>
+                      <td>${row.reason}</td><td className="muted small">${row.keys}</td>
+                      <td><details><summary>Ver JSON</summary><pre className="debug-log">${JSON.stringify(row.raw, null, 2)}</pre></details></td>
+                    </tr>
+                  `)
+                : html`<tr><td colSpan="10" className="muted">Nenhuma linha foi recebida de /key-value-country para o periodo e dominio selecionados.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        ${blockDiagnosticRows.length > 200 ? html`<p className="muted small">Exibindo as primeiras 200 de ${blockDiagnosticRows.length} linhas.</p>` : null}
       </section>
     </main>
   `;
@@ -8330,6 +8412,7 @@ function App() {
           start_date: filters.startDate,
           end_date: filters.endDate,
           include_assets: filters.includeAssets ? "1" : "0",
+          schema: "blocks-country-v1",
         });
         const cached = await fetchJson(`${API_BASE}/report-cache?${cacheParams.toString()}`);
         if (cached?.hit && cached.snapshot) {
@@ -8551,7 +8634,7 @@ function App() {
             cacheTtlMs: 3 * 60 * 1000,
             cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
-        ).catch((err) => { pushLog("key-value-content", err); return { data: [] }; }),
+        ).catch((err) => { pushLog("key-value-country", err); return { data: [], _dashboardError: formatError(err) }; }),
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -8585,6 +8668,17 @@ function App() {
       ]);
 
       const superTermRowsData = Array.isArray(superTermRes?.data) ? superTermRes.data : [];
+      setJoinadsSuperFilterDiagnostics((prev) => ({
+        ...(prev || {}),
+        keyValueCountry: {
+          endpoint: "https://office.joinads.me/api/clients-endpoints/key-value-country",
+          reportType: "Analytical",
+          customKey: "utm_campaign",
+          rows: Array.isArray(keyValueContentRes?.data) ? keyValueContentRes.data.length : 0,
+          error: keyValueContentRes?._dashboardError || null,
+          fields: Array.from(new Set((keyValueContentRes?.data || []).flatMap((row) => Object.keys(row || {})))).sort(),
+        },
+      }));
       const leadIdSourceRows = superTermRowsData;
       const leadIds = Array.from(
         new Set(
@@ -8936,7 +9030,7 @@ function App() {
   };
 
   // ---- Cache local dos ultimos dados carregados (sobrevive a recarregar a pagina) ----
-  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v1";
+  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v2";
   const snapshotRestoredRef = useRef(false);
 
   // Salva um snapshot dos dados brutos sempre que uma carga completa (lastRefreshed muda).
@@ -8944,7 +9038,7 @@ function App() {
     if (!lastRefreshed) return;
     try {
       const snapshot = {
-        v: 1,
+        v: 2,
         savedAt: Date.now(),
         scope: (typeof window !== "undefined" && window.__cd_session_scope__) || "anon",
         filters,
@@ -8990,6 +9084,7 @@ function App() {
             start_date: persistedFilters.startDate,
             end_date: persistedFilters.endDate,
             include_assets: !!persistedFilters.includeAssets,
+            schema: "blocks-country-v1",
             snapshot,
           }),
         }).catch((cacheError) => {
@@ -9022,7 +9117,7 @@ function App() {
     } catch (e) {
       snapshot = null;
     }
-    if (!snapshot || snapshot.v !== 1) return;
+    if (!snapshot || snapshot.v !== 2) return;
     const scope = (typeof window !== "undefined" && window.__cd_session_scope__) || "anon";
     if (snapshot.scope && snapshot.scope !== scope) return; // cache de outra sessao/usuario
     if (snapshot.savedAt && Date.now() - snapshot.savedAt > 7 * 24 * 60 * 60 * 1000) return; // > 7 dias
