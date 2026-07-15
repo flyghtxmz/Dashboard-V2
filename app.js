@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 129;
+const APP_VERSION_BUILD = 130;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1020,6 +1020,8 @@ function buildMessengerAttributionAudit({
 function MetricasMensagensView({
   rows = [],
   joinadsDetailRows = [],
+  advertiserRows = [],
+  advertiserDiagnostics = {},
   messenleadSources = [],
   reportFilters = {},
   usePmLabels = false,
@@ -2354,6 +2356,20 @@ function MetricasMensagensView({
   const blockDiagnosticDirect = blockDiagnosticRows.filter((row) => row.rawField !== "-").length;
   const blockDiagnosticInferred = blockDiagnosticRows.length - blockDiagnosticDirect - blockDiagnosticMissing;
   const keyValueCountryDiagnostic = diagnostics?.joinadsSuperFilterDiagnostics?.keyValueCountry || {};
+  const advertiserDiagnosticRows = (Array.isArray(advertiserRows) ? advertiserRows : []).map((row, index) => ({
+    index: index + 1,
+    date: row.DATE || row.date || "-",
+    domain: row.DOMAIN || row.domain || "-",
+    campaign: row.CUSTOM_CRITERIA_VALUE || row.custom_value || row._requested_utm_campaign || "-",
+    advertiser: row.ADVERTISER || row.advertiser || "Nao informado",
+    impressions: toNumber(row.AD_EXCHANGE_LINE_ITEM_LEVEL_IMPRESSIONS ?? row.impressions),
+    clicks: toNumber(row.AD_EXCHANGE_LINE_ITEM_LEVEL_CLICKS ?? row.clicks),
+    ctr: toNumber(row.AD_EXCHANGE_LINE_ITEM_LEVEL_CTR ?? row.ctr),
+    revenue: toNumber(row.AD_EXCHANGE_LINE_ITEM_LEVEL_REVENUE ?? row.revenue),
+    ecpm: toNumber(row.AD_EXCHANGE_LINE_ITEM_LEVEL_AVERAGE_ECPM ?? row.ecpm),
+    activeView: toNumber(row.AD_EXCHANGE_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS_RATE ?? row.active_view),
+    raw: row,
+  })).sort((a, b) => b.revenue - a.revenue || b.impressions - a.impressions);
   return html`
     <main className="grid">
       <section className="card wide">
@@ -3074,6 +3090,55 @@ function MetricasMensagensView({
           </table>
         </div>
         ${blockDiagnosticRows.length > 200 ? html`<p className="muted small">Exibindo as primeiras 200 de ${blockDiagnosticRows.length} linhas.</p>` : null}
+      </section>
+      <section className="card wide">
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">Diagnostico</span>
+            <h2 className="section-title">Anunciantes por campanha UTM</h2>
+          </div>
+          <div className="chip-group">
+            <span className="chip neutral">${advertiserDiagnostics?.requested || 0} src_ solicitadas</span>
+            <span className="chip neutral">${advertiserDiagnostics?.queried || 0} consultadas</span>
+            <span className="chip neutral">${advertiserDiagnosticRows.length} linhas</span>
+            ${(advertiserDiagnostics?.failures?.length || advertiserDiagnostics?.error) ? html`<span className="chip danger">falhas na API</span>` : null}
+          </div>
+        </div>
+        <p className="muted small">
+          Dados brutos do relatório <code>/report/advertiser/campaign</code>, consultado separadamente para cada
+          <code>utm_campaign=src_*</code> encontrada no período.
+        </p>
+        ${advertiserDiagnostics?.tokenInvalid
+          ? html`<div className="status error"><strong>Token JoinAds inválido ou expirado.</strong> Entre no painel JoinAds, use a opção de gerar um novo token e atualize <code>JOINADS_ACCESS_TOKEN</code>.</div>`
+          : null}
+        ${advertiserDiagnostics?.error
+          ? html`<div className="status error"><strong>Erro ao consultar anunciantes:</strong> ${advertiserDiagnostics.error}</div>`
+          : null}
+        ${advertiserDiagnostics?.truncated
+          ? html`<div className="status error">Foram encontradas mais de 100 campanhas. Esta carga consultou as primeiras 100 para proteger o tempo de resposta.</div>`
+          : null}
+        ${(advertiserDiagnostics?.failures || []).length
+          ? html`<details><summary>${advertiserDiagnostics.failures.length} campanhas falharam</summary><pre className="debug-log">${JSON.stringify(advertiserDiagnostics.failures, null, 2)}</pre></details>`
+          : null}
+        <div className="table-wrapper scroll-x">
+          <table>
+            <thead><tr>
+              <th>#</th><th>Data</th><th>Dominio</th><th>utm_campaign / src_</th><th>Anunciante</th>
+              <th>Impressoes</th><th>Cliques</th><th>CTR</th><th>Receita USD</th><th>eCPM USD</th><th>Active View</th><th>JSON bruto</th>
+            </tr></thead>
+            <tbody>
+              ${advertiserDiagnosticRows.length
+                ? advertiserDiagnosticRows.slice(0, 500).map((row) => html`<tr key=${`${row.index}:${row.campaign}:${row.advertiser}`}>
+                    <td>${row.index}</td><td>${row.date}</td><td>${row.domain}</td><td><code>${row.campaign}</code></td><td><strong>${row.advertiser}</strong></td>
+                    <td>${number.format(row.impressions)}</td><td>${number.format(row.clicks)}</td><td>${row.ctr.toFixed(2)}%</td>
+                    <td>${currencyUSD.format(row.revenue)}</td><td>${currencyUSD.format(row.ecpm)}</td><td>${row.activeView.toFixed(2)}%</td>
+                    <td><details><summary>Ver JSON</summary><pre className="debug-log">${JSON.stringify(row.raw, null, 2)}</pre></details></td>
+                  </tr>`)
+                : html`<tr><td colSpan="12" className="muted">Nenhum anunciante retornado para as campanhas src_ deste período.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        ${advertiserDiagnosticRows.length > 500 ? html`<p className="muted small">Exibindo as primeiras 500 de ${advertiserDiagnosticRows.length} linhas.</p>` : null}
       </section>
     </main>
   `;
@@ -8027,6 +8092,8 @@ function App() {
   const [joinadsUserRows, setJoinadsUserRows] = useState([]);
   const [joinadsMediumRows, setJoinadsMediumRows] = useState([]);
   const [joinadsSuperFilterDiagnostics, setJoinadsSuperFilterDiagnostics] = useState({});
+  const [advertiserRows, setAdvertiserRows] = useState([]);
+  const [advertiserDiagnostics, setAdvertiserDiagnostics] = useState({});
   const [messenleadSources, setMessenleadSources] = useState([]);
   const [messenleadUnresolved, setMessenleadUnresolved] = useState([]);
   const [messenleadLeads, setMessenleadLeads] = useState([]);
@@ -8102,6 +8169,8 @@ function App() {
     setJoinadsUserRows([]);
     setJoinadsMediumRows([]);
     setJoinadsSuperFilterDiagnostics({});
+    setAdvertiserRows([]);
+    setAdvertiserDiagnostics({});
     setMessenleadSources([]);
     setMessenleadUnresolved([]);
     setMessenleadLeads([]);
@@ -8348,6 +8417,8 @@ function App() {
     setJoinadsUserRows(arr(d.joinadsUserRows));
     setJoinadsMediumRows(arr(d.joinadsMediumRows));
     setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
+    setAdvertiserRows(arr(d.advertiserRows));
+    setAdvertiserDiagnostics(obj(d.advertiserDiagnostics));
     setMessenleadSources(arr(d.messenleadSources));
     setMessenleadUnresolved(arr(d.messenleadUnresolved));
     setMessenleadLeads(arr(d.messenleadLeads));
@@ -8412,7 +8483,7 @@ function App() {
           start_date: filters.startDate,
           end_date: filters.endDate,
           include_assets: filters.includeAssets ? "1" : "0",
-          schema: "blocks-country-v1",
+          schema: "blocks-country-advertiser-v1",
         });
         const cached = await fetchJson(`${API_BASE}/report-cache?${cacheParams.toString()}`);
         if (cached?.hit && cached.snapshot) {
@@ -8679,6 +8750,38 @@ function App() {
           fields: Array.from(new Set((keyValueContentRes?.data || []).flatMap((row) => Object.keys(row || {})))).sort(),
         },
       }));
+      const advertiserCampaigns = Array.from(new Set(
+        (keyValueContentRes?.data || [])
+          .map((row) => String(row.custom_value ?? row.custon_value ?? "").trim())
+          .filter((value) => normalizeKey(value).startsWith("src_"))
+      ));
+      if (advertiserCampaigns.length) {
+        try {
+          const advertiserRes = await fetchJson(`${API_BASE}/advertiser-campaign`, {
+            method: "POST",
+            body: JSON.stringify({
+              start_date: filters.startDate,
+              end_date: filters.endDate,
+              domain: filters.domain.trim(),
+              utm_campaigns: advertiserCampaigns,
+            }),
+          });
+          setAdvertiserRows(Array.isArray(advertiserRes?.data) ? advertiserRes.data : []);
+          setAdvertiserDiagnostics(advertiserRes?.diagnostics || {});
+        } catch (err) {
+          pushLog("advertiser-campaign", err);
+          setAdvertiserRows([]);
+          setAdvertiserDiagnostics({
+            endpoint: "https://office.joinads.me/api/clients-endpoints/report/advertiser/campaign",
+            requested: advertiserCampaigns.length,
+            error: formatError(err),
+            tokenInvalid: err?.status === 401 || err?.status === 403 || !!err?.data?.tokenInvalid,
+          });
+        }
+      } else {
+        setAdvertiserRows([]);
+        setAdvertiserDiagnostics({ requested: 0, rows: 0, note: "Nenhuma utm_campaign src_ encontrada no periodo." });
+      }
       const leadIdSourceRows = superTermRowsData;
       const leadIds = Array.from(
         new Set(
@@ -9030,7 +9133,7 @@ function App() {
   };
 
   // ---- Cache local dos ultimos dados carregados (sobrevive a recarregar a pagina) ----
-  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v2";
+  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v3";
   const snapshotRestoredRef = useRef(false);
 
   // Salva um snapshot dos dados brutos sempre que uma carga completa (lastRefreshed muda).
@@ -9038,7 +9141,7 @@ function App() {
     if (!lastRefreshed) return;
     try {
       const snapshot = {
-        v: 2,
+        v: 3,
         savedAt: Date.now(),
         scope: (typeof window !== "undefined" && window.__cd_session_scope__) || "anon",
         filters,
@@ -9054,6 +9157,8 @@ function App() {
           joinadsUserRows,
           joinadsMediumRows,
           joinadsSuperFilterDiagnostics,
+          advertiserRows,
+          advertiserDiagnostics,
           messenleadSources,
           messenleadUnresolved,
           messenleadLeads,
@@ -9084,7 +9189,7 @@ function App() {
             start_date: persistedFilters.startDate,
             end_date: persistedFilters.endDate,
             include_assets: !!persistedFilters.includeAssets,
-            schema: "blocks-country-v1",
+            schema: "blocks-country-advertiser-v1",
             snapshot,
           }),
         }).catch((cacheError) => {
@@ -9117,7 +9222,7 @@ function App() {
     } catch (e) {
       snapshot = null;
     }
-    if (!snapshot || snapshot.v !== 2) return;
+    if (!snapshot || snapshot.v !== 3) return;
     const scope = (typeof window !== "undefined" && window.__cd_session_scope__) || "anon";
     if (snapshot.scope && snapshot.scope !== scope) return; // cache de outra sessao/usuario
     if (snapshot.savedAt && Date.now() - snapshot.savedAt > 7 * 24 * 60 * 60 * 1000) return; // > 7 dias
@@ -9135,6 +9240,8 @@ function App() {
     setJoinadsUserRows(arr(d.joinadsUserRows));
     setJoinadsMediumRows(arr(d.joinadsMediumRows));
     setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
+    setAdvertiserRows(arr(d.advertiserRows));
+    setAdvertiserDiagnostics(obj(d.advertiserDiagnostics));
     setMessenleadSources(arr(d.messenleadSources));
     setMessenleadUnresolved(arr(d.messenleadUnresolved));
     setMessenleadLeads(arr(d.messenleadLeads));
@@ -11352,6 +11459,8 @@ function App() {
               <${MetricasMensagensView}
                 rows=${metaMessageFiltered}
                 joinadsDetailRows=${keyValueContent}
+                advertiserRows=${advertiserRows}
+                advertiserDiagnostics=${advertiserDiagnostics}
                 messenleadSources=${messenleadSources}
                 reportFilters=${appliedFilters || filters}
                 pageScoped=${!!filters.pageId}
@@ -11554,6 +11663,8 @@ function App() {
         ? html`<${MetricasMensagensView}
             rows=${metaMessageFiltered}
             joinadsDetailRows=${keyValueContent}
+            advertiserRows=${advertiserRows}
+            advertiserDiagnostics=${advertiserDiagnostics}
             messenleadSources=${messenleadSources}
             reportFilters=${appliedFilters || filters}
             pageScoped=${!!filters.pageId}

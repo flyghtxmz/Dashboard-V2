@@ -9,6 +9,7 @@ const PUBLIC_PATHS = new Set([
 
 const ADMIN_OR_GESTOR_PATHS = new Set([
   "/api/camp-counters",
+  "/api/advertiser-campaign",
   "/api/domains",
   "/api/earnings",
   "/api/key-value",
