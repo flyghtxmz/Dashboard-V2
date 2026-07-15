@@ -81,6 +81,8 @@ export async function onRequest({ request, env }) {
       "objective",
       "spend",
       "impressions",
+      "reach",
+      "frequency",
       "clicks",
       "actions",
       "cost_per_action_type",

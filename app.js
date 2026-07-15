@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 123;
+const APP_VERSION_BUILD = 124;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -106,17 +106,24 @@ const excelXmlEscape = (value) =>
 
 function downloadExcelWorkbook(fileName, sheets) {
   const cellXml = (value, header = false) => {
-    const numeric = typeof value === "number" && Number.isFinite(value);
+    const descriptor = value && typeof value === "object" && !Array.isArray(value) ? value : null;
+    const rawValue = descriptor ? descriptor.value : value;
+    const numeric = typeof rawValue === "number" && Number.isFinite(rawValue);
     const type = numeric ? "Number" : "String";
-    const style = header ? ' ss:StyleID="Header"' : numeric ? ' ss:StyleID="Number"' : "";
-    return `<Cell${style}><Data ss:Type="${type}">${excelXmlEscape(value)}</Data></Cell>`;
+    const styleId = header ? "Header" : descriptor?.style || (numeric ? "Number" : "");
+    const style = styleId ? ` ss:StyleID="${styleId}"` : "";
+    const formula = descriptor?.formula ? ` ss:Formula="${excelXmlEscape(descriptor.formula)}"` : "";
+    return `<Cell${style}${formula}><Data ss:Type="${type}">${excelXmlEscape(rawValue)}</Data></Cell>`;
   };
   const worksheetXml = sheets
     .map(({ name, columns, rows }) => {
       const widths = columns.map((column) => {
         const longest = Math.max(
           String(column.label).length,
-          ...rows.slice(0, 250).map((row) => String(row[column.key] ?? "").length)
+          ...rows.slice(0, 250).map((row) => {
+            const value = row[column.key];
+            return String(value && typeof value === "object" ? value.value ?? "" : value ?? "").length;
+          })
         );
         return Math.min(320, Math.max(75, longest * 7 + 18));
       });
@@ -127,7 +134,7 @@ function downloadExcelWorkbook(fileName, sheets) {
         .join("")}</Table><WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane><ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios></WorksheetOptions></Worksheet>`;
     })
     .join("");
-  const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:x="urn:schemas-microsoft-com:office:excel"><Styles><Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11"/></Style><Style ss:ID="Header"><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#2563EB" ss:Pattern="Solid"/><Alignment ss:Vertical="Center" ss:WrapText="1"/></Style><Style ss:ID="Number"><NumberFormat ss:Format="0.00########"/></Style></Styles>${worksheetXml}</Workbook>`;
+  const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:x="urn:schemas-microsoft-com:office:excel"><Styles><Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="11"/></Style><Style ss:ID="Header"><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#2563EB" ss:Pattern="Solid"/><Alignment ss:Vertical="Center" ss:WrapText="1"/></Style><Style ss:ID="Number"><NumberFormat ss:Format="0.00########"/></Style><Style ss:ID="Money"><NumberFormat ss:Format="R$ #,##0.00"/></Style><Style ss:ID="Usd"><NumberFormat ss:Format="$ #,##0.00"/></Style><Style ss:ID="Percent"><NumberFormat ss:Format="0.00%"/></Style><Style ss:ID="Green"><Interior ss:Color="#C6EFCE" ss:Pattern="Solid"/><Font ss:Color="#006100" ss:Bold="1"/></Style><Style ss:ID="Yellow"><Interior ss:Color="#FFEB9C" ss:Pattern="Solid"/><Font ss:Color="#9C6500" ss:Bold="1"/></Style><Style ss:ID="Red"><Interior ss:Color="#FFC7CE" ss:Pattern="Solid"/><Font ss:Color="#9C0006" ss:Bold="1"/></Style><Style ss:ID="Input"><Interior ss:Color="#FFF2CC" ss:Pattern="Solid"/><Font ss:Bold="1"/><NumberFormat ss:Format="0.0000"/></Style></Styles>${worksheetXml}</Workbook>`;
   const blob = new Blob(["\ufeff", xml], { type: "application/vnd.ms-excel;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -1050,6 +1057,23 @@ function MetricasMensagensView({
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
   const exportMessagesExcel = () => {
+    const inferDimensions = (name) => {
+      const text = String(name || "").replace(/\s*\|\s*/g, " | ").trim();
+      const lower = text.toLocaleLowerCase("pt-BR");
+      const countries = ["Argentina", "Brasil", "Brazil", "Estados Unidos", "EUA", "USA", "Espanha", "Mexico", "México", "Chile", "Colombia", "Colômbia", "Peru", "Portugal"];
+      const country = countries.find((item) => lower.includes(item.toLocaleLowerCase("pt-BR"))) || "Nao identificado";
+      const accounts = ["Elena", "Rosita"];
+      const account = accounts.find((item) => lower.includes(item.toLowerCase())) || (text.split("|")[0]?.trim() || "Nao identificada");
+      const platform = lower.includes("instagram") || lower.includes(" ig ") ? "Instagram" : lower.includes("facebook") || lower.includes(" fb ") ? "Facebook" : "Meta/Messenger";
+      return { normalized_name: text, country: country === "Brazil" ? "Brasil" : country, account, platform };
+    };
+    const resolveAdUnit = (row) => {
+      const direct = row.ad_unit || row.adUnit || row.AD_UNIT || row.ad_unit_name || row.AD_UNIT_NAME || row.block || row.placement;
+      if (direct) return String(direct);
+      const searchable = Object.values(row || {}).filter((value) => typeof value === "string").join(" ");
+      const match = searchable.match(/(?:^|[_\s-])(Anchor|Content\s*[1-9]|Interstitial|Rewards?)(?:[_\s-]|$)/i);
+      return match ? match[1].replace(/\s+/g, "") : "Sem bloco informado";
+    };
     const sourceToAd = new Map(
       (Array.isArray(messenleadSources) ? messenleadSources : [])
         .filter((item) => item?.sourceKey && item?.adId)
@@ -1070,11 +1094,19 @@ function MetricasMensagensView({
         meta_clicks: 0,
         conversations: 0,
         spend_brl: 0,
+        reach: 0,
+        frequency_weighted: 0,
+        frequency_weight: 0,
+        meta_cpm_weighted: 0,
       };
       item.meta_impressions += toNumber(row.meta_impressions_value ?? row.impressions);
       item.meta_clicks += toNumber(row.meta_clicks_value ?? row.clicks);
       item.conversations += toNumber(row.messaging_conversations_started);
       item.spend_brl += toNumber(row.spend_value ?? row.spend);
+      item.reach += toNumber(row.reach);
+      item.frequency_weighted += toNumber(row.frequency) * toNumber(row.impressions);
+      item.frequency_weight += toNumber(row.impressions);
+      item.meta_cpm_weighted += toNumber(row.cpm) * toNumber(row.impressions);
       metaByAd.set(key, item);
     });
 
@@ -1088,7 +1120,7 @@ function MetricasMensagensView({
           date: row.date || "",
           source,
           status: adId ? (meta.ad_name ? "Atribuido" : "Anuncio fora do recorte Meta") : "Sem resolucao Messenlead",
-          ad_unit: row.ad_unit || "Sem bloco informado",
+          ad_unit: resolveAdUnit(row),
           domain: row.name || row.domain || reportFilters.domain || "",
           ad_id: adId,
           ad_name: meta.ad_name || "",
@@ -1122,16 +1154,32 @@ function MetricasMensagensView({
     const crossing = Array.from(metaByAd.values()).map((meta) => {
       const join = joinByAd.get(normalizeKey(meta.ad_id)) || {};
       const revenueBrl = toNumber(join.earnings_client_usd) * toNumber(brlRate);
+      const roasValue = meta.spend_brl > 0 ? revenueBrl / meta.spend_brl : 0;
+      const statusValue = roasValue >= 1.45 ? "Escalar" : roasValue >= 1 ? "Observar" : "Cortar";
+      const dimensions = inferDimensions(meta.campaign_name);
       return {
         ...meta,
+        ...dimensions,
         sources: join.sources ? Array.from(join.sources).join(" | ") : "Sem atribuicao JoinAds",
         ad_units: join.blocks ? Array.from(join.blocks).sort().join(" | ") : "",
+        frequency: meta.frequency_weight > 0 ? meta.frequency_weighted / meta.frequency_weight : 0,
+        meta_cpm: meta.meta_impressions > 0 ? meta.meta_cpm_weighted / meta.meta_impressions : 0,
+        conversations_reach_percent: meta.reach > 0 ? meta.conversations / meta.reach : 0,
         joinads_impressions: toNumber(join.impressions),
         joinads_clicks: toNumber(join.clicks),
         revenue_client_usd: toNumber(join.earnings_client_usd),
-        revenue_client_brl: revenueBrl,
-        roas: meta.spend_brl > 0 ? revenueBrl / meta.spend_brl : 0,
-        profit_brl: revenueBrl - meta.spend_brl,
+        exchange_rate: { value: toNumber(brlRate), formula: "=Parametros!R2C2", style: "Input" },
+        revenue_client_brl: { value: revenueBrl, formula: "=RC[-2]*RC[-1]", style: "Money" },
+        cpa_brl: { value: meta.conversations > 0 ? meta.spend_brl / meta.conversations : 0, formula: "=IF(RC[-7]>0,RC[-6]/RC[-7],0)", style: "Money" },
+        revenue_per_conversation_brl: { value: meta.conversations > 0 ? revenueBrl / meta.conversations : 0, formula: "=IF(RC[-8]>0,RC[-2]/RC[-8],0)", style: "Money" },
+        impressions_per_conversation: { value: meta.conversations > 0 ? toNumber(join.impressions) / meta.conversations : 0, formula: "=IF(RC[-9]>0,RC[-7]/RC[-9],0)" },
+        effective_ecpm_usd: { value: toNumber(join.impressions) > 0 ? toNumber(join.earnings_client_usd) / toNumber(join.impressions) * 1000 : 0, formula: "=IF(RC[-8]>0,RC[-6]/RC[-8]*1000,0)", style: "Usd" },
+        joinads_ctr_percent: { value: toNumber(join.impressions) > 0 ? toNumber(join.clicks) / toNumber(join.impressions) * 100 : 0, formula: "=IF(RC[-9]>0,RC[-8]/RC[-9]*100,0)" },
+        roas: { value: roasValue, formula: "=IF(RC[-11]>0,RC[-6]/RC[-11],0)", style: roasValue >= 1.45 ? "Green" : roasValue >= 1 ? "Yellow" : "Red" },
+        profit_brl: { value: revenueBrl - meta.spend_brl, formula: "=RC[-7]-RC[-12]", style: revenueBrl - meta.spend_brl >= 0 ? "Green" : "Red" },
+        margin_percent: { value: revenueBrl > 0 ? (revenueBrl - meta.spend_brl) / revenueBrl * 100 : 0, formula: "=IF(RC[-8]>0,RC[-1]/RC[-8]*100,0)" },
+        status: { value: statusValue, formula: '=IF(RC[-3]>=Parametros!R3C2+0.2,"Escalar",IF(RC[-3]>=1,"Observar","Cortar"))', style: statusValue === "Escalar" ? "Green" : statusValue === "Observar" ? "Yellow" : "Red" },
+        delivery_relevance: meta.spend_brl < 1 || meta.meta_impressions < 100 ? "Entrega residual/insuficiente" : "Entrega relevante",
       };
     });
     const blockMap = new Map();
@@ -1150,13 +1198,119 @@ function MetricasMensagensView({
       ecpm_client_usd: item.impressions > 0 ? (item.earnings_client_usd / item.impressions) * 1000 : 0,
     }));
     const pending = detail.filter((row) => row.status !== "Atribuido");
+    const numericValue = (value) => toNumber(value && typeof value === "object" ? value.value : value);
+    const buildSummary = (groupKey, groupLabel) => {
+      const map = new Map();
+      crossing.forEach((row) => {
+        const key = row[groupKey] || "Nao identificado";
+        const item = map.get(key) || { group: key, meta_impressions: 0, conversations: 0, spend_brl: 0, joinads_impressions: 0, joinads_clicks: 0, revenue_client_usd: 0 };
+        ["meta_impressions", "conversations", "spend_brl", "joinads_impressions", "joinads_clicks", "revenue_client_usd"].forEach((field) => { item[field] += numericValue(row[field]); });
+        map.set(key, item);
+      });
+      const rows = Array.from(map.values());
+      const total = rows.reduce((acc, row) => {
+        ["meta_impressions", "conversations", "spend_brl", "joinads_impressions", "joinads_clicks", "revenue_client_usd"].forEach((field) => { acc[field] += row[field]; });
+        return acc;
+      }, { group: "TOTAL GERAL", meta_impressions: 0, conversations: 0, spend_brl: 0, joinads_impressions: 0, joinads_clicks: 0, revenue_client_usd: 0 });
+      return [...rows, total].map((row) => {
+        const revenueBrl = row.revenue_client_usd * toNumber(brlRate);
+        return {
+          ...row,
+          group_label: groupLabel,
+          revenue_client_brl: revenueBrl,
+          cpa_brl: row.conversations > 0 ? row.spend_brl / row.conversations : 0,
+          revenue_per_conversation_brl: row.conversations > 0 ? revenueBrl / row.conversations : 0,
+          impressions_per_conversation: row.conversations > 0 ? row.joinads_impressions / row.conversations : 0,
+          effective_ecpm_usd: row.joinads_impressions > 0 ? row.revenue_client_usd / row.joinads_impressions * 1000 : 0,
+          joinads_ctr_percent: row.joinads_impressions > 0 ? row.joinads_clicks / row.joinads_impressions * 100 : 0,
+          roas: row.spend_brl > 0 ? revenueBrl / row.spend_brl : 0,
+          profit_brl: revenueBrl - row.spend_brl,
+          margin_percent: revenueBrl > 0 ? (revenueBrl - row.spend_brl) / revenueBrl * 100 : 0,
+        };
+      });
+    };
+    const withSummaryFormulas = (rows) => rows.map((row) => ({
+      ...row,
+      revenue_client_brl: { value: row.revenue_client_brl || 0, formula: "=RC[-1]*Parametros!R2C2", style: "Money" },
+      cpa_brl: { value: row.cpa_brl || 0, formula: "=IF(RC[-6]>0,RC[-5]/RC[-6],0)", style: "Money" },
+      revenue_per_conversation_brl: { value: row.revenue_per_conversation_brl || 0, formula: "=IF(RC[-7]>0,RC[-2]/RC[-7],0)", style: "Money" },
+      impressions_per_conversation: { value: row.impressions_per_conversation || 0, formula: "=IF(RC[-8]>0,RC[-6]/RC[-8],0)" },
+      effective_ecpm_usd: { value: row.effective_ecpm_usd || 0, formula: "=IF(RC[-7]>0,RC[-5]/RC[-7]*1000,0)", style: "Usd" },
+      joinads_ctr_percent: { value: row.joinads_ctr_percent || 0, formula: "=IF(RC[-8]>0,RC[-7]/RC[-8]*100,0)" },
+      roas: { value: row.roas || 0, formula: "=IF(RC[-10]>0,RC[-6]/RC[-10],0)" },
+      profit_brl: { value: row.profit_brl || 0, formula: "=RC[-7]-RC[-11]", style: "Money" },
+      margin_percent: { value: row.margin_percent || 0, formula: "=IF(RC[-8]>0,RC[-1]/RC[-8]*100,0)" },
+    }));
+    const countrySummary = withSummaryFormulas(buildSummary("country", "Pais"));
+    const accountSummary = withSummaryFormulas(buildSummary("account", "Conta"));
+    const rawBlockSummary = blocks.map((row) => ({
+      group: row.ad_unit, meta_impressions: 0, conversations: 0, spend_brl: 0,
+      joinads_impressions: row.impressions, joinads_clicks: row.clicks, revenue_client_usd: row.earnings_client_usd,
+      revenue_client_brl: row.earnings_client_usd * toNumber(brlRate), effective_ecpm_usd: row.ecpm_client_usd,
+      joinads_ctr_percent: row.impressions > 0 ? row.clicks / row.impressions * 100 : 0,
+    }));
+    const blockTotal = rawBlockSummary.reduce((acc, row) => {
+      acc.joinads_impressions += row.joinads_impressions;
+      acc.joinads_clicks += row.joinads_clicks;
+      acc.revenue_client_usd += row.revenue_client_usd;
+      return acc;
+    }, { group: "TOTAL GERAL", meta_impressions: 0, conversations: 0, spend_brl: 0, joinads_impressions: 0, joinads_clicks: 0, revenue_client_usd: 0 });
+    blockTotal.revenue_client_brl = blockTotal.revenue_client_usd * toNumber(brlRate);
+    blockTotal.effective_ecpm_usd = blockTotal.joinads_impressions > 0 ? blockTotal.revenue_client_usd / blockTotal.joinads_impressions * 1000 : 0;
+    blockTotal.joinads_ctr_percent = blockTotal.joinads_impressions > 0 ? blockTotal.joinads_clicks / blockTotal.joinads_impressions * 100 : 0;
+    const blockSummary = withSummaryFormulas([...rawBlockSummary, blockTotal]);
+    const comparison = [];
+    const comparisonCountries = Array.from(new Set(crossing.map((row) => row.country)));
+    comparisonCountries.forEach((country) => {
+      ["Elena", "Rosita"].forEach((account) => {
+        const selected = crossing.filter((row) => row.country === country && normalizeKey(row.account) === normalizeKey(account));
+        if (!selected.length) return;
+        const conversations = selected.reduce((sum, row) => sum + numericValue(row.conversations), 0);
+        const spend = selected.reduce((sum, row) => sum + numericValue(row.spend_brl), 0);
+        const impressions = selected.reduce((sum, row) => sum + numericValue(row.joinads_impressions), 0);
+        const revenueUsd = selected.reduce((sum, row) => sum + numericValue(row.revenue_client_usd), 0);
+        const revenueBrl = revenueUsd * toNumber(brlRate);
+        comparison.push({ country, account, cpa_brl: conversations ? spend / conversations : 0, impressions_per_conversation: conversations ? impressions / conversations : 0, revenue_per_conversation_brl: conversations ? revenueBrl / conversations : 0, roas: spend ? revenueBrl / spend : 0 });
+      });
+    });
+    const dailyMap = new Map();
+    safeRows.filter(isMessageMetricsRow).forEach((row) => {
+      const date = row.date_start || row.date || "Sem data";
+      const item = dailyMap.get(date) || { date, spend_brl: 0, conversations: 0, meta_impressions: 0, joinads_impressions: 0, revenue_client_usd: 0 };
+      item.spend_brl += toNumber(row.spend_value ?? row.spend);
+      item.conversations += toNumber(row.messaging_conversations_started);
+      item.meta_impressions += toNumber(row.meta_impressions_value ?? row.impressions);
+      dailyMap.set(date, item);
+    });
+    detail.forEach((row) => {
+      const item = dailyMap.get(row.date) || { date: row.date || "Sem data", spend_brl: 0, conversations: 0, meta_impressions: 0, joinads_impressions: 0, revenue_client_usd: 0 };
+      item.joinads_impressions += row.impressions;
+      item.revenue_client_usd += row.earnings_client_usd;
+      dailyMap.set(item.date, item);
+    });
+    const daily = Array.from(dailyMap.values()).sort((a, b) => String(a.date).localeCompare(String(b.date))).map((row) => {
+      const revenueBrl = row.revenue_client_usd * toNumber(brlRate);
+      return { ...row,
+        revenue_client_brl: { value: revenueBrl, formula: "=RC[-1]*Parametros!R2C2", style: "Money" },
+        impressions_per_conversation: { value: row.conversations > 0 ? row.joinads_impressions / row.conversations : 0, formula: "=IF(RC[-5]>0,RC[-3]/RC[-5],0)" },
+        roas: { value: row.spend_brl > 0 ? revenueBrl / row.spend_brl : 0, formula: "=IF(RC[-5]>0,RC[-2]/RC[-5],0)" },
+      };
+    });
+    const totalRevenue = detail.reduce((sum, row) => sum + row.earnings_client_usd, 0);
+    const attributedRevenue = detail.filter((row) => row.status === "Atribuido").reduce((sum, row) => sum + row.earnings_client_usd, 0);
+    const coverage = totalRevenue > 0 ? attributedRevenue / totalRevenue : 0;
     const metaColumns = [
-      ["campaign_name", "Campanha Meta"], ["campaign_id", "ID campanha"], ["adset_name", "Conjunto Meta"],
-      ["adset_id", "ID conjunto"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio"], ["sources", "Atribuicao Messenlead (src_)"],
-      ["ad_units", "Blocos JoinAds (ad_unit)"], ["meta_impressions", "Impressoes Meta"], ["meta_clicks", "Cliques Meta"],
-      ["conversations", "Conversas iniciadas"], ["spend_brl", "Gasto Meta BRL"], ["joinads_impressions", "Impressoes JoinAds"],
-      ["joinads_clicks", "Cliques JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"],
-      ["roas", "ROAS"], ["profit_brl", "Lucro operacional BRL"],
+      ["normalized_name", "Campanha Meta (padronizada)"], ["account", "Conta"], ["country", "Pais"], ["platform", "Plataforma"],
+      ["campaign_id", "ID campanha"], ["adset_name", "Conjunto Meta"], ["adset_id", "ID conjunto"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio"],
+      ["sources", "Atribuicao Messenlead (src_)"], ["ad_units", "Blocos JoinAds (ad_unit)"],
+      ["meta_impressions", "Impressoes Meta"], ["meta_clicks", "Cliques Meta"], ["reach", "Alcance Meta"], ["frequency", "Frequencia Meta"], ["meta_cpm", "CPM Meta BRL"],
+      ["conversations_reach_percent", "Conversas / alcance"], ["conversations", "Conversas iniciadas"], ["spend_brl", "Gasto Meta BRL"],
+      ["joinads_impressions", "Impressoes JoinAds"], ["joinads_clicks", "Cliques JoinAds"], ["revenue_client_usd", "Receita cliente USD"],
+      ["exchange_rate", "Cambio BRL/USD"], ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"],
+      ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["impressions_per_conversation", "Impressoes por conversa"],
+      ["effective_ecpm_usd", "eCPM efetivo USD"], ["joinads_ctr_percent", "CTR JoinAds (%)"], ["roas", "ROAS"],
+      ["profit_brl", "Lucro operacional BRL"], ["margin_percent", "Margem (%)"], ["status", "Status"],
+      ["delivery_relevance", "Qualidade da amostra"],
     ].map(([key, label]) => ({ key, label }));
     const detailColumns = [
       ["date", "Data"], ["source", "Atribuicao Messenlead (src_)"], ["status", "Status do cruzamento"], ["ad_unit", "Bloco JoinAds (ad_unit)"],
@@ -1168,12 +1322,36 @@ function MetricasMensagensView({
       ["ad_unit", "Bloco JoinAds (ad_unit)"], ["sources", "Atribuicoes src_"], ["ads", "Anuncios Meta vinculados"],
       ["impressions", "Impressoes"], ["clicks", "Cliques"], ["earnings_client_usd", "Receita cliente USD"], ["ecpm_client_usd", "eCPM cliente USD"],
     ].map(([key, label]) => ({ key, label }));
+    const summaryColumns = [
+      ["group", "Agrupamento"], ["meta_impressions", "Impressoes Meta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta BRL"],
+      ["joinads_impressions", "Impressoes JoinAds"], ["joinads_clicks", "Cliques JoinAds"], ["revenue_client_usd", "Receita cliente USD"],
+      ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"], ["revenue_per_conversation_brl", "Receita por conversa BRL"],
+      ["impressions_per_conversation", "Impressoes por conversa"], ["effective_ecpm_usd", "eCPM efetivo USD"], ["joinads_ctr_percent", "CTR JoinAds (%)"],
+      ["roas", "ROAS"], ["profit_brl", "Lucro BRL"], ["margin_percent", "Margem (%)"],
+    ].map(([key, label]) => ({ key, label }));
+    const comparisonColumns = [["country", "Pais"], ["account", "Conta"], ["cpa_brl", "CPA BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["roas", "ROAS"]].map(([key, label]) => ({ key, label }));
+    const dailyColumns = [["date", "Data"], ["meta_impressions", "Impressoes Meta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["roas", "ROAS diario"]].map(([key, label]) => ({ key, label }));
+    const parameterColumns = [{ key: "parameter", label: "Parametro editavel" }, { key: "value", label: "Valor" }, { key: "note", label: "Como usar" }];
+    const parameterRows = [
+      { parameter: "Cambio BRL/USD", value: { value: toNumber(brlRate), style: "Input" }, note: "Altere esta celula; as formulas da aba Meta x JoinAds recalculam a receita em BRL." },
+      { parameter: "ROAS alvo", value: { value: 1.25, style: "Input" }, note: "Escalar a partir do alvo + 0,20; observar acima de 1; cortar abaixo de 1." },
+      { parameter: "Cobertura minima", value: { value: 0.9, style: "Input" }, note: "Referencia recomendada: 90%." },
+      { parameter: "Receita JoinAds total USD", value: totalRevenue, note: "Total das linhas src_ no periodo." },
+      { parameter: "Receita atribuida USD", value: attributedRevenue, note: "Receita ligada a anuncio Meta no recorte." },
+      { parameter: "Cobertura da atribuicao", value: { value: coverage, style: coverage >= 0.9 ? "Green" : "Red" }, note: coverage >= 0.9 ? "Cobertura saudavel." : "Abaixo de 90%: revisar a aba Pendencias atribuicao." },
+    ];
     downloadExcelWorkbook(
       `metricas-mensagens_${reportFilters.domain || "dominio"}_${reportFilters.startDate || "inicio"}_${reportFilters.endDate || "fim"}.xls`,
       [
+        { name: "Parametros", columns: parameterColumns, rows: parameterRows },
         { name: "Meta x JoinAds", columns: metaColumns, rows: crossing },
         { name: "JoinAds por src e bloco", columns: detailColumns, rows: detail },
         { name: "Resumo por ad_unit", columns: blockColumns, rows: blocks },
+        { name: "Resumo por Pais", columns: summaryColumns, rows: countrySummary },
+        { name: "Resumo por Conta", columns: summaryColumns, rows: accountSummary },
+        { name: "Resumo por Bloco", columns: summaryColumns, rows: blockSummary },
+        { name: "Elena vs Rosita", columns: comparisonColumns, rows: comparison },
+        { name: "Visao diaria", columns: dailyColumns, rows: daily },
         { name: "Pendencias atribuicao", columns: detailColumns, rows: pending },
       ]
     );
