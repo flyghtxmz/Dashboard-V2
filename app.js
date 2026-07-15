@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 124;
+const APP_VERSION_BUILD = 125;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1259,20 +1259,27 @@ function MetricasMensagensView({
     blockTotal.effective_ecpm_usd = blockTotal.joinads_impressions > 0 ? blockTotal.revenue_client_usd / blockTotal.joinads_impressions * 1000 : 0;
     blockTotal.joinads_ctr_percent = blockTotal.joinads_impressions > 0 ? blockTotal.joinads_clicks / blockTotal.joinads_impressions * 100 : 0;
     const blockSummary = withSummaryFormulas([...rawBlockSummary, blockTotal]);
-    const comparison = [];
-    const comparisonCountries = Array.from(new Set(crossing.map((row) => row.country)));
-    comparisonCountries.forEach((country) => {
-      ["Elena", "Rosita"].forEach((account) => {
-        const selected = crossing.filter((row) => row.country === country && normalizeKey(row.account) === normalizeKey(account));
-        if (!selected.length) return;
-        const conversations = selected.reduce((sum, row) => sum + numericValue(row.conversations), 0);
-        const spend = selected.reduce((sum, row) => sum + numericValue(row.spend_brl), 0);
-        const impressions = selected.reduce((sum, row) => sum + numericValue(row.joinads_impressions), 0);
-        const revenueUsd = selected.reduce((sum, row) => sum + numericValue(row.revenue_client_usd), 0);
-        const revenueBrl = revenueUsd * toNumber(brlRate);
-        comparison.push({ country, account, cpa_brl: conversations ? spend / conversations : 0, impressions_per_conversation: conversations ? impressions / conversations : 0, revenue_per_conversation_brl: conversations ? revenueBrl / conversations : 0, roas: spend ? revenueBrl / spend : 0 });
-      });
+    const countryAccountMap = new Map();
+    crossing.forEach((row) => {
+      const key = `${row.country}|||${row.account}`;
+      const item = countryAccountMap.get(key) || { country: row.country, account: row.account, conversations: 0, spend_brl: 0, joinads_impressions: 0, revenue_client_usd: 0 };
+      item.conversations += numericValue(row.conversations);
+      item.spend_brl += numericValue(row.spend_brl);
+      item.joinads_impressions += numericValue(row.joinads_impressions);
+      item.revenue_client_usd += numericValue(row.revenue_client_usd);
+      countryAccountMap.set(key, item);
     });
+    const countryAccountSummary = Array.from(countryAccountMap.values()).map((row) => {
+      const revenueBrl = row.revenue_client_usd * toNumber(brlRate);
+      return {
+        ...row,
+        revenue_client_brl: revenueBrl,
+        cpa_brl: row.conversations > 0 ? row.spend_brl / row.conversations : 0,
+        impressions_per_conversation: row.conversations > 0 ? row.joinads_impressions / row.conversations : 0,
+        revenue_per_conversation_brl: row.conversations > 0 ? revenueBrl / row.conversations : 0,
+        roas: row.spend_brl > 0 ? revenueBrl / row.spend_brl : 0,
+      };
+    }).sort((a, b) => String(a.country).localeCompare(String(b.country)) || String(a.account).localeCompare(String(b.account)));
     const dailyMap = new Map();
     safeRows.filter(isMessageMetricsRow).forEach((row) => {
       const date = row.date_start || row.date || "Sem data";
@@ -1329,7 +1336,7 @@ function MetricasMensagensView({
       ["impressions_per_conversation", "Impressoes por conversa"], ["effective_ecpm_usd", "eCPM efetivo USD"], ["joinads_ctr_percent", "CTR JoinAds (%)"],
       ["roas", "ROAS"], ["profit_brl", "Lucro BRL"], ["margin_percent", "Margem (%)"],
     ].map(([key, label]) => ({ key, label }));
-    const comparisonColumns = [["country", "Pais"], ["account", "Conta"], ["cpa_brl", "CPA BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["roas", "ROAS"]].map(([key, label]) => ({ key, label }));
+    const countryAccountColumns = [["country", "Pais"], ["account", "Conta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["roas", "ROAS"]].map(([key, label]) => ({ key, label }));
     const dailyColumns = [["date", "Data"], ["meta_impressions", "Impressoes Meta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["roas", "ROAS diario"]].map(([key, label]) => ({ key, label }));
     const parameterColumns = [{ key: "parameter", label: "Parametro editavel" }, { key: "value", label: "Valor" }, { key: "note", label: "Como usar" }];
     const parameterRows = [
@@ -1350,7 +1357,7 @@ function MetricasMensagensView({
         { name: "Resumo por Pais", columns: summaryColumns, rows: countrySummary },
         { name: "Resumo por Conta", columns: summaryColumns, rows: accountSummary },
         { name: "Resumo por Bloco", columns: summaryColumns, rows: blockSummary },
-        { name: "Elena vs Rosita", columns: comparisonColumns, rows: comparison },
+        { name: "Resumo Pais x Conta", columns: countryAccountColumns, rows: countryAccountSummary },
         { name: "Visao diaria", columns: dailyColumns, rows: daily },
         { name: "Pendencias atribuicao", columns: detailColumns, rows: pending },
       ]
