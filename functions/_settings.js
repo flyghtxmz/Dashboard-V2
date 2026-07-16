@@ -8,6 +8,10 @@ export const DEFAULT_SETTINGS = {
     "intre.remediototal.com.br",
   ],
   metaAccountId: "",
+  metaTaxEnabled: true,
+  metaTaxRatePercent: 12.15,
+  metaTaxEffectiveDate: "2026-01-01",
+  metaTaxMode: "add",
   reportType: "Analytical",
   includeAssets: false,
   showMessagesLtvTable: true,
@@ -134,6 +138,12 @@ export function normalizeSettings(raw) {
         ? uniqueStrings(parsed.domains, normalizeDomain)
         : [...DEFAULT_SETTINGS.domains],
       metaAccountId: String(parsed.metaAccountId || "").trim(),
+      metaTaxEnabled: parsed.metaTaxEnabled !== false,
+      metaTaxRatePercent: Math.min(99.99, Math.max(0, Number(parsed.metaTaxRatePercent ?? 12.15) || 0)),
+      metaTaxEffectiveDate: /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.metaTaxEffectiveDate || ""))
+        ? String(parsed.metaTaxEffectiveDate)
+        : DEFAULT_SETTINGS.metaTaxEffectiveDate,
+      metaTaxMode: parsed.metaTaxMode === "included" ? "included" : "add",
       reportType: parsed.reportType || "Analytical",
       includeAssets: !!parsed.includeAssets,
       showMessagesLtvTable: parsed.showMessagesLtvTable !== false,
@@ -196,6 +206,10 @@ export function toPublicSettings(settings, session) {
   return {
     domains: allowedDomains,
     metaAccountId: normalized.metaAccountId,
+    metaTaxEnabled: normalized.metaTaxEnabled,
+    metaTaxRatePercent: normalized.metaTaxRatePercent,
+    metaTaxEffectiveDate: normalized.metaTaxEffectiveDate,
+    metaTaxMode: normalized.metaTaxMode,
     reportType: normalized.reportType,
     includeAssets: normalized.includeAssets,
     showMessagesLtvTable: normalized.showMessagesLtvTable,

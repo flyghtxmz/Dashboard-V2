@@ -368,6 +368,25 @@ function toNumber(value) {
   return 0;
 }
 
+function calculateMetaCharge(spendValue, rowDate, settings = {}) {
+  const reportedSpend = Math.max(0, toNumber(spendValue));
+  const ratePercent = Math.min(99.99, Math.max(0, toNumber(settings.metaTaxRatePercent ?? 12.15)));
+  const effectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(String(settings.metaTaxEffectiveDate || ""))
+    ? String(settings.metaTaxEffectiveDate)
+    : "2026-01-01";
+  const date = String(rowDate || "").slice(0, 10);
+  const applies = settings.metaTaxEnabled !== false && ratePercent > 0 && (!date || date >= effectiveDate);
+  if (!applies) return { mediaSpend: reportedSpend, tax: 0, total: reportedSpend, multiplier: 1 };
+  const rate = ratePercent / 100;
+  if (settings.metaTaxMode === "included") {
+    const mediaSpend = reportedSpend * (1 - rate);
+    return { mediaSpend, tax: reportedSpend - mediaSpend, total: reportedSpend, multiplier: 1 };
+  }
+  const multiplier = rate < 1 ? 1 / (1 - rate) : 1;
+  const total = reportedSpend * multiplier;
+  return { mediaSpend: reportedSpend, tax: total - reportedSpend, total, multiplier };
+}
+
 async function fetchJson(path, options = {}) {
   const {
     cacheTtlMs,
@@ -1026,6 +1045,7 @@ function MetricasMensagensView({
   reportFilters = {},
   usePmLabels = false,
   brlRate = 0,
+  metaTaxSettings = {},
   commissionPercent = 0,
   showUserCommission = false,
   diagnostics = {},
@@ -1129,6 +1149,8 @@ function MetricasMensagensView({
         meta_clicks: 0,
         conversations: 0,
         spend_brl: 0,
+        media_spend_brl: 0,
+        meta_tax_brl: 0,
         reach: 0,
         frequency_weighted: 0,
         frequency_weight: 0,
@@ -1140,6 +1162,8 @@ function MetricasMensagensView({
       item.meta_clicks += toNumber(row.meta_clicks_value ?? row.clicks);
       item.conversations += toNumber(row.messaging_conversations_started);
       item.spend_brl += toNumber(row.spend_value ?? row.spend);
+      item.media_spend_brl += toNumber(row.spend_media_value ?? row.spend_value ?? row.spend);
+      item.meta_tax_brl += toNumber(row.meta_tax_value);
       if (row.period_reach != null) {
         item.reach = Math.max(item.reach, toNumber(row.period_reach));
         item.has_period_reach = true;
@@ -1261,15 +1285,15 @@ function MetricasMensagensView({
       crossing.forEach((row) => {
         const displayValue = row[groupKey] || "Não identificado — revisar";
         const key = row[`${groupKey}_key`] || dimensionKey(displayValue);
-        const item = map.get(key) || { group: displayValue, meta_impressions: 0, conversations: 0, spend_brl: 0, joinads_impressions: 0, joinads_clicks: 0, revenue_client_usd: 0 };
-        ["meta_impressions", "conversations", "spend_brl", "joinads_impressions", "joinads_clicks", "revenue_client_usd"].forEach((field) => { item[field] += numericValue(row[field]); });
+        const item = map.get(key) || { group: displayValue, meta_impressions: 0, conversations: 0, spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, joinads_impressions: 0, joinads_clicks: 0, revenue_client_usd: 0 };
+        ["meta_impressions", "conversations", "spend_brl", "media_spend_brl", "meta_tax_brl", "joinads_impressions", "joinads_clicks", "revenue_client_usd"].forEach((field) => { item[field] += numericValue(row[field]); });
         map.set(key, item);
       });
       const rows = Array.from(map.values());
       const total = rows.reduce((acc, row) => {
-        ["meta_impressions", "conversations", "spend_brl", "joinads_impressions", "joinads_clicks", "revenue_client_usd"].forEach((field) => { acc[field] += row[field]; });
+        ["meta_impressions", "conversations", "spend_brl", "media_spend_brl", "meta_tax_brl", "joinads_impressions", "joinads_clicks", "revenue_client_usd"].forEach((field) => { acc[field] += row[field]; });
         return acc;
-      }, { group: "TOTAL GERAL", meta_impressions: 0, conversations: 0, spend_brl: 0, joinads_impressions: 0, joinads_clicks: 0, revenue_client_usd: 0 });
+      }, { group: "TOTAL GERAL", meta_impressions: 0, conversations: 0, spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, joinads_impressions: 0, joinads_clicks: 0, revenue_client_usd: 0 });
       return [...rows, total].map((row) => {
         const revenueBrl = row.revenue_client_usd * toNumber(brlRate);
         return {
@@ -1322,9 +1346,11 @@ function MetricasMensagensView({
     const countryAccountMap = new Map();
     crossing.forEach((row) => {
       const key = `${row.country_key || dimensionKey(row.country)}|||${row.account_key || dimensionKey(row.account)}`;
-      const item = countryAccountMap.get(key) || { country: row.country, account: row.account, conversations: 0, spend_brl: 0, joinads_impressions: 0, revenue_client_usd: 0 };
+      const item = countryAccountMap.get(key) || { country: row.country, account: row.account, conversations: 0, spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, joinads_impressions: 0, revenue_client_usd: 0 };
       item.conversations += numericValue(row.conversations);
       item.spend_brl += numericValue(row.spend_brl);
+      item.media_spend_brl += numericValue(row.media_spend_brl);
+      item.meta_tax_brl += numericValue(row.meta_tax_brl);
       item.joinads_impressions += numericValue(row.joinads_impressions);
       item.revenue_client_usd += numericValue(row.revenue_client_usd);
       countryAccountMap.set(key, item);
@@ -1343,14 +1369,16 @@ function MetricasMensagensView({
     const dailyMap = new Map();
     safeRows.filter(isMessageMetricsRow).forEach((row) => {
       const date = row.date_start || row.date || "Sem data";
-      const item = dailyMap.get(date) || { date, spend_brl: 0, conversations: 0, meta_impressions: 0, joinads_impressions: 0, revenue_client_usd: 0 };
+      const item = dailyMap.get(date) || { date, spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, conversations: 0, meta_impressions: 0, joinads_impressions: 0, revenue_client_usd: 0 };
       item.spend_brl += toNumber(row.spend_value ?? row.spend);
+      item.media_spend_brl += toNumber(row.spend_media_value ?? row.spend_value ?? row.spend);
+      item.meta_tax_brl += toNumber(row.meta_tax_value);
       item.conversations += toNumber(row.messaging_conversations_started);
       item.meta_impressions += toNumber(row.meta_impressions_value ?? row.impressions);
       dailyMap.set(date, item);
     });
     detail.forEach((row) => {
-      const item = dailyMap.get(row.date) || { date: row.date || "Sem data", spend_brl: 0, conversations: 0, meta_impressions: 0, joinads_impressions: 0, revenue_client_usd: 0 };
+      const item = dailyMap.get(row.date) || { date: row.date || "Sem data", spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, conversations: 0, meta_impressions: 0, joinads_impressions: 0, revenue_client_usd: 0 };
       item.joinads_impressions += row.impressions;
       item.revenue_client_usd += row.earnings_client_usd;
       dailyMap.set(item.date, item);
@@ -1370,13 +1398,14 @@ function MetricasMensagensView({
       ["campaign_id", "ID campanha"], ["adset_name", "Conjunto Meta"], ["adset_id", "ID conjunto"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio"],
       ["sources", "Atribuicao Messenlead (src_)"], ["ad_units", "Blocos JoinAds (ad_unit)"], ["joinads_countries", "Paises JoinAds"],
       ["meta_impressions", "Impressoes Meta"], ["meta_clicks", "Cliques Meta"], ["reach", "Alcance Meta"], ["frequency", "Frequencia Meta"], ["meta_cpm", "CPM Meta BRL"],
-      ["conversations_reach_percent", "Conversas / alcance"], ["conversations", "Conversas iniciadas"], ["spend_brl", "Gasto Meta BRL"],
+      ["conversations_reach_percent", "Conversas / alcance"], ["conversations", "Conversas iniciadas"], ["spend_brl", "Gasto Meta total BRL"],
       ["joinads_impressions", "Impressoes JoinAds"], ["joinads_clicks", "Cliques JoinAds"], ["revenue_client_usd", "Receita cliente USD"],
       ["exchange_rate", "Cambio BRL/USD"], ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"],
       ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["impressions_per_conversation", "Impressoes por conversa"],
       ["effective_ecpm_usd", "eCPM efetivo USD"], ["joinads_ctr_percent", "CTR JoinAds (%)"], ["roas", "ROAS"],
       ["profit_brl", "Lucro operacional BRL"], ["margin_percent", "Margem (%)"], ["status", "Status"],
       ["delivery_relevance", "Qualidade da amostra"],
+      ["media_spend_brl", "Gasto de midia Meta BRL"], ["meta_tax_brl", "Impostos Meta BRL"],
     ].map(([key, label]) => ({ key, label }));
     const detailColumns = [
       ["date", "Data"], ["source", "Atribuicao Messenlead (src_)"], ["status", "Status do cruzamento"], ["ad_unit", "Bloco JoinAds (ad_unit)"], ["joinads_country", "Pais JoinAds"],
@@ -1390,14 +1419,15 @@ function MetricasMensagensView({
       ["fill_rate_percent", "Fill rate (%)"], ["clicks", "Cliques"], ["ecpm_client_usd", "eCPM cliente USD"], ["ctr_percent", "CTR (%)"],
     ].map(([key, label]) => ({ key, label }));
     const summaryColumns = [
-      ["group", "Agrupamento"], ["meta_impressions", "Impressoes Meta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta BRL"],
+      ["group", "Agrupamento"], ["meta_impressions", "Impressoes Meta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta total BRL"],
       ["joinads_impressions", "Impressoes JoinAds"], ["joinads_clicks", "Cliques JoinAds"], ["revenue_client_usd", "Receita cliente USD"],
       ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"], ["revenue_per_conversation_brl", "Receita por conversa BRL"],
       ["impressions_per_conversation", "Impressoes por conversa"], ["effective_ecpm_usd", "eCPM efetivo USD"], ["joinads_ctr_percent", "CTR JoinAds (%)"],
       ["roas", "ROAS"], ["profit_brl", "Lucro BRL"], ["margin_percent", "Margem (%)"],
+      ["media_spend_brl", "Gasto de midia Meta BRL"], ["meta_tax_brl", "Impostos Meta BRL"],
     ].map(([key, label]) => ({ key, label }));
-    const countryAccountColumns = [["country", "Pais"], ["account", "Conta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["roas", "ROAS"]].map(([key, label]) => ({ key, label }));
-    const dailyColumns = [["date", "Data"], ["meta_impressions", "Impressoes Meta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["roas", "ROAS diario"]].map(([key, label]) => ({ key, label }));
+    const countryAccountColumns = [["country", "Pais"], ["account", "Conta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta total BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["roas", "ROAS"], ["media_spend_brl", "Gasto de midia Meta BRL"], ["meta_tax_brl", "Impostos Meta BRL"]].map(([key, label]) => ({ key, label }));
+    const dailyColumns = [["date", "Data"], ["meta_impressions", "Impressoes Meta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta total BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["roas", "ROAS diario"], ["media_spend_brl", "Gasto de midia Meta BRL"], ["meta_tax_brl", "Impostos Meta BRL"]].map(([key, label]) => ({ key, label }));
     const parameterColumns = [{ key: "parameter", label: "Parametro editavel" }, { key: "value", label: "Valor" }, { key: "note", label: "Como usar" }];
     const parameterRows = [
       { parameter: "Cambio BRL/USD", value: { value: toNumber(brlRate), style: "Input" }, note: "Altere esta celula; as formulas da aba Meta x JoinAds recalculam a receita em BRL." },
@@ -1407,6 +1437,9 @@ function MetricasMensagensView({
       { parameter: "Receita atribuida USD", value: attributedRevenue, note: "Receita ligada a anuncio Meta no recorte." },
       { parameter: "Cobertura da atribuicao", value: { value: coverage, formula: "=IF(R5C2>0,R6C2/R5C2,0)", style: coverage >= 0.9 ? "Green" : "Red" }, note: coverage >= 0.9 ? "Cobertura saudavel." : "Abaixo de 90%: revisar a aba Pendencias atribuicao." },
       { parameter: "Origem do gasto diario", value: "Meta date_start", note: "Somado diretamente das linhas diarias retornadas com time_increment=1; nao ha rateio nem acumulacao." },
+      { parameter: "Impostos Meta ativos", value: metaTaxSettings.metaTaxEnabled !== false ? "Sim" : "Nao", note: "O gasto usado em CPA, ROAS, lucro e margem inclui o custo tributario configurado." },
+      { parameter: "Aliquota Meta (%)", value: toNumber(metaTaxSettings.metaTaxRatePercent), note: `Vigencia: ${metaTaxSettings.metaTaxEffectiveDate || "2026-01-01"}.` },
+      { parameter: "Modo do spend Meta", value: metaTaxSettings.metaTaxMode === "included" ? "Imposto ja incluido" : "Somar imposto", note: "Evita duplicar tributos se o campo spend da API mudar." },
     ];
     downloadExcelWorkbook(
       `metricas-mensagens_${reportFilters.domain || "dominio"}_${reportFilters.startDate || "inicio"}_${reportFilters.endDate || "fim"}.xls`,
@@ -1438,6 +1471,8 @@ function MetricasMensagensView({
             meta_clicks: 0,
             joinads_clicks: 0,
             spend_brl: 0,
+            media_spend_brl: 0,
+            meta_tax_brl: 0,
             revenue_usd: 0,
             revenue_brl: 0,
             conversations: 0,
@@ -1464,6 +1499,8 @@ function MetricasMensagensView({
         item.meta_impressions += toNumber(row.meta_impressions_value || row.impressions);
         item.meta_clicks += toNumber(row.meta_clicks_value || row.clicks);
         item.spend_brl += rowSpend;
+        item.media_spend_brl += toNumber(row.spend_media_value ?? row.spend_value ?? row.spend);
+        item.meta_tax_brl += toNumber(row.meta_tax_value);
         item.conversations += toNumber(row.messaging_conversations_started);
         item.meta_results += toNumber(row.results_meta);
         // Metricas da JoinAds (receita/impressoes/cliques) sao TOTAIS do periodo repetidos em cada
@@ -2403,6 +2440,13 @@ function MetricasMensagensView({
             </button>
           </div>
         </div>
+        ${!showUserCommission && metaTaxSettings.metaTaxEnabled !== false
+          ? html`<div className="alert info" style=${{ marginBottom: "14px" }}>
+              Custo real Meta por gross-up: gasto de mídia ÷ (1 − ${toNumber(metaTaxSettings.metaTaxRatePercent).toFixed(2)}%) a partir de
+              ${metaTaxSettings.metaTaxEffectiveDate || "2026-01-01"}.
+              ${metaTaxSettings.metaTaxMode === "included" ? "O spend da API está configurado como já tributado." : "O spend da API está configurado como líquido."}
+            </div>`
+          : null}
         <div className="table-wrapper scroll-x">
           <table>
             <thead>
@@ -2423,7 +2467,7 @@ function MetricasMensagensView({
                 <th>Imp. JoinAds / conversa</th>
                 <th>Visitas / conversa</th>
                 <th>Cliques JoinAds</th>
-                ${showUserCommission ? null : html`<th>Gasto Meta</th>`}
+                ${showUserCommission ? null : html`<th>Gasto Meta total</th>`}
                 ${showUserCommission
                   ? html`<th>Lucro do usuario</th>`
                   : html`
@@ -2481,7 +2525,10 @@ function MetricasMensagensView({
                       <td>${row.joinads_impressions_per_conversation != null ? row.joinads_impressions_per_conversation.toFixed(2) : "-"}</td>
                       <td>${row.visits_per_conversation != null ? row.visits_per_conversation.toFixed(2) : "-"}</td>
                       <td>${number.format(row.joinads_clicks || 0)}</td>
-                      ${showUserCommission ? null : html`<td>${currencyBRL.format(row.spend_brl || 0)}</td>`}
+                      ${showUserCommission ? null : html`<td>
+                        ${currencyBRL.format(row.spend_brl || 0)}
+                        <div className="muted small">mídia ${currencyBRL.format(row.media_spend_brl || 0)} · impostos ${currencyBRL.format(row.meta_tax_brl || 0)}</div>
+                      </td>`}
                       ${showUserCommission
                         ? html`<td>${userCommission != null ? currencyBRL.format(userCommission) : "-"}</td>`
                         : html`
@@ -7086,6 +7133,10 @@ function PaisSelect({ value, onChange, placeholder, inputStyle, onEnter }) {
 function ConfiguracoesView({ settings, onSave, saving }) {
   const [domains, setDomains] = useState(settings.domains?.length ? settings.domains : [...DEFAULT_DOMAINS]);
   const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
+  const [metaTaxEnabled, setMetaTaxEnabled] = useState(settings.metaTaxEnabled !== false);
+  const [metaTaxRatePercent, setMetaTaxRatePercent] = useState(settings.metaTaxRatePercent ?? 12.15);
+  const [metaTaxEffectiveDate, setMetaTaxEffectiveDate] = useState(settings.metaTaxEffectiveDate || "2026-01-01");
+  const [metaTaxMode, setMetaTaxMode] = useState(settings.metaTaxMode === "included" ? "included" : "add");
   const [reportType, setReportType] = useState(settings.reportType || "Analytical");
   const [includeAssets, setIncludeAssets] = useState(!!settings.includeAssets);
   const [showMessagesLtvTable, setShowMessagesLtvTable] = useState(settings.showMessagesLtvTable !== false);
@@ -7251,6 +7302,10 @@ function ConfiguracoesView({ settings, onSave, saving }) {
       await onSave({
         domains,
         metaAccountId,
+        metaTaxEnabled,
+        metaTaxRatePercent: Math.min(99.99, Math.max(0, toNumber(metaTaxRatePercent))),
+        metaTaxEffectiveDate,
+        metaTaxMode,
         reportType,
         includeAssets,
         showMessagesLtvTable,
@@ -7301,6 +7356,30 @@ function ConfiguracoesView({ settings, onSave, saving }) {
               placeholder="ex.: act_123456789"
             />
             <span className="muted small">Usado em análises, duplicação e criação de campanhas.</span>
+          </div>
+          <div className="field">
+            <label>Impostos nas cobranças Meta</label>
+            <label className="checkbox checkbox-row" style=${{ marginTop: "4px" }}>
+              <input type="checkbox" checked=${metaTaxEnabled} onChange=${(e) => setMetaTaxEnabled(e.target.checked)} />
+              <span>Incluir no custo real</span>
+            </label>
+            <span className="muted small">Aplicado por data, sem alterar o dado bruto recebido da API.</span>
+          </div>
+          <div className="field">
+            <label>Alíquota total (%)</label>
+            <input type="number" min="0" max="99.99" step="0.01" value=${metaTaxRatePercent} onInput=${(e) => setMetaTaxRatePercent(e.target.value)} disabled=${!metaTaxEnabled} />
+          </div>
+          <div className="field">
+            <label>Vigência inicial</label>
+            <input type="date" value=${metaTaxEffectiveDate} onInput=${(e) => setMetaTaxEffectiveDate(e.target.value)} disabled=${!metaTaxEnabled} />
+          </div>
+          <div className="field">
+            <label>Como a API informa o gasto</label>
+            <select value=${metaTaxMode} onChange=${(e) => setMetaTaxMode(e.target.value)} disabled=${!metaTaxEnabled}>
+              <option value="add">Sem imposto — somar ao gasto</option>
+              <option value="included">Imposto já incluído — não somar</option>
+            </select>
+            <span className="muted small">Use “já incluído” se a Meta passar a retornar o total cobrado no campo spend.</span>
           </div>
           <div className="field">
             <label>Tipo de relatório</label>
@@ -8274,7 +8353,7 @@ function App() {
   const [settingsDomains, setSettingsDomains] = useState([...DEFAULT_DOMAINS]);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsData, setSettingsData] = useState({
-    domains: [...DEFAULT_DOMAINS], metaAccountId: "", reportType: "Analytical", includeAssets: false, showMessagesLtvTable: true, messagesLtvExtraDays: [], nichos: [], urls: [], users: [],
+    domains: [...DEFAULT_DOMAINS], metaAccountId: "", metaTaxEnabled: true, metaTaxRatePercent: 12.15, metaTaxEffectiveDate: "2026-01-01", metaTaxMode: "add", reportType: "Analytical", includeAssets: false, showMessagesLtvTable: true, messagesLtvExtraDays: [], nichos: [], urls: [], users: [],
   });
 
   useEffect(() => {
@@ -8285,6 +8364,10 @@ function App() {
         if (d.code === "success" && d.data) {
           const s = {
             ...d.data,
+            metaTaxEnabled: d.data.metaTaxEnabled !== false,
+            metaTaxRatePercent: d.data.metaTaxRatePercent ?? 12.15,
+            metaTaxEffectiveDate: d.data.metaTaxEffectiveDate || "2026-01-01",
+            metaTaxMode: d.data.metaTaxMode === "included" ? "included" : "add",
             showMessagesLtvTable: d.data.showMessagesLtvTable !== false,
             messagesLtvExtraDays: OPTIONAL_LTV_DAYS.filter((day) =>
               (Array.isArray(d.data.messagesLtvExtraDays) ? d.data.messagesLtvExtraDays : [])
@@ -8320,6 +8403,10 @@ function App() {
       if (d.code === "success" && d.data) {
         const s = {
           ...d.data,
+          metaTaxEnabled: d.data.metaTaxEnabled !== false,
+          metaTaxRatePercent: d.data.metaTaxRatePercent ?? 12.15,
+          metaTaxEffectiveDate: d.data.metaTaxEffectiveDate || "2026-01-01",
+          metaTaxMode: d.data.metaTaxMode === "included" ? "included" : "add",
           showMessagesLtvTable: d.data.showMessagesLtvTable !== false,
           messagesLtvExtraDays: OPTIONAL_LTV_DAYS.filter((day) =>
             (Array.isArray(d.data.messagesLtvExtraDays) ? d.data.messagesLtvExtraDays : [])
@@ -10878,10 +10965,14 @@ function App() {
       const revenueClientBrl =
         revenueClientRaw != null && brlRate ? revenueClientRaw * brlRate : null;
 
-      const cost = toNumber(row.cost_per_result);
-      const spend = toNumber(row.spend);
+      const metaCharge = calculateMetaCharge(row.spend, date, settingsData);
+      const spend = metaCharge.total;
+      const cost = toNumber(row.cost_per_result) * metaCharge.multiplier;
       const messagingConversations = getMessagingConversationStarts(row);
-      const messagingCostFromMeta = getMessagingConversationCost(row);
+      const messagingCostRaw = getMessagingConversationCost(row);
+      const messagingCostFromMeta = messagingCostRaw != null
+        ? messagingCostRaw * metaCharge.multiplier
+        : null;
       const messagingCost =
         messagingCostFromMeta != null
           ? messagingCostFromMeta
@@ -10944,6 +11035,9 @@ function App() {
         cost_per_result_value: cost,
         spend_brl: currencyBRL.format(spend),
         spend_value: spend,
+        spend_media_value: metaCharge.mediaSpend,
+        meta_tax_value: metaCharge.tax,
+        meta_tax_rate_percent: metaCharge.tax > 0 ? toNumber(settingsData.metaTaxRatePercent) : 0,
         meta_impressions_value: toNumber(row.impressions),
         meta_clicks_value: toNumber(row.clicks),
         messaging_conversations_started: messagingConversations,
@@ -10983,6 +11077,10 @@ function App() {
     superTermRows,
     keyValueContent,
     brlRate,
+    settingsData.metaTaxEnabled,
+    settingsData.metaTaxRatePercent,
+    settingsData.metaTaxEffectiveDate,
+    settingsData.metaTaxMode,
     superKey,
     appliedFilters,
     adDestMap,
@@ -11522,6 +11620,7 @@ function App() {
                 pageScoped=${!!filters.pageId}
                 usePmLabels=${true}
                 brlRate=${brlRate}
+                metaTaxSettings=${settingsData}
                 commissionPercent=${session?.commissionPercent || 0}
                 showUserCommission=${true}
                 mediumRows=${joinadsMediumRows}
@@ -11726,6 +11825,7 @@ function App() {
             pageScoped=${!!filters.pageId}
             usePmLabels=${usePmLabels}
             brlRate=${brlRate}
+            metaTaxSettings=${settingsData}
             commissionPercent=${session?.commissionPercent || 0}
             showUserCommission=${isGestorSession(session)}
             mediumRows=${joinadsMediumRows}

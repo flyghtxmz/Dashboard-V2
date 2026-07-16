@@ -161,6 +161,12 @@ export async function onRequest({ request, env }) {
       const normalizedDomains = domains.length ? domains : [...DEFAULT_SETTINGS.domains];
       const allowedDomainSet = new Set(normalizedDomains);
       const metaAccountId = String(body.metaAccountId || "").trim();
+      const metaTaxEnabled = body.metaTaxEnabled !== false;
+      const metaTaxRatePercent = Math.min(99.99, Math.max(0, Number(body.metaTaxRatePercent ?? 12.15) || 0));
+      const metaTaxEffectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(String(body.metaTaxEffectiveDate || ""))
+        ? String(body.metaTaxEffectiveDate)
+        : DEFAULT_SETTINGS.metaTaxEffectiveDate;
+      const metaTaxMode = body.metaTaxMode === "included" ? "included" : "add";
       const reportType = body.reportType || "Analytical";
       const includeAssets = !!body.includeAssets;
       const showMessagesLtvTable = body.showMessagesLtvTable !== false;
@@ -174,6 +180,10 @@ export async function onRequest({ request, env }) {
       const settings = await saveSettings(env, {
         domains: normalizedDomains,
         metaAccountId,
+        metaTaxEnabled,
+        metaTaxRatePercent,
+        metaTaxEffectiveDate,
+        metaTaxMode,
         reportType,
         includeAssets,
         showMessagesLtvTable,
