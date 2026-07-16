@@ -7,6 +7,7 @@ import {
 } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
 import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
+import { validateDateRange } from "../_dates.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
@@ -29,6 +30,9 @@ async function fetchEarnings(token, start_date, end_date, domain) {
     error.status = response.status;
     error.details = data;
     throw error;
+  }
+  if (data?.code === "error" || !Array.isArray(data?.data)) {
+    const error = new Error("Resposta invalida da JoinAds"); error.status = 502; error.details = data; throw error;
   }
   return data;
 }
@@ -104,4 +108,6 @@ export async function onRequest({ request, env }) {
       details: error.details || error.message,
     });
   }
+  const dateRange = validateDateRange(start_date, end_date, 15);
+  if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
 }

@@ -1,9 +1,9 @@
 import { jsonResponse, getJoinadsToken, readJson, safeJson } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
-import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
+import { validateDateRange } from "../_dates.js";
 
 const ENDPOINT = "https://office.joinads.me/api/clients-endpoints/report/advertiser/campaign";
-const MAX_CAMPAIGNS = 100;
+const MAX_CAMPAIGNS = 40;
 const CONCURRENCY = 5;
 
 function clean(value) {
@@ -16,13 +16,13 @@ async function queryCampaign(token, baseParams, campaign) {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
   const data = await safeJson(response);
-  if (!response.ok) {
+  if (!response.ok || data?.code === "error" || !Array.isArray(data?.data)) {
     return {
       campaign,
       ok: false,
-      status: response.status,
+      status: response.ok ? 502 : response.status,
       tokenInvalid: response.status === 401 || response.status === 403,
-      error: data?.message || data?.error || `Erro JoinAds (${response.status})`,
+      error: data?.message || data?.error || `Resposta invalida JoinAds (${response.status})`,
       details: data,
       rows: [],
     };
@@ -44,41 +44,21 @@ export async function onRequest({ request, env }) {
   const startDate = clean(body?.start_date);
   const endDate = clean(body?.end_date);
   if (!startDate || !endDate) return jsonResponse(400, { error: "Parametros obrigatorios: start_date, end_date" });
+  const dateRange = validateDateRange(startDate, endDate, 15);
+  if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
 
   const requested = Array.from(new Set((Array.isArray(body?.utm_campaigns) ? body.utm_campaigns : [])
     .map(clean).filter(Boolean)));
   const campaigns = requested.slice(0, MAX_CAMPAIGNS);
   const results = [];
-  const cacheDiagnostics = [];
   let cursor = 0;
   const worker = async () => {
     while (cursor < campaigns.length) {
       const index = cursor++;
       const campaign = campaigns[index];
-      if (hasJoinadsDailyStorage(env)) {
-        const cached = await fetchJoinadsDailyCached({
-          env,
-          reportName: "advertiser-campaign",
-          startDate,
-          endDate,
-          identity: { domain: access.domains[0], utm_campaign: campaign },
-          fetchDay: (day) => queryCampaign(token, {
-            start_date: day, end_date: day, domain: access.domains[0],
-          }, campaign),
-        });
-        cacheDiagnostics[index] = { campaign, ...cached.diagnostics };
-        results[index] = {
-          campaign,
-          ok: cached.results.every((item) => item?.ok),
-          rows: cached.results.flatMap((item) => Array.isArray(item?.rows) ? item.rows : []),
-          dailyFailures: cached.results.filter((item) => !item?.ok),
-          tokenInvalid: cached.results.some((item) => item?.tokenInvalid),
-        };
-      } else {
-        results[index] = await queryCampaign(token, {
-          start_date: startDate, end_date: endDate, domain: access.domains[0],
-        }, campaign);
-      }
+      results[index] = await queryCampaign(token, {
+        start_date: startDate, end_date: endDate, domain: access.domains[0],
+      }, campaign);
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, campaigns.length) }, worker));
@@ -95,7 +75,7 @@ export async function onRequest({ request, env }) {
       rows: rows.length,
       failures,
       tokenInvalid: failures.some((item) => item.tokenInvalid),
-      dailyCache: cacheDiagnostics,
+      mode: "range_per_campaign",
     },
   });
 }

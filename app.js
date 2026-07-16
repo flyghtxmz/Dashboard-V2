@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 131;
+const APP_VERSION_BUILD = 132;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1133,14 +1133,27 @@ function MetricasMensagensView({
         frequency_weighted: 0,
         frequency_weight: 0,
         meta_cpm_weighted: 0,
+        has_period_reach: false,
+        has_period_frequency: false,
       };
       item.meta_impressions += toNumber(row.meta_impressions_value ?? row.impressions);
       item.meta_clicks += toNumber(row.meta_clicks_value ?? row.clicks);
       item.conversations += toNumber(row.messaging_conversations_started);
       item.spend_brl += toNumber(row.spend_value ?? row.spend);
-      item.reach += toNumber(row.reach);
-      item.frequency_weighted += toNumber(row.frequency) * toNumber(row.impressions);
-      item.frequency_weight += toNumber(row.impressions);
+      if (row.period_reach != null) {
+        item.reach = Math.max(item.reach, toNumber(row.period_reach));
+        item.has_period_reach = true;
+      } else if (!item.has_period_reach) {
+        item.reach += toNumber(row.reach);
+      }
+      if (row.period_frequency != null) {
+        item.frequency_weighted = toNumber(row.period_frequency);
+        item.frequency_weight = 1;
+        item.has_period_frequency = true;
+      } else if (!item.has_period_frequency) {
+        item.frequency_weighted += toNumber(row.frequency) * toNumber(row.impressions);
+        item.frequency_weight += toNumber(row.impressions);
+      }
       item.meta_cpm_weighted += toNumber(row.cpm) * toNumber(row.impressions);
       metaByAd.set(key, item);
     });
@@ -3118,7 +3131,7 @@ function MetricasMensagensView({
           ? html`<div className="status error"><strong>Erro ao consultar anunciantes:</strong> ${advertiserDiagnostics.error}</div>`
           : null}
         ${advertiserDiagnostics?.truncated
-          ? html`<div className="status error">Foram encontradas mais de 100 campanhas. Esta carga consultou as primeiras 100 para proteger o tempo de resposta.</div>`
+          ? html`<div className="status error">Foram encontradas ${advertiserDiagnostics.requested} campanhas. Esta carga diagnostica consultou ${advertiserDiagnostics.queried} para proteger o carregamento financeiro principal.</div>`
           : null}
         ${(advertiserDiagnostics?.failures || []).length
           ? html`<details><summary>${advertiserDiagnostics.failures.length} campanhas falharam</summary><pre className="debug-log">${JSON.stringify(advertiserDiagnostics.failures, null, 2)}</pre></details>`
@@ -8109,6 +8122,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [snapshotEligible, setSnapshotEligible] = useState(false);
+  const [loadHealth, setLoadHealth] = useState({});
   const restoredSnapshotRef = useRef(false);
   const [domains, setDomains] = useState([]);
   const [domainsLoading, setDomainsLoading] = useState(false);
@@ -8185,6 +8200,8 @@ function App() {
     setKeyValueContent([]);
     setError("");
     setLastRefreshed(null);
+    setSnapshotEligible(false);
+    setLoadHealth({});
     setDomains([]);
     setLogs([]);
     setMetaRows([]);
@@ -8420,6 +8437,7 @@ function App() {
     setJoinadsUserRows(arr(d.joinadsUserRows));
     setJoinadsMediumRows(arr(d.joinadsMediumRows));
     setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
+    setLoadHealth(obj(d.loadHealth));
     setAdvertiserRows(arr(d.advertiserRows));
     setAdvertiserDiagnostics(obj(d.advertiserDiagnostics));
     setMessenleadSources(arr(d.messenleadSources));
@@ -8475,6 +8493,10 @@ function App() {
 
     setLoading(true);
     setError("");
+    setSnapshotEligible(false);
+    const criticalFailures = [];
+    const loadStartedAt = new Date().toISOString();
+    let loadedMetaRowsCount = 0;
 
     try {
       // Primeiro mostra o snapshot persistente. Periodos consolidados encerram aqui;
@@ -8486,7 +8508,7 @@ function App() {
           start_date: filters.startDate,
           end_date: filters.endDate,
           include_assets: filters.includeAssets ? "1" : "0",
-          schema: "daily-joinads-v1",
+          schema: "integrity-v2",
         });
         const cached = await fetchJson(`${API_BASE}/report-cache?${cacheParams.toString()}`);
         if (cached?.hit && cached.snapshot) {
@@ -8574,6 +8596,7 @@ function App() {
         });
       } catch (err) {
         contentSuperError = formatError(err);
+        criticalFailures.push({ source: "joinads-super-filter-content", error: contentSuperError });
         pushLog("super-filter-content", err);
       }
       try {
@@ -8583,6 +8606,7 @@ function App() {
         });
       } catch (err) {
         campaignSuperError = formatError(err);
+        criticalFailures.push({ source: "joinads-super-filter-campaign", error: campaignSuperError });
         pushLog("super-filter-campaign", err);
       }
       const summarizeSuperFilter = (payload, response, requestError) => {
@@ -8653,6 +8677,7 @@ function App() {
             body: JSON.stringify({ sourceKeys }),
           });
         } catch (err) {
+          criticalFailures.push({ source: "messenlead-source-resolution", error: formatError(err) });
           pushLog("messenlead-resolve", err);
         }
       }
@@ -8709,7 +8734,7 @@ function App() {
             cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
-        ).catch((err) => { pushLog("key-value-country", err); return { data: [], _dashboardError: formatError(err) }; }),
+        ).catch((err) => { criticalFailures.push({ source: "joinads-key-value-country", error: formatError(err) }); pushLog("key-value-country", err); return { data: [], _dashboardError: formatError(err) }; }),
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -8719,7 +8744,7 @@ function App() {
             custom_key: "utm_source",
             group: ["domain", "custom_value"],
           }),
-        }).catch((err) => { pushLog("meta-utmsource", err); return { data: [] }; }),
+        }).catch((err) => { criticalFailures.push({ source: "joinads-utm-source", error: formatError(err) }); pushLog("meta-utmsource", err); return { data: [] }; }),
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -8729,7 +8754,7 @@ function App() {
             custom_key: "utm_medium",
             group: ["domain", "custom_value"],
           }),
-        }).catch((err) => { pushLog("meta-utmmedium", err); return { data: [] }; }),
+        }).catch((err) => { criticalFailures.push({ source: "joinads-utm-medium", error: formatError(err) }); pushLog("meta-utmmedium", err); return { data: [] }; }),
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -8761,19 +8786,22 @@ function App() {
           .filter((value) => normalizeKey(value).startsWith("src_"))
       ));
       if (advertiserCampaigns.length) {
-        try {
-          const advertiserRes = await fetchJson(`${API_BASE}/advertiser-campaign`, {
-            method: "POST",
-            body: JSON.stringify({
-              start_date: filters.startDate,
-              end_date: filters.endDate,
-              domain: filters.domain.trim(),
-              utm_campaigns: advertiserCampaigns,
-            }),
-          });
-          setAdvertiserRows(Array.isArray(advertiserRes?.data) ? advertiserRes.data : []);
-          setAdvertiserDiagnostics(advertiserRes?.diagnostics || {});
-        } catch (err) {
+        // Diagnostico secundario: nao bloqueia Meta, atribuicao, tela nem persistencia principal.
+        (async () => {
+          const allRows = [];
+          const allFailures = [];
+          for (let index = 0; index < advertiserCampaigns.length; index += 40) {
+            const batch = advertiserCampaigns.slice(index, index + 40);
+            const advertiserRes = await fetchJson(`${API_BASE}/advertiser-campaign`, {
+              method: "POST",
+              body: JSON.stringify({ start_date: filters.startDate, end_date: filters.endDate, domain: filters.domain.trim(), utm_campaigns: batch }),
+            });
+            allRows.push(...(Array.isArray(advertiserRes?.data) ? advertiserRes.data : []));
+            allFailures.push(...(advertiserRes?.diagnostics?.failures || []));
+          }
+          setAdvertiserRows(allRows);
+          setAdvertiserDiagnostics({ requested: advertiserCampaigns.length, queried: advertiserCampaigns.length, rows: allRows.length, failures: allFailures, tokenInvalid: allFailures.some((item) => item.tokenInvalid), mode: "background_batches_of_40" });
+        })().catch((err) => {
           pushLog("advertiser-campaign", err);
           setAdvertiserRows([]);
           setAdvertiserDiagnostics({
@@ -8782,7 +8810,7 @@ function App() {
             error: formatError(err),
             tokenInvalid: err?.status === 401 || err?.status === 403 || !!err?.data?.tokenInvalid,
           });
-        }
+        });
       } else {
         setAdvertiserRows([]);
         setAdvertiserDiagnostics({ requested: 0, rows: 0, note: "Nenhuma utm_campaign src_ encontrada no periodo." });
@@ -8971,6 +8999,7 @@ function App() {
           ...insightRows.map((row) => ({ ...row, meta_source: "insights" })),
           ...messageFallbackRows,
         ];
+        loadedMetaRowsCount = mergedMetaRows.length;
         setMetaRows(mergedMetaRows);
         setMetaLtvRows(mergedMetaRows);
         setMetaDiagnostics({
@@ -8990,6 +9019,7 @@ function App() {
           ).length,
           fallbackMessageRows: messageFallbackRows.length,
           finalMetaRows: mergedMetaRows.length,
+          apiDiagnostics: metaRes?.diagnostics || null,
           structureObjectiveCounts: structureRows.reduce((acc, row) => {
             const key = row.objective || "sem_objective";
             acc[key] = (acc[key] || 0) + 1;
@@ -9010,6 +9040,7 @@ function App() {
         });
         setAdDestMap(destMap);
       } catch (err) {
+        criticalFailures.push({ source: "meta-insights", error: formatError(err) });
         pushLog("meta", err);
         setMetaRows([]);
         setMetaLtvRows([]);
@@ -9117,6 +9148,23 @@ function App() {
           : null;
 
       setMetaSourceRows(semUtmRow ? [...filteredSource, semUtmRow] : filteredSource);
+      const completedHealth = {
+        complete: criticalFailures.length === 0,
+        startedAt: loadStartedAt,
+        completedAt: new Date().toISOString(),
+        failures: criticalFailures,
+        sources: {
+          metaRows: loadedMetaRowsCount,
+          joinadsKeyValueRows: Array.isArray(keyValueContentRes?.data) ? keyValueContentRes.data.length : 0,
+          joinadsCampaignRows: Array.isArray(campaignSuperRes?.data) ? campaignSuperRes.data.length : 0,
+          joinadsContentRows: Array.isArray(contentSuperRes?.data) ? contentSuperRes.data.length : 0,
+        },
+      };
+      setLoadHealth(completedHealth);
+      setSnapshotEligible(completedHealth.complete);
+      if (!completedHealth.complete) {
+        setError(`Carga parcial: ${criticalFailures.map((item) => item.source).join(", ")}. Os dados foram exibidos apenas para diagnostico e nao foram salvos como definitivos.`);
+      }
       setAppliedFilters({ ...filters });
       setLastRefreshed(new Date());
     } catch (err) {
@@ -9138,15 +9186,15 @@ function App() {
   };
 
   // ---- Cache local dos ultimos dados carregados (sobrevive a recarregar a pagina) ----
-  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v4";
+  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v5";
   const snapshotRestoredRef = useRef(false);
 
   // Salva um snapshot dos dados brutos sempre que uma carga completa (lastRefreshed muda).
   useEffect(() => {
-    if (!lastRefreshed) return;
+    if (!lastRefreshed || !snapshotEligible) return;
     try {
       const snapshot = {
-        v: 4,
+        v: 5,
         savedAt: Date.now(),
         scope: (typeof window !== "undefined" && window.__cd_session_scope__) || "anon",
         filters,
@@ -9176,6 +9224,7 @@ function App() {
           keyValueContent,
           metaSourceRows,
           metaDiagnostics,
+          loadHealth,
           adDestMap,
         },
       };
@@ -9194,7 +9243,7 @@ function App() {
             start_date: persistedFilters.startDate,
             end_date: persistedFilters.endDate,
             include_assets: !!persistedFilters.includeAssets,
-            schema: "daily-joinads-v1",
+            schema: "integrity-v2",
             snapshot,
           }),
         }).catch((cacheError) => {
@@ -9211,7 +9260,7 @@ function App() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastRefreshed]);
+  }, [lastRefreshed, snapshotEligible]);
 
   // Restaura o snapshot uma unica vez apos o login, se ainda nao houver dados carregados.
   useEffect(() => {
@@ -9227,7 +9276,7 @@ function App() {
     } catch (e) {
       snapshot = null;
     }
-    if (!snapshot || snapshot.v !== 4) return;
+    if (!snapshot || snapshot.v !== 5) return;
     const scope = (typeof window !== "undefined" && window.__cd_session_scope__) || "anon";
     if (snapshot.scope && snapshot.scope !== scope) return; // cache de outra sessao/usuario
     if (snapshot.savedAt && Date.now() - snapshot.savedAt > 7 * 24 * 60 * 60 * 1000) return; // > 7 dias
@@ -9245,6 +9294,7 @@ function App() {
     setJoinadsUserRows(arr(d.joinadsUserRows));
     setJoinadsMediumRows(arr(d.joinadsMediumRows));
     setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
+    setLoadHealth(obj(d.loadHealth));
     setAdvertiserRows(arr(d.advertiserRows));
     setAdvertiserDiagnostics(obj(d.advertiserDiagnostics));
     setMessenleadSources(arr(d.messenleadSources));
@@ -9267,6 +9317,7 @@ function App() {
     if (snapshot.appliedFilters) setAppliedFilters(snapshot.appliedFilters);
     if (snapshot.filters) setFilters((prev) => ({ ...prev, ...snapshot.filters }));
     if (snapshot.lastRefreshed) {
+      setSnapshotEligible(d.loadHealth?.complete === true);
       restoredSnapshotRef.current = true;
       const dt = new Date(snapshot.lastRefreshed);
       if (!Number.isNaN(dt.getTime())) setLastRefreshed(dt);

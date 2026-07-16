@@ -31,7 +31,7 @@ const OPEN_SESSION_PATHS = new Set([
 ]);
 
 function isAdminOnlyPath(pathname) {
-  return pathname.startsWith("/api/meta-") || pathname === "/api/cpa-rules" || pathname === "/api/wp-create-admin";
+  return pathname.startsWith("/api/meta-") || pathname === "/api/cpa-rules" || pathname === "/api/wp-create-admin" || pathname === "/api/data-cache-admin";
 }
 
 export async function onRequest(context) {

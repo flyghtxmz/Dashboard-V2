@@ -1,5 +1,9 @@
 ﻿import { jsonResponse, getQuery, getMetaToken, safeJson } from "../_utils.js";
 
+import { getSession } from "../_auth.js";
+import { loadSettings } from "../_settings.js";
+import { validateDateRange } from "../_dates.js";
+
 const API_BASE = "https://graph.facebook.com/v24.0";
 
 // Retry com backoff exponencial em erros de rate-limit da Meta.
@@ -26,20 +30,28 @@ async function fetchWithRetry(url, maxRetries = 4) {
 }
 
 // Busca paginada: segue paging.next ate esgotar (com teto de seguranca).
-async function fetchPaged(url, cap = 5000) {
+async function fetchPaged(url, cap = 50000) {
   const results = [];
   let next = url;
+  let pages = 0;
+  let truncated = false;
   while (next) {
     const json = await fetchWithRetry(next);
+    pages += 1;
     results.push(...(json.data || []));
     next = json?.paging?.next || null;
-    if (results.length >= cap) break;
+    if (results.length >= cap && next) {
+      truncated = true;
+      break;
+    }
     if (next) await new Promise((r) => setTimeout(r, 200));
   }
-  return results;
+  return { data: results.slice(0, cap), pages, truncated, cap };
 }
 
 export async function onRequest({ request, env }) {
+  const session = await getSession(request, env);
+  if (!session) return jsonResponse(401, { error: "Sessao invalida ou expirada." });
   const token = getMetaToken(env);
   if (!token) {
     return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
@@ -66,6 +78,15 @@ export async function onRequest({ request, env }) {
       error: `Parametros obrigatorios: ${missing.join(", ")}`,
     });
   }
+
+  if (session.role !== "admin") {
+    const settings = await loadSettings(env);
+    if (!settings.metaAccountId || String(settings.metaAccountId) !== String(account_id)) {
+      return jsonResponse(403, { error: "Conta Meta fora do escopo autorizado." });
+    }
+  }
+  const dateRange = validateDateRange(start_date, end_date, 15);
+  if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
 
   const q = new URLSearchParams();
   q.set(
@@ -98,9 +119,38 @@ export async function onRequest({ request, env }) {
   q.set("access_token", token);
 
   try {
-    const insights = await fetchPaged(
+    const dailyPage = await fetchPaged(
       `${API_BASE}/${encodeURIComponent(account_id)}/insights?${q.toString()}`
     );
+    if (dailyPage.truncated) {
+      return jsonResponse(422, {
+        error: "Relatorio Meta truncado; carga recusada para proteger a integridade.",
+        diagnostics: { rows: dailyPage.data.length, pages: dailyPage.pages, cap: dailyPage.cap, truncated: true },
+      });
+    }
+    const insights = dailyPage.data;
+
+    // Alcance e frequencia nao podem ser somados por dia. Esta consulta sem time_increment
+    // traz os valores consolidados do periodo para cada anuncio.
+    const periodQ = new URLSearchParams();
+    periodQ.set("fields", "ad_id,reach,frequency");
+    periodQ.set("time_range", JSON.stringify({ since: start_date, until: end_date }));
+    periodQ.set("level", "ad");
+    periodQ.set("limit", "500");
+    periodQ.set("access_token", token);
+    const periodPage = await fetchPaged(`${API_BASE}/${encodeURIComponent(account_id)}/insights?${periodQ.toString()}`);
+    if (periodPage.truncated) {
+      return jsonResponse(422, {
+        error: "Alcance Meta consolidado truncado; carga recusada.",
+        diagnostics: { rows: periodPage.data.length, pages: periodPage.pages, cap: periodPage.cap, truncated: true },
+      });
+    }
+    const periodMetrics = new Map(periodPage.data.map((row) => [String(row.ad_id || ""), row]));
+    insights.forEach((row) => {
+      const period = periodMetrics.get(String(row.ad_id || ""));
+      row.period_reach = period?.reach ?? null;
+      row.period_frequency = period?.frequency ?? null;
+    });
 
     const adIds = Array.from(
       new Set(insights.map((row) => row.ad_id).filter(Boolean))
@@ -125,23 +175,17 @@ export async function onRequest({ request, env }) {
     const [adStatusResults, adsetBudgetResults, campaignBudgetResults] = await Promise.all([
       Promise.all(
         adChunks.map((chunk) =>
-          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=status,effective_status&access_token=${token}`)
-            .then(safeJson)
-            .catch(() => ({}))
+          fetchWithRetry(`${API_BASE}/?ids=${chunk.join(",")}&fields=status,effective_status&access_token=${token}`)
         )
       ),
       Promise.all(
         adsetChunks.map((chunk) =>
-          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object&access_token=${token}`)
-            .then(safeJson)
-            .catch(() => ({}))
+          fetchWithRetry(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object&access_token=${token}`)
         )
       ),
       Promise.all(
         campaignChunks.map((chunk) =>
-          fetch(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status&access_token=${token}`)
-            .then(safeJson)
-            .catch(() => ({}))
+          fetchWithRetry(`${API_BASE}/?ids=${chunk.join(",")}&fields=daily_budget,lifetime_budget,budget_remaining,status,effective_status&access_token=${token}`)
         )
       ),
     ]);
@@ -299,7 +343,7 @@ export async function onRequest({ request, env }) {
     }
 
     if (!include_assets) {
-      return jsonResponse(200, { code: "success", data: baseRows });
+      return jsonResponse(200, { code: "success", data: baseRows, diagnostics: { dailyRows: dailyPage.data.length, dailyPages: dailyPage.pages, periodRows: periodPage.data.length, periodPages: periodPage.pages, truncated: false } });
     }
 
     const withAssets = await Promise.all(
@@ -354,7 +398,7 @@ export async function onRequest({ request, env }) {
       })
     );
 
-    return jsonResponse(200, { code: "success", data: withAssets });
+    return jsonResponse(200, { code: "success", data: withAssets, diagnostics: { dailyRows: dailyPage.data.length, dailyPages: dailyPage.pages, periodRows: periodPage.data.length, periodPages: periodPage.pages, truncated: false } });
   } catch (error) {
     return jsonResponse(error.status || 500, {
       error: "Erro ao consultar Meta",

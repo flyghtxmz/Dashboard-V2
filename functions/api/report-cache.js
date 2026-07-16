@@ -1,11 +1,13 @@
 import { jsonResponse, getQuery, readJson } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
+import { loadSettings } from "../_settings.js";
+import { validateDateRange } from "../_dates.js";
 
 const DEFAULT_FINAL_HOUR = 10;
 const LIVE_TTL_MS = 10 * 60 * 1000;
 
 function getDb(env) {
-  return env.DASHBOARD_DB || env.DB || null;
+  return env.DASHBOARD_DB || null;
 }
 
 function getKv(env) {
@@ -109,6 +111,12 @@ export async function onRequest({ request, env }) {
     if (!values.accountId || !values.startDate || !values.endDate) {
       return jsonResponse(400, { error: "Parametros obrigatorios: account_id, start_date, end_date" });
     }
+    const dateRange = validateDateRange(values.startDate, values.endDate, 15);
+    if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
+    if (session.role !== "admin") {
+      const settings = await loadSettings(env);
+      if (!settings.metaAccountId || settings.metaAccountId !== values.accountId) return jsonResponse(403, { error: "Conta Meta fora do escopo autorizado." });
+    }
     const key = cacheKey(values);
     const row = db
       ? await db.prepare("SELECT * FROM report_snapshots WHERE cache_key = ?1").bind(key).first()
@@ -118,6 +126,9 @@ export async function onRequest({ request, env }) {
     let snapshot = null;
     try { snapshot = JSON.parse(row.payload); } catch { snapshot = null; }
     if (!snapshot) return jsonResponse(200, { hit: false, corrupted: true });
+    if (snapshot?.data?.loadHealth?.complete !== true) {
+      return jsonResponse(200, { hit: false, incomplete: true });
+    }
     return jsonResponse(200, { hit: true, ...policy, fetchedAt: row.fetched_at, snapshot });
   }
 
@@ -136,6 +147,15 @@ export async function onRequest({ request, env }) {
     };
     if (!values.accountId || !values.startDate || !values.endDate || !body?.snapshot) {
       return jsonResponse(400, { error: "Dados obrigatorios ausentes para salvar o snapshot." });
+    }
+    const dateRange = validateDateRange(values.startDate, values.endDate, 15);
+    if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
+    if (session.role !== "admin") {
+      const settings = await loadSettings(env);
+      if (!settings.metaAccountId || settings.metaAccountId !== values.accountId) return jsonResponse(403, { error: "Conta Meta fora do escopo autorizado." });
+    }
+    if (body.snapshot?.data?.loadHealth?.complete !== true) {
+      return jsonResponse(422, { error: "Snapshot parcial recusado.", failures: body.snapshot?.data?.loadHealth?.failures || [] });
     }
     const now = new Date().toISOString();
     const payload = JSON.stringify(body.snapshot);

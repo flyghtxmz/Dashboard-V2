@@ -6,6 +6,7 @@ import {
 } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
 import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
+import { validateDateRange } from "../_dates.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
@@ -44,6 +45,8 @@ export async function onRequest({ request, env }) {
       error: `Parametros obrigatorios: ${missing.join(", ")}`,
     });
   }
+  const dateRange = validateDateRange(start_date, end_date, 15);
+  if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
 
   try {
     const fetchRange = async (start, end) => {
@@ -57,6 +60,9 @@ export async function onRequest({ request, env }) {
       const data = await safeJson(response);
       if (!response.ok) {
         const error = new Error("Erro JoinAds"); error.status = response.status; error.details = data; throw error;
+      }
+      if (data?.code === "error" || !Array.isArray(data?.data)) {
+        const error = new Error("Resposta invalida da JoinAds"); error.status = 502; error.details = data; throw error;
       }
       return data;
     };

@@ -1,9 +1,11 @@
 const TIME_ZONE = "America/Sao_Paulo";
 const DEFAULT_FINAL_HOUR = 10;
+const CACHE_SCHEMA = "joinads-daily-v2";
+const inFlight = new Map();
 
 function getStorage(env) {
   return {
-    db: env.DASHBOARD_DB || env.DB || null,
+    db: env.DASHBOARD_DB || null,
     kv: env.DASHBOARD_KV || env.CPA_RULES_KV || null,
   };
 }
@@ -59,16 +61,36 @@ async function readStored(storage, key) {
   return storage.kv ? storage.kv.get(`joinads-daily:${key}`, "json") : null;
 }
 
+async function deleteStored(storage, key) {
+  if (storage.db) await storage.db.prepare("DELETE FROM joinads_daily_cache WHERE cache_key = ?1").bind(key).run();
+  else if (storage.kv) await storage.kv.delete(`joinads-daily:${key}`);
+}
+
 async function writeStored(storage, key, reportName, day, payload) {
   const now = new Date().toISOString();
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const envelope = {
+    schema: CACHE_SCHEMA,
+    reportName,
+    reportDate: day,
+    savedAt: now,
+    rowCount: rows.length,
+    totals: rows.reduce((acc, row) => {
+      acc.impressions += Number(row?.impressions ?? row?.AD_EXCHANGE_LINE_ITEM_LEVEL_IMPRESSIONS ?? 0) || 0;
+      acc.clicks += Number(row?.clicks ?? row?.AD_EXCHANGE_LINE_ITEM_LEVEL_CLICKS ?? 0) || 0;
+      acc.revenue += Number(row?.revenue_client ?? row?.earnings_client ?? row?.revenue ?? row?.earnings ?? row?.AD_EXCHANGE_LINE_ITEM_LEVEL_REVENUE ?? 0) || 0;
+      return acc;
+    }, { impressions: 0, clicks: 0, revenue: 0 }),
+    payload,
+  };
   if (storage.db) {
     await storage.db.prepare(`INSERT INTO joinads_daily_cache
       (cache_key, report_name, report_date, payload, finalized_at, updated_at)
       VALUES (?1, ?2, ?3, ?4, ?5, ?5)
       ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload, finalized_at=excluded.finalized_at, updated_at=excluded.updated_at`)
-      .bind(key, reportName, day, JSON.stringify(payload), now).run();
+      .bind(key, reportName, day, JSON.stringify(envelope), now).run();
   } else if (storage.kv) {
-    await storage.kv.put(`joinads-daily:${key}`, JSON.stringify(payload));
+    await storage.kv.put(`joinads-daily:${key}`, JSON.stringify(envelope));
   }
 }
 
@@ -77,7 +99,7 @@ export function hasJoinadsDailyStorage(env) {
   return !!(storage.db || storage.kv);
 }
 
-export async function fetchJoinadsDailyCached({ env, reportName, startDate, endDate, identity, fetchDay }) {
+export async function fetchJoinadsDailyCached({ env, reportName, startDate, endDate, identity, fetchDay, validatePayload }) {
   const storage = getStorage(env);
   if (!storage.db && !storage.kv) throw new Error("JOINADS_DAILY_STORAGE_NOT_CONFIGURED");
   if (storage.db) await ensureSchema(storage.db);
@@ -90,6 +112,7 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
   const hits = [];
   const apiDays = [];
   const provisionalDays = [];
+  const dayAudit = [];
   const worker = async () => {
     while (cursor < days.length) {
       const index = cursor++;
@@ -97,15 +120,37 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
       const liveToday = day >= nowLocal.iso;
       const provisionalYesterday = day === yesterday && nowLocal.hour < finalHour;
       const finalizable = day < yesterday || (day === yesterday && nowLocal.hour >= finalHour);
-      const key = await hashKey({ reportName, day, identity });
-      let payload = finalizable ? await readStored(storage, key) : null;
+      const key = await hashKey({ schema: CACHE_SCHEMA, reportName, day, identity });
+      let envelope = finalizable ? await readStored(storage, key) : null;
+      if (envelope && (envelope.schema !== CACHE_SCHEMA || envelope.reportName !== reportName || envelope.reportDate !== day || !envelope.payload)) {
+        await deleteStored(storage, key);
+        envelope = null;
+      }
+      let payload = envelope?.payload || null;
       if (payload) {
         hits.push(day);
+        dayAudit.push({ day, origin: "database", rowCount: envelope.rowCount, totals: envelope.totals, savedAt: envelope.savedAt });
       } else {
-        payload = await fetchDay(day);
+        let pending = inFlight.get(key);
+        if (!pending) {
+          pending = Promise.resolve().then(() => fetchDay(day)).finally(() => inFlight.delete(key));
+          inFlight.set(key, pending);
+        }
+        payload = await pending;
+        const valid = validatePayload
+          ? validatePayload(payload, day)
+          : !!payload && payload.code !== "error" && Array.isArray(payload.data);
+        if (!valid) {
+          const error = new Error(`Resposta invalida da JoinAds para ${reportName} em ${day}`);
+          error.code = "INVALID_JOINADS_PAYLOAD";
+          error.payload = payload;
+          throw error;
+        }
         apiDays.push(day);
         if (provisionalYesterday) provisionalDays.push(day);
         if (finalizable) await writeStored(storage, key, reportName, day, payload);
+        const rows = Array.isArray(payload?.data) ? payload.data : [];
+        dayAudit.push({ day, origin: "api", rowCount: rows.length, savedAt: new Date().toISOString() });
       }
       results[index] = payload;
       if (liveToday) provisionalDays.push(day);
@@ -116,8 +161,10 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
     results,
     diagnostics: {
       reportName, startDate, endDate, finalHour, timeZone: TIME_ZONE,
+      cacheSchema: CACHE_SCHEMA,
       cacheHitDays: hits.sort(), apiDays: apiDays.sort(),
       provisionalDays: Array.from(new Set(provisionalDays)).sort(),
+      dayAudit: dayAudit.sort((a, b) => a.day.localeCompare(b.day)),
     },
   };
 }

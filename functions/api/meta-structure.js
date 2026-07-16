@@ -26,14 +26,18 @@ async function fetchWithRetry(url, maxRetries = 4) {
 }
 
 // Paginated fetch — small pause between pages to stay within rate limits
-async function fetchPaged(url, cap = 2000) {
+async function fetchPaged(url, cap = 50000) {
   const results = [];
   let next = url;
   while (next) {
     const json = await fetchWithRetry(next);
     results.push(...(json.data || []));
     next = json?.paging?.next || null;
-    if (results.length >= cap) break;
+    if (results.length >= cap && next) {
+      const error = new Error(`Meta pagination cap reached (${cap})`);
+      error.status = 422;
+      throw error;
+    }
     if (next) await new Promise((r) => setTimeout(r, 250));
   }
   return results;
@@ -90,7 +94,7 @@ export async function onRequest({ request, env }) {
       fetchPaged(`${API_BASE}/${act}/campaigns?fields=${campFields}&limit=200&access_token=${t}`),
       fetchPaged(`${API_BASE}/${act}/adsets?fields=${adsetFields}&limit=200&access_token=${t}`),
       fetchPaged(`${API_BASE}/${act}/ads?fields=${adFields}&limit=500&access_token=${t}`),
-      fetchPaged(`${API_BASE}/${act}/insights?fields=${insightFields}&level=ad&${start_date && end_date ? `time_range=${encodeURIComponent(JSON.stringify({ since: start_date, until: end_date }))}` : "date_preset=last_30d"}&limit=500&access_token=${t}`).catch(() => []),
+      fetchPaged(`${API_BASE}/${act}/insights?fields=${insightFields}&level=ad&${start_date && end_date ? `time_range=${encodeURIComponent(JSON.stringify({ since: start_date, until: end_date }))}` : "date_preset=last_30d"}&limit=500&access_token=${t}`),
     ]);
 
     // ── Build lookup maps ─────────────────────────────────
