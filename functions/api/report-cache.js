@@ -65,7 +65,9 @@ function cachePolicy(row, env, now = new Date()) {
       finalHour,
     };
   }
-  return { fresh: ageMs <= LIVE_TTL_MS, policy: "live", finalHour };
+  // Periodos que incluem hoje nunca encerram no snapshot: ele serve apenas para pintar a tela
+  // rapidamente enquanto as APIs atualizam o dia corrente.
+  return { fresh: false, policy: "live_always_refresh", finalHour, ageMs, liveTtlMs: LIVE_TTL_MS };
 }
 
 async function ensureSchema(db) {

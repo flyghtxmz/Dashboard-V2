@@ -5,6 +5,7 @@ import {
   safeJson,
 } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
+import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
@@ -39,23 +40,38 @@ export async function onRequest({ request, env }) {
     return jsonResponse(400, { error: `Parametros obrigatorios: ${missing.join(", ")}` });
   }
 
-  const q = new URLSearchParams({
-    start_date,
-    end_date,
-    domain: access.domains[0],
-    report_type,
-    custom_key,
-  });
   try {
-    const response = await fetch(`${API_BASE}/key-value-country?${q.toString()}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-    });
-    const data = await safeJson(response);
-    if (!response.ok) {
-      return jsonResponse(response.status, { error: "Erro JoinAds", details: data });
+    const fetchRange = async (start, end) => {
+      const q = new URLSearchParams({ start_date: start, end_date: end, domain: access.domains[0], report_type, custom_key });
+      const response = await fetch(`${API_BASE}/key-value-country?${q.toString()}`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const data = await safeJson(response);
+      if (!response.ok) {
+        const error = new Error("Erro JoinAds");
+        error.status = response.status;
+        error.details = data;
+        throw error;
+      }
+      return data;
+    };
+    if (!hasJoinadsDailyStorage(env)) {
+      return jsonResponse(200, await fetchRange(start_date, end_date));
     }
-    return jsonResponse(200, data);
+    const cached = await fetchJoinadsDailyCached({
+      env,
+      reportName: "key-value-country",
+      startDate: start_date,
+      endDate: end_date,
+      identity: { domain: access.domains[0], report_type, custom_key },
+      fetchDay: (day) => fetchRange(day, day),
+    });
+    return jsonResponse(200, {
+      code: "success",
+      data: cached.results.flatMap((result) => Array.isArray(result?.data) ? result.data : []),
+      cache: cached.diagnostics,
+    });
   } catch (error) {
-    return jsonResponse(500, { error: "Erro ao consultar JoinAds por pais", details: error.message });
+    return jsonResponse(error.status || 500, { error: "Erro ao consultar JoinAds por pais", details: error.details || error.message });
   }
 }

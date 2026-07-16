@@ -1,5 +1,6 @@
 import { jsonResponse, getJoinadsToken, readJson, safeJson } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
+import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
 
 const ENDPOINT = "https://office.joinads.me/api/clients-endpoints/report/advertiser/campaign";
 const MAX_CAMPAIGNS = 100;
@@ -48,15 +49,36 @@ export async function onRequest({ request, env }) {
     .map(clean).filter(Boolean)));
   const campaigns = requested.slice(0, MAX_CAMPAIGNS);
   const results = [];
+  const cacheDiagnostics = [];
   let cursor = 0;
   const worker = async () => {
     while (cursor < campaigns.length) {
       const index = cursor++;
-      results[index] = await queryCampaign(token, {
-        start_date: startDate,
-        end_date: endDate,
-        domain: access.domains[0],
-      }, campaigns[index]);
+      const campaign = campaigns[index];
+      if (hasJoinadsDailyStorage(env)) {
+        const cached = await fetchJoinadsDailyCached({
+          env,
+          reportName: "advertiser-campaign",
+          startDate,
+          endDate,
+          identity: { domain: access.domains[0], utm_campaign: campaign },
+          fetchDay: (day) => queryCampaign(token, {
+            start_date: day, end_date: day, domain: access.domains[0],
+          }, campaign),
+        });
+        cacheDiagnostics[index] = { campaign, ...cached.diagnostics };
+        results[index] = {
+          campaign,
+          ok: cached.results.every((item) => item?.ok),
+          rows: cached.results.flatMap((item) => Array.isArray(item?.rows) ? item.rows : []),
+          dailyFailures: cached.results.filter((item) => !item?.ok),
+          tokenInvalid: cached.results.some((item) => item?.tokenInvalid),
+        };
+      } else {
+        results[index] = await queryCampaign(token, {
+          start_date: startDate, end_date: endDate, domain: access.domains[0],
+        }, campaign);
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, campaigns.length) }, worker));
@@ -73,6 +95,7 @@ export async function onRequest({ request, env }) {
       rows: rows.length,
       failures,
       tokenInvalid: failures.some((item) => item.tokenInvalid),
+      dailyCache: cacheDiagnostics,
     },
   });
 }

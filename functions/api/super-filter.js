@@ -5,6 +5,7 @@ import {
   safeJson,
 } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
+import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
@@ -68,23 +69,45 @@ export async function onRequest({ request, env }) {
   console.log("[joinads-super-filter] request", JSON.stringify(logBase));
 
   try {
-    const response = await fetch(`${API_BASE}/super-filter`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await safeJson(response);
+    const fetchPayload = async (requestPayload) => {
+      const response = await fetch(`${API_BASE}/super-filter`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(requestPayload),
+      });
+      const data = await safeJson(response);
+      if (!response.ok) {
+        const error = new Error("Erro JoinAds");
+        error.status = response.status;
+        error.details = data;
+        throw error;
+      }
+      return data;
+    };
+    let data;
+    if (hasJoinadsDailyStorage(env)) {
+      const cached = await fetchJoinadsDailyCached({
+        env,
+        reportName: "super-filter",
+        startDate: start_date,
+        endDate: end_date,
+        identity: payload,
+        fetchDay: (day) => fetchPayload({ ...payload, start_date: day, end_date: day }),
+      });
+      data = {
+        code: "success",
+        data: cached.results.flatMap((result) => Array.isArray(result?.data) ? result.data : []),
+        cache: cached.diagnostics,
+      };
+    } else {
+      data = await fetchPayload(payload);
+    }
     console.log(
       "[joinads-super-filter] response",
       JSON.stringify({
         ...logBase,
-        status: response.status,
-        ok: response.ok,
+        status: 200,
+        ok: true,
         code: data?.code || null,
         rows: Array.isArray(data?.data) ? data.data.length : 0,
         customKeys: Array.from(
@@ -96,10 +119,6 @@ export async function onRequest({ request, env }) {
           .slice(0, 20),
       })
     );
-    if (!response.ok) {
-      return jsonResponse(response.status, { error: "Erro JoinAds", details: data });
-    }
-
     return jsonResponse(200, data);
   } catch (error) {
     console.error(
@@ -108,7 +127,7 @@ export async function onRequest({ request, env }) {
     );
     return jsonResponse(500, {
       error: "Erro ao consultar JoinAds",
-      details: error.message,
+      details: error.details || error.message,
     });
   }
 }

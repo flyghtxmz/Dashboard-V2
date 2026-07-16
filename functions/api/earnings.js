@@ -6,6 +6,7 @@ import {
   safeJson,
 } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
+import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 
@@ -30,6 +31,20 @@ async function fetchEarnings(token, start_date, end_date, domain) {
     throw error;
   }
   return data;
+}
+
+async function fetchEarningsCached(env, token, startDate, endDate, domain) {
+  if (!hasJoinadsDailyStorage(env)) return fetchEarnings(token, startDate, endDate, domain);
+  const cached = await fetchJoinadsDailyCached({
+    env, reportName: "earnings", startDate, endDate,
+    identity: { domain: domain || "__all__" },
+    fetchDay: (day) => fetchEarnings(token, day, day, domain),
+  });
+  return {
+    code: "success",
+    data: cached.results.flatMap((result) => Array.isArray(result?.data) ? result.data : []),
+    cache: cached.diagnostics,
+  };
 }
 
 export async function onRequest({ request, env }) {
@@ -68,20 +83,20 @@ export async function onRequest({ request, env }) {
     if (domain) {
       const access = requireDomainAccess(session, domain);
       if (!access.ok) return access.response;
-      const data = await fetchEarnings(token, start_date, end_date, access.domains[0]);
+      const data = await fetchEarningsCached(env, token, start_date, end_date, access.domains[0]);
       return jsonResponse(200, data);
     }
 
     if (session.role !== "admin") {
       const allowedDomains = Array.isArray(session.allowedDomains) ? session.allowedDomains : [];
       const results = await Promise.all(
-        allowedDomains.map((item) => fetchEarnings(token, start_date, end_date, item))
+        allowedDomains.map((item) => fetchEarningsCached(env, token, start_date, end_date, item))
       );
       const data = results.flatMap((item) => (Array.isArray(item?.data) ? item.data : []));
       return jsonResponse(200, { data });
     }
 
-    const data = await fetchEarnings(token, start_date, end_date, null);
+    const data = await fetchEarningsCached(env, token, start_date, end_date, null);
     return jsonResponse(200, data);
   } catch (error) {
     return jsonResponse(500, {

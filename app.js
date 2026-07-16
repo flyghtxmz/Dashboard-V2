@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 130;
+const APP_VERSION_BUILD = 131;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -3065,6 +3065,9 @@ function MetricasMensagensView({
         ${keyValueCountryDiagnostic.error
           ? html`<div className="status error"><strong>Falha ao consultar a JoinAds:</strong> ${keyValueCountryDiagnostic.error}</div>`
           : html`<p className="muted small">Endpoint confirmou ${keyValueCountryDiagnostic.rows ?? blockDiagnosticRows.length} linhas. Campos encontrados no lote: ${(keyValueCountryDiagnostic.fields || []).join(", ") || "nenhum"}.</p>`}
+        ${keyValueCountryDiagnostic.cache
+          ? html`<div className="status success"><strong>Origem por dia:</strong> banco: ${(keyValueCountryDiagnostic.cache.cacheHitDays || []).join(", ") || "nenhum"}; API JoinAds: ${(keyValueCountryDiagnostic.cache.apiDays || []).join(", ") || "nenhum"}; provisórios: ${(keyValueCountryDiagnostic.cache.provisionalDays || []).join(", ") || "nenhum"}.</div>`
+          : null}
         <div className="table-wrapper scroll-x">
           <table>
             <thead>
@@ -8483,7 +8486,7 @@ function App() {
           start_date: filters.startDate,
           end_date: filters.endDate,
           include_assets: filters.includeAssets ? "1" : "0",
-          schema: "blocks-country-advertiser-v1",
+          schema: "daily-joinads-v1",
         });
         const cached = await fetchJson(`${API_BASE}/report-cache?${cacheParams.toString()}`);
         if (cached?.hit && cached.snapshot) {
@@ -8511,7 +8514,7 @@ function App() {
           sort: "revenue",
         }).toString()}`,
         {
-          cacheTtlMs: 3 * 60 * 1000,
+          cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `top-url:${filters.domain}:${filters.startDate}:${filters.endDate}`,
         }
       );
@@ -8523,7 +8526,7 @@ function App() {
           domain: filters.domain.trim(),
         }).toString()}`,
         {
-          cacheTtlMs: 3 * 60 * 1000,
+          cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `earnings:${filters.domain}:${filters.startDate}:${filters.endDate}`,
         }
       );
@@ -8533,7 +8536,7 @@ function App() {
           end_date: filters.endDate,
         }).toString()}`,
         {
-          cacheTtlMs: 3 * 60 * 1000,
+          cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `earnings:all:${filters.startDate}:${filters.endDate}`,
         }
       ).catch((err) => {
@@ -8598,6 +8601,7 @@ function App() {
               .filter(Boolean)
               .slice(0, 20),
             sample: rows.slice(0, 10),
+            cache: response?.cache || null,
           },
         };
       };
@@ -8702,7 +8706,7 @@ function App() {
             custom_key: "utm_campaign",
           }).toString()}`,
           {
-            cacheTtlMs: 3 * 60 * 1000,
+            cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
         ).catch((err) => { pushLog("key-value-country", err); return { data: [], _dashboardError: formatError(err) }; }),
@@ -8748,6 +8752,7 @@ function App() {
           rows: Array.isArray(keyValueContentRes?.data) ? keyValueContentRes.data.length : 0,
           error: keyValueContentRes?._dashboardError || null,
           fields: Array.from(new Set((keyValueContentRes?.data || []).flatMap((row) => Object.keys(row || {})))).sort(),
+          cache: keyValueContentRes?.cache || null,
         },
       }));
       const advertiserCampaigns = Array.from(new Set(
@@ -9133,7 +9138,7 @@ function App() {
   };
 
   // ---- Cache local dos ultimos dados carregados (sobrevive a recarregar a pagina) ----
-  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v3";
+  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v4";
   const snapshotRestoredRef = useRef(false);
 
   // Salva um snapshot dos dados brutos sempre que uma carga completa (lastRefreshed muda).
@@ -9141,7 +9146,7 @@ function App() {
     if (!lastRefreshed) return;
     try {
       const snapshot = {
-        v: 3,
+        v: 4,
         savedAt: Date.now(),
         scope: (typeof window !== "undefined" && window.__cd_session_scope__) || "anon",
         filters,
@@ -9189,7 +9194,7 @@ function App() {
             start_date: persistedFilters.startDate,
             end_date: persistedFilters.endDate,
             include_assets: !!persistedFilters.includeAssets,
-            schema: "blocks-country-advertiser-v1",
+            schema: "daily-joinads-v1",
             snapshot,
           }),
         }).catch((cacheError) => {
@@ -9222,7 +9227,7 @@ function App() {
     } catch (e) {
       snapshot = null;
     }
-    if (!snapshot || snapshot.v !== 3) return;
+    if (!snapshot || snapshot.v !== 4) return;
     const scope = (typeof window !== "undefined" && window.__cd_session_scope__) || "anon";
     if (snapshot.scope && snapshot.scope !== scope) return; // cache de outra sessao/usuario
     if (snapshot.savedAt && Date.now() - snapshot.savedAt > 7 * 24 * 60 * 60 * 1000) return; // > 7 dias
