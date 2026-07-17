@@ -1392,8 +1392,9 @@ function MetricasMensagensView({
         roas: { value: row.spend_brl > 0 ? revenueBrl / row.spend_brl : 0, formula: "=IF(RC[-5]>0,RC[-2]/RC[-5],0)" },
       };
     });
-    const attributedRevenue = detail.filter((row) => row.status === "Atribuido").reduce((sum, row) => sum + row.earnings_client_usd, 0);
-    const coverage = totalRevenue > 0 ? attributedRevenue / totalRevenue : 0;
+    const attributedDetail = detail.filter((row) => row.status === "Atribuido");
+    const attributedRevenue = attributedDetail.reduce((sum, row) => sum + row.earnings_client_usd, 0);
+    const attributedImpressions = attributedDetail.reduce((sum, row) => sum + row.impressions, 0);
     const originMap = new Map();
     (Array.isArray(mediumRows) ? mediumRows : []).forEach((row) => {
       const origin = String(row.custom_value || row.custon_value || "Sem utm_medium").trim() || "Sem utm_medium";
@@ -1428,6 +1429,51 @@ function MetricasMensagensView({
       revenue_client_brl: row.revenue_client_usd * toNumber(brlRate),
     }));
     const organicExportRow = originRows.find((row) => normalizeKey(row.origin) === "organic");
+    const messengerExportRow = originRows.find((row) => normalizeKey(row.origin) === "messenger") || {};
+    const campaignRawRows = Array.isArray(joinadsDetailRows) ? joinadsDetailRows : [];
+    const aggregateCampaignRows = (predicate) => campaignRawRows.reduce((acc, row) => {
+      const value = normalizeKey(row.custon_value ?? row.custom_value);
+      if (!predicate(value, row)) return acc;
+      acc.impressions += toNumber(row.impressions);
+      acc.clicks += toNumber(row.clicks);
+      acc.revenue_client_usd += toNumber(row.earnings_client ?? row.revenue_client ?? row.earnings ?? row.revenue);
+      return acc;
+    }, { impressions: 0, clicks: 0, revenue_client_usd: 0 });
+    const srcCampaignTotal = aggregateCampaignRows((value) => value.startsWith("src_"));
+    const evoOrganicTotal = aggregateCampaignRows((value) => value === "organic" || value.startsWith("organic_"));
+    const otherCampaignTotal = aggregateCampaignRows((value) => Boolean(value) && !value.startsWith("src_") && value !== "organic" && !value.startsWith("organic_"));
+    const messengerTotal = {
+      impressions: toNumber(messengerExportRow.impressions),
+      clicks: toNumber(messengerExportRow.clicks),
+      revenue_client_usd: toNumber(messengerExportRow.revenue_client_usd),
+    };
+    const messengerUnclassified = {
+      impressions: Math.max(0, messengerTotal.impressions - srcCampaignTotal.impressions - evoOrganicTotal.impressions - otherCampaignTotal.impressions),
+      clicks: Math.max(0, messengerTotal.clicks - srcCampaignTotal.clicks - evoOrganicTotal.clicks - otherCampaignTotal.clicks),
+      revenue_client_usd: Math.max(0, messengerTotal.revenue_client_usd - srcCampaignTotal.revenue_client_usd - evoOrganicTotal.revenue_client_usd - otherCampaignTotal.revenue_client_usd),
+    };
+    const paidCandidateRevenue = Math.max(attributedRevenue, messengerTotal.revenue_client_usd - evoOrganicTotal.revenue_client_usd);
+    const paidCandidateImpressions = Math.max(attributedImpressions, messengerTotal.impressions - evoOrganicTotal.impressions);
+    const revenueCoverage = paidCandidateRevenue > 0 ? attributedRevenue / paidCandidateRevenue : 0;
+    const impressionCoverage = paidCandidateImpressions > 0 ? attributedImpressions / paidCandidateImpressions : 0;
+    const totalMetaSpend = crossing.reduce((sum, row) => sum + toNumber(row.spend_brl), 0);
+    const totalMediaSpend = crossing.reduce((sum, row) => sum + toNumber(row.media_spend_brl), 0);
+    const totalMetaTax = crossing.reduce((sum, row) => sum + toNumber(row.meta_tax_brl), 0);
+    const trackedRoas = totalMetaSpend > 0 ? attributedRevenue * toNumber(brlRate) / totalMetaSpend : 0;
+    const economicRoas = totalMetaSpend > 0 ? paidCandidateRevenue * toNumber(brlRate) / totalMetaSpend : 0;
+    const reconciliationBase = [
+      { category: "Messenger pago atribuido (src_)", ...{ impressions: attributedImpressions, revenue_client_usd: attributedRevenue }, spend_brl: totalMetaSpend, media_spend_brl: totalMediaSpend, meta_tax_brl: totalMetaTax, treatment: "Entra no ROAS atribuido; custo Meta com impostos." },
+      { category: "Messenger src_ sem campanha Meta", impressions: Math.max(0, srcCampaignTotal.impressions - attributedImpressions), revenue_client_usd: Math.max(0, srcCampaignTotal.revenue_client_usd - attributedRevenue), spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, treatment: "Pendente de resolucao; nenhum custo estimado." },
+      { category: "Messenger organico do Evo (organic_)", ...evoOrganicTotal, spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, treatment: "Organico: sem gasto e sem imposto." },
+      { category: "Outras campanhas UTM", ...otherCampaignTotal, spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, treatment: "Separado para revisao; nao entra automaticamente no ROAS." },
+      { category: "Messenger sem classificacao", ...messengerUnclassified, spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, treatment: "Diferenca entre utm_medium e utm_campaign; investigar." },
+      { category: "Organico externo (utm_medium=organic)", impressions: toNumber(organicExportRow?.impressions), clicks: toNumber(organicExportRow?.clicks), revenue_client_usd: toNumber(organicExportRow?.revenue_client_usd), spend_brl: 0, media_spend_brl: 0, meta_tax_brl: 0, treatment: "Organico: sem gasto e sem imposto." },
+    ];
+    const reconciliationRows = reconciliationBase.map((row) => ({
+      ...row,
+      revenue_client_brl: row.revenue_client_usd * toNumber(brlRate),
+      roas: row.spend_brl > 0 ? row.revenue_client_usd * toNumber(brlRate) / row.spend_brl : null,
+    }));
     const metaColumns = [
       ["normalized_name", "Campanha Meta (padronizada)"], ["account", "Conta"], ["country", "Pais"], ["platform", "Plataforma"],
       ["campaign_id", "ID campanha"], ["adset_name", "Conjunto Meta"], ["adset_id", "ID conjunto"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio"],
@@ -1468,14 +1514,23 @@ function MetricasMensagensView({
       ["impression_share_percent", "% das impressoes"], ["clicks", "Cliques JoinAds"], ["ctr_percent", "CTR (%)"],
       ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["ecpm_client_usd", "eCPM cliente USD"],
     ].map(([key, label]) => ({ key, label }));
+    const reconciliationColumns = [
+      ["category", "Categoria reconciliada"], ["impressions", "Impressoes JoinAds"], ["clicks", "Cliques JoinAds"],
+      ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"],
+      ["media_spend_brl", "Gasto de midia Meta BRL"], ["meta_tax_brl", "Impostos Meta BRL"], ["spend_brl", "Custo Meta total BRL"],
+      ["roas", "ROAS"], ["treatment", "Tratamento"],
+    ].map(([key, label]) => ({ key, label }));
     const parameterColumns = [{ key: "parameter", label: "Parametro editavel" }, { key: "value", label: "Valor" }, { key: "note", label: "Como usar" }];
     const parameterRows = [
       { parameter: "Cambio BRL/USD", value: { value: toNumber(brlRate), style: "Input" }, note: "Altere esta celula; as formulas da aba Meta x JoinAds recalculam a receita em BRL." },
       { parameter: "ROAS alvo", value: { value: 1.25, style: "Input" }, note: "Escalar a partir do alvo + 0,20; observar acima de 1; cortar abaixo de 1." },
       { parameter: "Cobertura minima", value: { value: 0.9, style: "Input" }, note: "Referencia recomendada: 90%." },
-      { parameter: "Receita JoinAds total USD", value: totalRevenue, note: "Total das linhas src_ no periodo." },
+      { parameter: "Receita src_ total USD", value: srcCampaignTotal.revenue_client_usd, note: "Todas as linhas utm_campaign=src_ no periodo." },
       { parameter: "Receita atribuida USD", value: attributedRevenue, note: "Receita ligada a anuncio Meta no recorte." },
-      { parameter: "Cobertura da atribuicao", value: { value: coverage, formula: "=IF(R5C2>0,R6C2/R5C2,0)", style: coverage >= 0.9 ? "Green" : "Red" }, note: coverage >= 0.9 ? "Cobertura saudavel." : "Abaixo de 90%: revisar a aba Pendencias atribuicao." },
+      { parameter: "Cobertura real da receita", value: { value: revenueCoverage, style: revenueCoverage >= 0.9 ? "Green" : "Red" }, note: "Receita src_ atribuida / Messenger potencialmente pago, excluindo organic_." },
+      { parameter: "Cobertura real das impressoes", value: { value: impressionCoverage, style: impressionCoverage >= 0.9 ? "Green" : "Red" }, note: "Impressoes src_ atribuidas / Messenger potencialmente pago, excluindo organic_." },
+      { parameter: "ROAS atribuido", value: trackedRoas, note: "Somente receita ligada aos src_ das campanhas / custo Meta com impostos." },
+      { parameter: "ROAS economico estimado", value: economicRoas, note: "Messenger menos organic_ / custo Meta com impostos. Nao distribui a diferenca entre campanhas." },
       { parameter: "Origem do gasto diario", value: "Meta date_start", note: "Somado diretamente das linhas diarias retornadas com time_increment=1; nao ha rateio nem acumulacao." },
       { parameter: "Impostos Meta ativos", value: metaTaxSettings.metaTaxEnabled !== false ? "Sim" : "Nao", note: "O gasto usado em CPA, ROAS, lucro e margem inclui o custo tributario configurado." },
       { parameter: "Aliquota Meta (%)", value: toNumber(metaTaxSettings.metaTaxRatePercent), note: `Vigencia: ${metaTaxSettings.metaTaxEffectiveDate || "2026-01-01"}.` },
@@ -1494,6 +1549,7 @@ function MetricasMensagensView({
         { name: "Resumo Pais x Conta", columns: countryAccountColumns, rows: countryAccountSummary },
         { name: "Visao diaria", columns: dailyColumns, rows: daily },
         { name: "Resumo por Origem", columns: originColumns, rows: originRows },
+        { name: "Reconciliacao Origem", columns: reconciliationColumns, rows: reconciliationRows },
         { name: "Pendencias atribuicao", columns: detailColumns, rows: pending },
       ]
     );
@@ -1762,6 +1818,44 @@ function MetricasMensagensView({
       ecpm: null,
     };
   }
+  const campaignOriginTotals = (Array.isArray(joinadsDetailRows) ? joinadsDetailRows : []).reduce((acc, row) => {
+    const value = normalizeKey(row.custon_value ?? row.custom_value);
+    const target = value.startsWith("src_")
+      ? acc.src
+      : value === "organic" || value.startsWith("organic_")
+      ? acc.evoOrganic
+      : value
+      ? acc.other
+      : acc.empty;
+    target.impressions += toNumber(row.impressions);
+    target.revenueUsd += toNumber(row.earnings_client ?? row.revenue_client ?? row.earnings ?? row.revenue);
+    return acc;
+  }, {
+    src: { impressions: 0, revenueUsd: 0 },
+    evoOrganic: { impressions: 0, revenueUsd: 0 },
+    other: { impressions: 0, revenueUsd: 0 },
+    empty: { impressions: 0, revenueUsd: 0 },
+  });
+  const paidMessengerRevenueUsd = pageScoped
+    ? totalsRow.revenue_usd
+    : Math.max(totalsRow.revenue_usd, messengerMedium.revenue_usd - campaignOriginTotals.evoOrganic.revenueUsd);
+  const paidMessengerImpressions = pageScoped
+    ? totalsRow.joinads_impressions
+    : Math.max(totalsRow.joinads_impressions, messengerMedium.impressions - campaignOriginTotals.evoOrganic.impressions);
+  const realRevenueCoverage = paidMessengerRevenueUsd > 0 ? totalsRow.revenue_usd / paidMessengerRevenueUsd : null;
+  const realImpressionCoverage = paidMessengerImpressions > 0 ? totalsRow.joinads_impressions / paidMessengerImpressions : null;
+  const economicRoas = totalsRow.spend_brl > 0 ? paidMessengerRevenueUsd * toNumber(brlRate) / totalsRow.spend_brl : null;
+  const economicProfitBrl = paidMessengerRevenueUsd * toNumber(brlRate) - totalsRow.spend_brl;
+  const unclassifiedMessengerRevenueUsd = pageScoped ? 0 : Math.max(
+    0,
+    messengerMedium.revenue_usd - campaignOriginTotals.src.revenueUsd -
+      campaignOriginTotals.evoOrganic.revenueUsd - campaignOriginTotals.other.revenueUsd
+  );
+  const unclassifiedMessengerImpressions = pageScoped ? 0 : Math.max(
+    0,
+    messengerMedium.impressions - campaignOriginTotals.src.impressions -
+      campaignOriginTotals.evoOrganic.impressions - campaignOriginTotals.other.impressions
+  );
   const allTermRows = Array.isArray(termRows) ? termRows : [];
   const allTermDailyRows = Array.isArray(termDailyRows) ? termDailyRows : [];
   const candidateTermRows = allTermRows.filter((row) =>
@@ -3035,8 +3129,8 @@ function MetricasMensagensView({
           ${pageScoped
             ? html`<strong>Filtro de Página ativo:</strong> os números abaixo usam a atribuição por
                 campanha da página selecionada (não o total por <code>utm_medium</code>, que é global).`
-            : html`Receita por <code>utm_medium</code> vem da JoinAds. Gasto, ROAS e lucro cruzam
-                <code>utm_medium=messenger</code> com o gasto Meta das campanhas de mensagem no periodo.`}
+            : html`Reconcilia <code>utm_medium</code> com <code>utm_campaign</code>. Somente
+                <code>src_</code> recebe gasto Meta e impostos; <code>organic_</code> permanece com custo zero.`}
         </p>
         <div className="metrics-grid">
           <div className="metric-card">
@@ -3049,7 +3143,7 @@ function MetricasMensagensView({
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita USD</div>
-            <div className="metric-helper">(utm_medium=messenger)</div>
+            <div className="metric-helper">Total utm_medium=messenger, antes da reconciliação</div>
             <div className="metric-value">${currencyUSD.format(messengerMedium.revenue_usd || 0)}</div>
           </div>
           <div className="metric-card">
@@ -3062,16 +3156,47 @@ function MetricasMensagensView({
             <div className="metric-value">${currencyBRL.format(messengerMedium.revenue_brl || 0)}</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Gasto Meta</div>
+            <div className="metric-label">Gasto Meta total</div>
+            <div className="metric-helper">Somente campanhas pagas; inclui impostos</div>
             <div className="metric-value">${currencyBRL.format(messengerMedium.spend_brl || 0)}</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">ROAS</div>
-            <div className="metric-value">${messengerMedium.roas != null ? `${messengerMedium.roas.toFixed(2)}x` : "-"}</div>
+            <div className="metric-label">ROAS atribuído</div>
+            <div className="metric-helper">Receita src_ ligada às campanhas</div>
+            <div className="metric-value">${totalsRow.roas != null ? `${totalsRow.roas.toFixed(2)}x` : "-"}</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Lucro Op.</div>
-            <div className="metric-value">${currencyBRL.format(messengerMedium.profit_brl || 0)}</div>
+            <div className="metric-label">ROAS econômico estimado</div>
+            <div className="metric-helper">Messenger menos organic_; não distribui sobra por campanha</div>
+            <div className="metric-value">${economicRoas != null ? `${economicRoas.toFixed(2)}x` : "-"}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Lucro atribuído</div>
+            <div className="metric-value">${currencyBRL.format(totalsRow.profit_brl || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Lucro econômico estimado</div>
+            <div className="metric-value">${currencyBRL.format(economicProfitBrl || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Cobertura real da receita</div>
+            <div className="metric-helper">src_ atribuído / Messenger potencialmente pago</div>
+            <div className=${`metric-value ${realRevenueCoverage != null && realRevenueCoverage < 0.9 ? "neg" : ""}`}>${realRevenueCoverage != null ? `${(realRevenueCoverage * 100).toFixed(1)}%` : "-"}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Cobertura real das impressões</div>
+            <div className="metric-helper">Exclui organic_ do denominador</div>
+            <div className=${`metric-value ${realImpressionCoverage != null && realImpressionCoverage < 0.9 ? "neg" : ""}`}>${realImpressionCoverage != null ? `${(realImpressionCoverage * 100).toFixed(1)}%` : "-"}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Messenger orgânico do Evo</div>
+            <div className="metric-helper">organic_ · custo e imposto zero</div>
+            <div className="metric-value">${currencyUSD.format(campaignOriginTotals.evoOrganic.revenueUsd || 0)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Messenger sem classificação</div>
+            <div className="metric-helper">${number.format(unclassifiedMessengerImpressions)} impressões</div>
+            <div className=${`metric-value ${unclassifiedMessengerRevenueUsd > 0 ? "neg" : ""}`}>${currencyUSD.format(unclassifiedMessengerRevenueUsd)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">${label}</div>
