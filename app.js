@@ -1394,6 +1394,40 @@ function MetricasMensagensView({
     });
     const attributedRevenue = detail.filter((row) => row.status === "Atribuido").reduce((sum, row) => sum + row.earnings_client_usd, 0);
     const coverage = totalRevenue > 0 ? attributedRevenue / totalRevenue : 0;
+    const originMap = new Map();
+    (Array.isArray(mediumRows) ? mediumRows : []).forEach((row) => {
+      const origin = String(row.custom_value || row.custon_value || "Sem utm_medium").trim() || "Sem utm_medium";
+      const key = normalizeKey(origin) || "sem_utm_medium";
+      const item = originMap.get(key) || {
+        origin,
+        domain: row.domain || row.name || reportFilters.domain || "",
+        impressions: 0,
+        clicks: 0,
+        revenue_client_usd: 0,
+      };
+      item.impressions += toNumber(row.impressions);
+      item.clicks += toNumber(row.clicks);
+      item.revenue_client_usd += toNumber(row.revenue_client ?? row.earnings_client ?? row.revenue ?? row.earnings);
+      originMap.set(key, item);
+    });
+    if (!originMap.has("organic")) {
+      originMap.set("organic", { origin: "organic", domain: reportFilters.domain || "", impressions: 0, clicks: 0, revenue_client_usd: 0 });
+    }
+    const rawOriginRows = Array.from(originMap.values());
+    const originTotals = rawOriginRows.reduce((acc, row) => {
+      acc.impressions += row.impressions;
+      acc.clicks += row.clicks;
+      acc.revenue_client_usd += row.revenue_client_usd;
+      return acc;
+    }, { origin: "TOTAL GERAL", domain: reportFilters.domain || "", impressions: 0, clicks: 0, revenue_client_usd: 0 });
+    const originRows = [...rawOriginRows, originTotals].map((row) => ({
+      ...row,
+      impression_share_percent: originTotals.impressions > 0 ? row.impressions / originTotals.impressions * 100 : 0,
+      ctr_percent: row.impressions > 0 ? row.clicks / row.impressions * 100 : 0,
+      ecpm_client_usd: row.impressions > 0 ? row.revenue_client_usd / row.impressions * 1000 : 0,
+      revenue_client_brl: row.revenue_client_usd * toNumber(brlRate),
+    }));
+    const organicExportRow = originRows.find((row) => normalizeKey(row.origin) === "organic");
     const metaColumns = [
       ["normalized_name", "Campanha Meta (padronizada)"], ["account", "Conta"], ["country", "Pais"], ["platform", "Plataforma"],
       ["campaign_id", "ID campanha"], ["adset_name", "Conjunto Meta"], ["adset_id", "ID conjunto"], ["ad_name", "Anuncio Meta"], ["ad_id", "ID anuncio"],
@@ -1429,6 +1463,11 @@ function MetricasMensagensView({
     ].map(([key, label]) => ({ key, label }));
     const countryAccountColumns = [["country", "Pais"], ["account", "Conta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta total BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["roas", "ROAS"], ["media_spend_brl", "Gasto de midia Meta BRL"], ["meta_tax_brl", "Impostos Meta BRL"]].map(([key, label]) => ({ key, label }));
     const dailyColumns = [["date", "Data"], ["meta_impressions", "Impressoes Meta"], ["conversations", "Conversas"], ["spend_brl", "Gasto Meta total BRL"], ["joinads_impressions", "Impressoes JoinAds"], ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["impressions_per_conversation", "Impressoes por conversa"], ["roas", "ROAS diario"], ["media_spend_brl", "Gasto de midia Meta BRL"], ["meta_tax_brl", "Impostos Meta BRL"]].map(([key, label]) => ({ key, label }));
+    const originColumns = [
+      ["origin", "Origem (utm_medium)"], ["domain", "Dominio"], ["impressions", "Impressoes JoinAds"],
+      ["impression_share_percent", "% das impressoes"], ["clicks", "Cliques JoinAds"], ["ctr_percent", "CTR (%)"],
+      ["revenue_client_usd", "Receita cliente USD"], ["revenue_client_brl", "Receita cliente BRL"], ["ecpm_client_usd", "eCPM cliente USD"],
+    ].map(([key, label]) => ({ key, label }));
     const parameterColumns = [{ key: "parameter", label: "Parametro editavel" }, { key: "value", label: "Valor" }, { key: "note", label: "Como usar" }];
     const parameterRows = [
       { parameter: "Cambio BRL/USD", value: { value: toNumber(brlRate), style: "Input" }, note: "Altere esta celula; as formulas da aba Meta x JoinAds recalculam a receita em BRL." },
@@ -1441,6 +1480,7 @@ function MetricasMensagensView({
       { parameter: "Impostos Meta ativos", value: metaTaxSettings.metaTaxEnabled !== false ? "Sim" : "Nao", note: "O gasto usado em CPA, ROAS, lucro e margem inclui o custo tributario configurado." },
       { parameter: "Aliquota Meta (%)", value: toNumber(metaTaxSettings.metaTaxRatePercent), note: `Vigencia: ${metaTaxSettings.metaTaxEffectiveDate || "2026-01-01"}.` },
       { parameter: "Modo do spend Meta", value: metaTaxSettings.metaTaxMode === "included" ? "Imposto ja incluido" : "Somar imposto", note: "Evita duplicar tributos se o campo spend da API mudar." },
+      { parameter: "Impressoes organicas JoinAds", value: organicExportRow?.impressions || 0, note: "Total de utm_medium=organic no dominio e periodo selecionados. Veja a aba Resumo por Origem." },
     ];
     downloadExcelWorkbook(
       `metricas-mensagens_${reportFilters.domain || "dominio"}_${reportFilters.startDate || "inicio"}_${reportFilters.endDate || "fim"}.xls`,
@@ -1453,6 +1493,7 @@ function MetricasMensagensView({
         { name: "Resumo por Bloco", columns: blockColumns, rows: blockReport },
         { name: "Resumo Pais x Conta", columns: countryAccountColumns, rows: countryAccountSummary },
         { name: "Visao diaria", columns: dailyColumns, rows: daily },
+        { name: "Resumo por Origem", columns: originColumns, rows: originRows },
         { name: "Pendencias atribuicao", columns: detailColumns, rows: pending },
       ]
     );
