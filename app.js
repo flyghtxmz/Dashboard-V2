@@ -8770,14 +8770,13 @@ function App() {
       }
 
       // Todas as demais requisições independentes em paralelo (elimina 4 awaits sequenciais)
+      const liveMetaStructureParams = new URLSearchParams({
+        account_id: filters.metaAccountId.trim(),
+        _ts: String(Date.now()),
+      });
       const editListPromise = fetchJson(
-        `${API_BASE}/meta-ad-edit-list?${new URLSearchParams({
-          account_id: filters.metaAccountId.trim(),
-        }).toString()}`,
-        {
-          cacheTtlMs: 5 * 60 * 1000,
-          cacheKey: `meta-edit-list:${filters.metaAccountId.trim()}`,
-        }
+        `${API_BASE}/meta-ad-edit-list?${liveMetaStructureParams.toString()}`,
+        { force: true, cache: "no-store" }
       ).catch((err) => {
         pushLog("meta-edit-list-load", err);
         return { data: [] };
@@ -9062,6 +9061,22 @@ function App() {
         );
         const insightRows = Array.isArray(metaRes?.data) ? metaRes.data : [];
         const structureRows = Array.isArray(editListRes?.data) ? editListRes.data : [];
+        const liveStructureByAdset = new Map();
+        structureRows.forEach((row) => {
+          const key = String(row.adset_id || "");
+          if (key && !liveStructureByAdset.has(key)) liveStructureByAdset.set(key, row);
+        });
+        const withLiveBid = (row) => {
+          const live = liveStructureByAdset.get(String(row.adset_id || ""));
+          if (!live) return row;
+          return {
+            ...row,
+            adset_bid_amount: live.adset_bid_amount ?? null,
+            adset_bid_strategy: live.campaign_bid_strategy || live.adset_bid_strategy || "",
+            adset_optimization_goal: live.adset_optimization_goal || "",
+            adset_bid_constraints: live.adset_bid_constraints ?? null,
+          };
+        };
         const buildMessageFallbackRows = (rowsForRange, fallbackDate) => {
           const insightAdIds = new Set(
             (rowsForRange || []).map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
@@ -9083,7 +9098,7 @@ function App() {
         };
         const messageFallbackRows = buildMessageFallbackRows(insightRows, filters.endDate);
         const mergedMetaRows = [
-          ...insightRows.map((row) => ({ ...row, meta_source: "insights" })),
+          ...insightRows.map((row) => ({ ...withLiveBid(row), meta_source: "insights" })),
           ...messageFallbackRows,
         ];
         loadedMetaRowsCount = mergedMetaRows.length;
