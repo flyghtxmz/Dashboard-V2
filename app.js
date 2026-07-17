@@ -1059,6 +1059,7 @@ function MetricasMensagensView({
   budgetLoading = {},
   onBidUpdate,
   bidLoading = {},
+  bidFeedback = {},
   allowBidControl = false,
   showLtvTable = true,
   ltvExtraDays = [],
@@ -2678,6 +2679,11 @@ function MetricasMensagensView({
                                           ? costCapEligibility.detail
                                           : `Otimizacao: ${costCapEligibility.label}`}
                                       </div>
+                                      ${bidFeedback?.[singleAdset.id]
+                                        ? html`<div className=${`muted small ${bidFeedback[singleAdset.id].ok ? "pos" : "danger-text"}`}>
+                                            ${bidFeedback[singleAdset.id].message}
+                                          </div>`
+                                        : null}
                                     </div>
                                   `
                                 : html`<span className="muted small">Controle indisponivel</span>`}
@@ -8221,6 +8227,7 @@ function App() {
   const [adStatusLoading, setAdStatusLoading] = useState({});
   const [budgetLoading, setBudgetLoading] = useState({});
   const [bidLoading, setBidLoading] = useState({});
+  const [bidFeedback, setBidFeedback] = useState({});
   const [appliedFilters, setAppliedFilters] = useState(null);
   const [dupCampaigns, setDupCampaigns] = useState([]);
   const [dupLoading, setDupLoading] = useState(false);
@@ -10265,6 +10272,32 @@ function App() {
       bidStrategy === BID_STRATEGY_WITH_BID ||
       bidStrategy === BID_STRATEGY_COST_CAP;
 
+    const confirmLiveBid = async () => {
+      const params = new URLSearchParams({ adset_id: adsetId, _ts: String(Date.now()) });
+      const confirmation = await fetchJson(`${API_BASE}/meta-adset-bid?${params.toString()}`, {
+        force: true,
+        cache: "no-store",
+      });
+      const actual = confirmation?.adset || null;
+      if (!actual) throw new Error("A Meta nao retornou o lance para confirmacao.");
+      setMetaRows((prev) =>
+        (prev || []).map((row) =>
+          row.adset_id === adsetId
+            ? {
+                ...row,
+                adset_bid_amount: actual.bid_amount ?? null,
+                adset_bid_strategy: actual.bid_strategy || row.adset_bid_strategy || "",
+                adset_optimization_goal: actual.optimization_goal || row.adset_optimization_goal || "",
+                adset_bid_constraints: actual.bid_constraints ?? null,
+              }
+            : row
+        )
+      );
+      const rawActual = actual.bid_amount ?? actual.bid_constraints?.cost_cap ??
+        actual.bid_constraints?.bid_cap ?? actual.bid_constraints?.cost_per_result_goal;
+      return { actual, amountBrl: rawActual != null ? toNumber(rawActual) / 100 : null };
+    };
+
     let bidNumber = null;
     if (requiresBidValue) {
       const raw = String(bidValue ?? "").trim();
@@ -10280,6 +10313,7 @@ function App() {
     }
 
     setBidLoading((prev) => ({ ...prev, [adsetId]: true }));
+    setBidFeedback((prev) => ({ ...prev, [adsetId]: { ok: true, message: "Salvando e confirmando na Meta..." } }));
     try {
       // Campanha com Orcamento de Campanha (CBO): a estrategia vai na CAMPANHA; o valor vai no CONJUNTO.
       // As duas chamadas sao independentes para que uma falhar nao aborte a outra.
@@ -10403,6 +10437,22 @@ function App() {
             detail: adsetStrategyError?.data || adsetStrategyError?.message || adsetStrategyError,
           });
         }
+        const confirmed = await confirmLiveBid();
+        setBidFeedback((prev) => ({
+          ...prev,
+          [adsetId]: {
+            ok: true,
+            message: confirmed.amountBrl != null
+              ? `Confirmado na Meta: R$ ${confirmed.amountBrl.toFixed(2)}.`
+              : "Confirmado na Meta: sem limite definido.",
+          },
+        }));
+        pushLog("meta-bid-confirmed", {
+          message: confirmed.amountBrl != null
+            ? `Confirmado pela Meta: ${adsetId} esta com limite de R$ ${confirmed.amountBrl.toFixed(2)}.`
+            : `Confirmado pela Meta: ${adsetId} esta sem valor de limite.`,
+          data: confirmed.actual,
+        });
         return;
       }
 
@@ -10448,7 +10498,27 @@ function App() {
             : `Estrategia atualizada (sem bid): ${adsetId}`,
         });
       }
+      const confirmed = await confirmLiveBid();
+      setBidFeedback((prev) => ({
+        ...prev,
+        [adsetId]: {
+          ok: true,
+          message: confirmed.amountBrl != null
+            ? `Confirmado na Meta: R$ ${confirmed.amountBrl.toFixed(2)}.`
+            : "Confirmado na Meta: sem limite definido.",
+        },
+      }));
+      pushLog("meta-bid-confirmed", {
+        message: confirmed.amountBrl != null
+          ? `Confirmado pela Meta: ${adsetId} esta com limite de R$ ${confirmed.amountBrl.toFixed(2)}.`
+          : `Confirmado pela Meta: ${adsetId} esta sem valor de limite.`,
+        data: confirmed.actual,
+      });
     } catch (err) {
+      setBidFeedback((prev) => ({
+        ...prev,
+        [adsetId]: { ok: false, message: `Nao foi possivel confirmar na Meta: ${formatError(err)}` },
+      }));
       pushLog("meta-bid", err);
     } finally {
       setBidLoading((prev) => {
@@ -11855,6 +11925,7 @@ function App() {
             budgetLoading=${budgetLoading}
             onBidUpdate=${handleUpdateBid}
             bidLoading=${bidLoading}
+            bidFeedback=${bidFeedback}
             allowBidControl=${session?.role === "admin"}
             attributionAudit=${messengerAttributionAudit}
             diagnostics=${{

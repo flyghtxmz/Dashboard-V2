@@ -12,6 +12,26 @@ export async function onRequest({ request, env }) {
     return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
   }
 
+  if (request.method === "GET") {
+    const adsetId = new URL(request.url).searchParams.get("adset_id");
+    if (!adsetId) {
+      return jsonResponse(400, { error: "Parametro obrigatorio: adset_id" });
+    }
+    try {
+      const checkRes = await fetch(
+        `${API_BASE}/${encodeURIComponent(adsetId)}?fields=bid_amount,bid_strategy,optimization_goal,bid_constraints,updated_time&access_token=${token}`,
+        { cache: "no-store" }
+      );
+      const adset = await safeJson(checkRes);
+      if (!checkRes.ok) {
+        return jsonResponse(checkRes.status, { error: "Erro Meta", details: adset });
+      }
+      return jsonResponse(200, { code: "success", adset, confirmed_at: new Date().toISOString() });
+    } catch (error) {
+      return jsonResponse(500, { error: "Erro ao confirmar lance", details: error.message });
+    }
+  }
+
   if (request.method !== "POST") {
     return jsonResponse(405, { error: "Method not allowed" });
   }
