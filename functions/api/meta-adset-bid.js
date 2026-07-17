@@ -157,7 +157,20 @@ export async function onRequest({ request, env }) {
     // controlada na campanha via orcamento de campanha/CBO). Comparamos o que foi pedido com o que
     // ficou de fato, para nao falhar em silencio.
     const actualStrategy = String(adset?.bid_strategy || "").toUpperCase();
-    const applied = updateStrategy && actualStrategy ? actualStrategy === bidStrategy : null;
+    const constraints = adset?.bid_constraints || {};
+    const actualAmountCents = bidStrategy === BID_STRATEGY_COST_CAP
+      ? constraints.cost_per_result_goal ?? constraints.cost_cap ?? adset?.bid_amount
+      : adset?.bid_amount ?? constraints.bid_cap;
+    const strategyApplied = updateStrategy && actualStrategy ? actualStrategy === bidStrategy : null;
+    const amountApplied = requiresAmount && actualAmountCents != null
+      ? Number(actualAmountCents) === amountCents
+      : requiresAmount ? false : null;
+    const applied = strategyApplied === false || amountApplied === false
+      ? false
+      : strategyApplied ?? amountApplied;
+    const amountWarning = amountApplied === false
+      ? `A Meta manteve o limite em R$ ${(Number(actualAmountCents || 0) / 100).toFixed(2)} em vez de R$ ${bidNumber.toFixed(2)}.`
+      : undefined;
     const warning =
       applied === false
         ? `A Meta manteve a estrategia "${actualStrategy}" em vez de "${bidStrategy}". Normalmente a estrategia de lance e controlada na campanha (orcamento de campanha/CBO) ou a transicao nao e permitida neste nivel — nesse caso, altere a estrategia na campanha.`
@@ -169,8 +182,11 @@ export async function onRequest({ request, env }) {
       data,
       adset,
       requested_strategy: updateStrategy ? bidStrategy : null,
+      requested_amount_brl: bidNumber,
+      actual_amount_brl: actualAmountCents != null ? Number(actualAmountCents) / 100 : null,
+      amount_applied: amountApplied,
       applied,
-      warning,
+      warning: amountWarning || warning,
     });
   } catch (error) {
     return jsonResponse(500, {

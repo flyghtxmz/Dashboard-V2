@@ -10273,12 +10273,23 @@ function App() {
       bidStrategy === BID_STRATEGY_COST_CAP;
 
     const confirmLiveBid = async () => {
-      const params = new URLSearchParams({ adset_id: adsetId, _ts: String(Date.now()) });
-      const confirmation = await fetchJson(`${API_BASE}/meta-adset-bid?${params.toString()}`, {
-        force: true,
-        cache: "no-store",
-      });
-      const actual = confirmation?.adset || null;
+      let actual = null;
+      let rawActual = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const params = new URLSearchParams({ adset_id: adsetId, _ts: String(Date.now()) });
+        const confirmation = await fetchJson(`${API_BASE}/meta-adset-bid?${params.toString()}`, {
+          force: true,
+          cache: "no-store",
+        });
+        actual = confirmation?.adset || null;
+        const actualStrategy = String(actual?.bid_strategy || "").toUpperCase();
+        rawActual = actualStrategy === BID_STRATEGY_COST_CAP
+          ? actual?.bid_constraints?.cost_per_result_goal ?? actual?.bid_constraints?.cost_cap ?? actual?.bid_amount
+          : actual?.bid_amount ?? actual?.bid_constraints?.bid_cap;
+        const amountBrl = rawActual != null ? toNumber(rawActual) / 100 : null;
+        if (!requiresBidValue || (amountBrl != null && Math.abs(amountBrl - bidNumber) < 0.005)) break;
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 700));
+      }
       if (!actual) throw new Error("A Meta nao retornou o lance para confirmacao.");
       setMetaRows((prev) =>
         (prev || []).map((row) =>
@@ -10293,9 +10304,20 @@ function App() {
             : row
         )
       );
-      const rawActual = actual.bid_amount ?? actual.bid_constraints?.cost_cap ??
-        actual.bid_constraints?.bid_cap ?? actual.bid_constraints?.cost_per_result_goal;
       return { actual, amountBrl: rawActual != null ? toNumber(rawActual) / 100 : null };
+    };
+
+    const showBidConfirmation = (confirmed) => {
+      const matches = !requiresBidValue || (
+        confirmed.amountBrl != null && Math.abs(confirmed.amountBrl - bidNumber) < 0.005
+      );
+      const message = matches
+        ? requiresBidValue
+          ? `Confirmado na Meta: R$ ${confirmed.amountBrl.toFixed(2)}.`
+          : "Confirmado na Meta: sem limite definido."
+        : `NAO APLICADO: voce pediu R$ ${bidNumber.toFixed(2)}, mas a Meta manteve R$ ${confirmed.amountBrl != null ? confirmed.amountBrl.toFixed(2) : "0,00"}.`;
+      setBidFeedback((prev) => ({ ...prev, [adsetId]: { ok: matches, message } }));
+      pushLog(matches ? "meta-bid-confirmed" : "meta-bid-not-applied", { message, data: confirmed.actual });
     };
 
     let bidNumber = null;
@@ -10438,21 +10460,7 @@ function App() {
           });
         }
         const confirmed = await confirmLiveBid();
-        setBidFeedback((prev) => ({
-          ...prev,
-          [adsetId]: {
-            ok: true,
-            message: confirmed.amountBrl != null
-              ? `Confirmado na Meta: R$ ${confirmed.amountBrl.toFixed(2)}.`
-              : "Confirmado na Meta: sem limite definido.",
-          },
-        }));
-        pushLog("meta-bid-confirmed", {
-          message: confirmed.amountBrl != null
-            ? `Confirmado pela Meta: ${adsetId} esta com limite de R$ ${confirmed.amountBrl.toFixed(2)}.`
-            : `Confirmado pela Meta: ${adsetId} esta sem valor de limite.`,
-          data: confirmed.actual,
-        });
+        showBidConfirmation(confirmed);
         return;
       }
 
@@ -10499,21 +10507,7 @@ function App() {
         });
       }
       const confirmed = await confirmLiveBid();
-      setBidFeedback((prev) => ({
-        ...prev,
-        [adsetId]: {
-          ok: true,
-          message: confirmed.amountBrl != null
-            ? `Confirmado na Meta: R$ ${confirmed.amountBrl.toFixed(2)}.`
-            : "Confirmado na Meta: sem limite definido.",
-        },
-      }));
-      pushLog("meta-bid-confirmed", {
-        message: confirmed.amountBrl != null
-          ? `Confirmado pela Meta: ${adsetId} esta com limite de R$ ${confirmed.amountBrl.toFixed(2)}.`
-          : `Confirmado pela Meta: ${adsetId} esta sem valor de limite.`,
-        data: confirmed.actual,
-      });
+      showBidConfirmation(confirmed);
     } catch (err) {
       setBidFeedback((prev) => ({
         ...prev,
@@ -11101,13 +11095,10 @@ function App() {
         row.campaign_lifetime_budget != null
           ? toNumber(row.campaign_lifetime_budget) / 100
           : null;
-      const rawBid =
-        row.adset_bid_amount != null
-          ? row.adset_bid_amount
-          : row.adset_bid_constraints &&
-            (row.adset_bid_constraints.cost_cap ??
-              row.adset_bid_constraints.bid_cap ??
-              row.adset_bid_constraints?.cost_per_result_goal);
+      const bidConstraints = row.adset_bid_constraints || {};
+      const rawBid = String(row.adset_bid_strategy || "").toUpperCase() === BID_STRATEGY_COST_CAP
+        ? bidConstraints.cost_per_result_goal ?? bidConstraints.cost_cap ?? row.adset_bid_amount
+        : row.adset_bid_amount ?? bidConstraints.bid_cap;
       const bidAmountBrl =
         rawBid != null ? toNumber(rawBid) / 100 : null;
 
