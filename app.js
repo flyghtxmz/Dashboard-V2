@@ -481,13 +481,13 @@ function useTotalsFromEarnings(earnings, fallbackSuper) {
 
     const sum = source.reduce(
       (acc, row) => {
-        acc.revenue += Number(row.revenue || row.revenue_client || 0);
-        acc.revenueClient += Number(row.revenue_client || 0);
+        acc.revenue += Number(row.revenue ?? row.earnings ?? 0);
+        acc.revenueClient += Number(row.revenue_client ?? row.earnings_client ?? 0);
         acc.impressions += Number(row.impressions || 0);
         acc.clicks += Number(row.clicks || 0);
         const imps = Number(row.impressions || 0);
-        acc.ecpmWeighted += Number(row.ecpm || 0) * imps;
-        acc.ecpmClientWeighted += Number(row.ecpm_client || row.ecpm || 0) * imps;
+        acc.ecpmWeighted += Number(row.ecpm ?? 0) * imps;
+        acc.ecpmClientWeighted += Number(row.ecpm_client ?? 0) * imps;
         acc.activeViewWeighted += Number(row.active_view || 0) * imps;
         return acc;
       },
@@ -735,7 +735,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
     {
       label: "Receita cliente",
       value: currencyUSD.format(totals.revenueClient || 0),
-      helper: "Após revshare",
+      helper: "Valor líquido informado pela API (após revshare; sem novo desconto)",
       tone: "primary",
     },
     {
@@ -950,7 +950,7 @@ function buildMessengerAttributionAudit({
     return normalizeKey(row.domain || row.name || "") === domainKey;
   };
   const srcRevenue = (row) =>
-    toNumber(row.revenue_client != null ? row.revenue_client : row.revenue);
+    toNumber(row.revenue_client ?? row.earnings_client ?? 0);
 
   const metaAdIds = new Set(
     (metaRows || []).map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
@@ -1408,7 +1408,7 @@ function MetricasMensagensView({
       };
       item.impressions += toNumber(row.impressions);
       item.clicks += toNumber(row.clicks);
-      item.revenue_client_usd += toNumber(row.revenue_client ?? row.earnings_client ?? row.revenue ?? row.earnings);
+      item.revenue_client_usd += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
       originMap.set(key, item);
     });
     if (!originMap.has("organic")) {
@@ -1436,7 +1436,7 @@ function MetricasMensagensView({
       if (!predicate(value, row)) return acc;
       acc.impressions += toNumber(row.impressions);
       acc.clicks += toNumber(row.clicks);
-      acc.revenue_client_usd += toNumber(row.earnings_client ?? row.revenue_client ?? row.earnings ?? row.revenue);
+      acc.revenue_client_usd += toNumber(row.earnings_client ?? row.revenue_client ?? 0);
       return acc;
     }, { impressions: 0, clicks: 0, revenue_client_usd: 0 });
     const srcCampaignTotal = aggregateCampaignRows((value) => value.startsWith("src_"));
@@ -1774,7 +1774,7 @@ function MetricasMensagensView({
       (acc, row) => {
         acc.impressions += toNumber(row.impressions);
         acc.clicks += toNumber(row.clicks);
-        acc.revenue_usd += toNumber(row.revenue_client || row.revenue);
+        acc.revenue_usd += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
         return acc;
       },
       { rows: rowsForMedium, impressions: 0, clicks: 0, revenue_usd: 0 }
@@ -1828,7 +1828,7 @@ function MetricasMensagensView({
       ? acc.other
       : acc.empty;
     target.impressions += toNumber(row.impressions);
-    target.revenueUsd += toNumber(row.earnings_client ?? row.revenue_client ?? row.earnings ?? row.revenue);
+    target.revenueUsd += toNumber(row.earnings_client ?? row.revenue_client ?? 0);
     return acc;
   }, {
     src: { impressions: 0, revenueUsd: 0 },
@@ -1920,9 +1920,7 @@ function MetricasMensagensView({
         item.impressions += toNumber(row.impressions);
         item.clicks += toNumber(row.clicks);
         const rowImpressions = toNumber(row.impressions);
-        const revenueUsd = toNumber(
-          row.revenue_client != null ? row.revenue_client : row.revenue
-        );
+        const revenueUsd = toNumber(row.revenue_client ?? row.earnings_client ?? 0);
         item.revenue_usd += revenueUsd;
         const ageDays = item.first_seen_at && row.revenue_date
           ? daysBetweenIsoDates(String(item.first_seen_at).slice(0, 10), row.revenue_date)
@@ -2303,14 +2301,14 @@ function MetricasMensagensView({
     termSamples: allTermRows.slice(0, 20).map((row) => ({
       value: row.custom_value || "",
       domain: row.domain || row.name || "",
-      revenueClient: row.revenue_client ?? row.revenue ?? null,
+      revenueClient: row.revenue_client ?? row.earnings_client ?? null,
       impressions: row.impressions ?? null,
       clicks: row.clicks ?? null,
     })),
     candidateSamples: candidateTermRows.slice(0, 20).map((row) => ({
       value: row.custom_value || "",
       domain: row.domain || row.name || "",
-      revenueClient: row.revenue_client ?? row.revenue ?? null,
+      revenueClient: row.revenue_client ?? row.earnings_client ?? null,
       impressions: row.impressions ?? null,
       clicks: row.clicks ?? null,
     })),
@@ -3950,7 +3948,7 @@ function DiagnosticsJoin({
                         <td>${row.custom_value || "-"}</td>
                         <td>${number.format(row.impressions || 0)}</td>
                         <td>${number.format(row.clicks || 0)}</td>
-                        <td>${currencyUSD.format(row.revenue_client || row.revenue || 0)}</td>
+                        <td>${currencyUSD.format(row.revenue_client ?? 0)}</td>
                         <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
                       </tr>
                     `
@@ -3963,7 +3961,7 @@ function DiagnosticsJoin({
                         <td>${row.custon_value || row.custom_value || "-"}</td>
                         <td>${number.format(row.impressions || 0)}</td>
                         <td>${number.format(row.clicks || 0)}</td>
-                        <td>${currencyUSD.format(row.earnings_client || row.earnings || 0)}</td>
+                        <td>${currencyUSD.format(row.earnings_client ?? 0)}</td>
                         <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
                       </tr>
                     `
@@ -4017,7 +4015,7 @@ function MetaSourceTable({ rows }) {
     (acc, row) => {
       acc.impressions += Number(row.impressions || 0);
       acc.clicks += Number(row.clicks || 0);
-      acc.revenue += Number(row.revenue_client || row.revenue || 0);
+      acc.revenue += Number(row.revenue_client ?? row.earnings_client ?? 0);
       return acc;
     },
     { impressions: 0, clicks: 0, revenue: 0 }
@@ -4054,7 +4052,7 @@ function MetaSourceTable({ rows }) {
                       <td>${row.custom_value || "-"}</td>
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
-                      <td>${currencyUSD.format(row.revenue_client || row.revenue || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue_client ?? 0)}</td>
                       <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
                     </tr>
                   `
@@ -4205,7 +4203,7 @@ function buildAdsetGrouped(rows, joinadsRows, brlRate) {
     };
     entry.impressions += toNumber(row.impressions);
     entry.clicks += toNumber(row.clicks);
-    entry.revenue += toNumber(row.revenue_client || row.revenue);
+    entry.revenue += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
     if (row.ecpm_client != null) entry.ecpm_client = toNumber(row.ecpm_client);
     if (row.ecpm != null) entry.ecpm = toNumber(row.ecpm);
     joinadsByTerm.set(key, entry);
@@ -4236,7 +4234,7 @@ function buildAdsetGrouped(rows, joinadsRows, brlRate) {
       const termKey = normalizeKey(item.adset_name);
       const join = joinadsByTerm.get(termKey);
       if (join) {
-        const usd = toNumber(join.revenue_client || join.revenue);
+        const usd = toNumber(join.revenue_client ?? join.earnings_client ?? 0);
         item.impressions = toNumber(join.impressions);
         item.clicks = toNumber(join.clicks);
         item.revenue_usd = usd;
@@ -5547,7 +5545,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLab
   const metaList = Array.isArray(metaRows) ? metaRows : [];
   const semImps = toNumber(semUtmRow?.impressions);
   const semClicks = toNumber(semUtmRow?.clicks);
-  const semRevenue = toNumber(semUtmRow?.revenue_client || semUtmRow?.revenue);
+  const semRevenue = toNumber(semUtmRow?.revenue_client ?? semUtmRow?.earnings_client ?? 0);
 
   if (!rows.length || (!semImps && !semClicks && !semRevenue)) {
     return html`
@@ -5582,7 +5580,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLab
     const item = map.get(key);
     item.impressions += toNumber(row.impressions);
     item.clicks += toNumber(row.clicks);
-    item.revenue += toNumber(row.revenue_client || row.revenue);
+    item.revenue += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
   });
 
   const list = Array.from(map.values()).map((item) => {
@@ -5816,7 +5814,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
       const termKey = normalizeKey(item.adset_name);
       const join = joinadsByTerm.get(termKey);
       if (join) {
-        const usd = toNumber(join.revenue_client || join.revenue);
+        const usd = toNumber(join.revenue_client ?? join.earnings_client ?? 0);
         item.impressions = toNumber(join.impressions);
         item.revenue_usd = usd;
         item.revenue_brl = brlRate ? usd * brlRate : null;
@@ -8759,33 +8757,9 @@ function App() {
     let loadedMetaRowsCount = 0;
 
     try {
-      // Primeiro mostra o snapshot persistente. Periodos consolidados encerram aqui;
-      // hoje/ontem continuam abaixo e sao atualizados sem deixar a tela vazia.
-      try {
-        const cacheParams = new URLSearchParams({
-          domain: filters.domain.trim(),
-          account_id: filters.metaAccountId.trim(),
-          start_date: filters.startDate,
-          end_date: filters.endDate,
-          include_assets: filters.includeAssets ? "1" : "0",
-          schema: "integrity-v2",
-        });
-        const cached = await fetchJson(`${API_BASE}/report-cache?${cacheParams.toString()}`);
-        if (cached?.hit && cached.snapshot) {
-          restoredSnapshotRef.current = true;
-          applyDashboardDataSnapshot(cached.snapshot);
-          setAppliedFilters({ ...filters });
-          const cachedDate = new Date(cached.fetchedAt || cached.snapshot.lastRefreshed || Date.now());
-          setLastRefreshed(Number.isNaN(cachedDate.getTime()) ? new Date() : cachedDate);
-          if (cached.fresh) {
-            setLoading(false);
-            return;
-          }
-        }
-      } catch (cacheError) {
-        // Banco ainda nao vinculado ou indisponivel: o carregamento normal segue funcionando.
-        if (cacheError?.status !== 503) pushLog("report-cache-read", cacheError);
-      }
+      // Nao aplica snapshots antigos na interface durante uma atualizacao. Os dados que ja
+      // estao visiveis permanecem na tela ate a nova carga terminar. O cache diario interno
+      // da JoinAds continua sendo tratado pelos endpoints do backend.
 
       const topPromise = fetchJson(
         `${API_BASE}/top-url?${new URLSearchParams({
@@ -8796,6 +8770,7 @@ function App() {
           sort: "revenue",
         }).toString()}`,
         {
+          force: true,
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `top-url:${filters.domain}:${filters.startDate}:${filters.endDate}`,
         }
@@ -8808,6 +8783,7 @@ function App() {
           domain: filters.domain.trim(),
         }).toString()}`,
         {
+          force: true,
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `earnings:${filters.domain}:${filters.startDate}:${filters.endDate}`,
         }
@@ -8818,6 +8794,7 @@ function App() {
           end_date: filters.endDate,
         }).toString()}`,
         {
+          force: true,
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `earnings:all:${filters.startDate}:${filters.endDate}`,
         }
@@ -8990,6 +8967,7 @@ function App() {
             custom_key: "utm_campaign",
           }).toString()}`,
           {
+            force: true,
             cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
@@ -9090,7 +9068,7 @@ function App() {
         termSamples: leadIdSourceRows.slice(0, 20).map((row) => ({
           value: row.custom_value || "",
           domain: row.domain || row.name || "",
-          revenueClient: row.revenue_client ?? row.revenue ?? null,
+          revenueClient: row.revenue_client ?? row.earnings_client ?? null,
           impressions: row.impressions ?? null,
           clicks: row.clicks ?? null,
           revenueDate: row.revenue_date || null,
@@ -9209,7 +9187,7 @@ function App() {
         const item = kvMap.get(mapKey);
         item.impressions += Number(row.impressions || 0);
         item.clicks += Number(row.clicks || 0);
-        item.revenue += Number(row.earnings_client || row.earnings || 0);
+        item.revenue += Number(row.earnings_client ?? row.revenue_client ?? 0);
         item.count += 1;
       });
       setParamPairs(Array.from(kvMap.values()));
@@ -9377,7 +9355,7 @@ function App() {
         0
       );
       const totalSourceRevenue = sourceRows.reduce(
-        (acc, r) => acc + Number(r.revenue_client || r.revenue || 0),
+        (acc, r) => acc + Number(r.revenue_client ?? r.earnings_client ?? 0),
         0
       );
 
@@ -9391,7 +9369,7 @@ function App() {
         (acc, row) => {
           acc.impressions += Number(row.impressions || 0);
           acc.clicks += Number(row.clicks || 0);
-          acc.revenue += Number(row.revenue_client || row.revenue || 0);
+          acc.revenue += Number(row.revenue_client ?? row.earnings_client ?? 0);
           return acc;
         },
         { impressions: 0, clicks: 0, revenue: 0 }
@@ -9400,7 +9378,7 @@ function App() {
         (acc, row) => {
           acc.impressions += Number(row.impressions || 0);
           acc.clicks += Number(row.clicks || 0);
-          acc.revenue += Number(row.revenue_client || row.revenue || 0);
+          acc.revenue += Number(row.revenue_client ?? row.earnings_client ?? 0);
           return acc;
         },
         { impressions: 0, clicks: 0, revenue: 0 }
@@ -9462,10 +9440,12 @@ function App() {
 
   // ---- Cache local dos ultimos dados carregados (sobrevive a recarregar a pagina) ----
   const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v5";
+  const USE_DASHBOARD_DISPLAY_SNAPSHOT = false;
   const snapshotRestoredRef = useRef(false);
 
   // Salva um snapshot dos dados brutos sempre que uma carga completa (lastRefreshed muda).
   useEffect(() => {
+    if (!USE_DASHBOARD_DISPLAY_SNAPSHOT) return;
     if (!lastRefreshed || !snapshotEligible) return;
     try {
       const snapshot = {
@@ -9539,6 +9519,10 @@ function App() {
 
   // Restaura o snapshot uma unica vez apos o login, se ainda nao houver dados carregados.
   useEffect(() => {
+    if (!USE_DASHBOARD_DISPLAY_SNAPSHOT) {
+      snapshotRestoredRef.current = true;
+      return;
+    }
     if (authed !== true || snapshotRestoredRef.current) return;
     if (metaRows.length) {
       snapshotRestoredRef.current = true;
@@ -11181,25 +11165,24 @@ function App() {
         fromKv.impressions ?? fromCustom.impressions ?? null
       );
 
+      const explicitClientRevenue =
+        fromKv.revenue_client ??
+        fromKv.earnings_client ??
+        fromCustom.revenue_client ??
+        fromCustom.earnings_client ??
+        null;
+
       const ecpmClient =
         fromKv.ecpm_client ??
-        fromKv.ecpm ??
         fromCustom.ecpm_client ??
-        fromCustom.ecpm ??
         (impressionsJoin
-          ? ((fromKv.revenue_client ??
-              fromKv.revenue ??
-              fromCustom.revenue_client ??
-              fromCustom.revenue) /
-              impressionsJoin) *
+          && explicitClientRevenue != null
+          ? (explicitClientRevenue / impressionsJoin) *
             1000
           : null);
 
       const revenueClientRaw =
-        fromKv.revenue_client ??
-        fromKv.revenue ??
-        fromCustom.revenue_client ??
-        fromCustom.revenue ??
+        explicitClientRevenue ??
         (ecpmClient != null && impressionsJoin
           ? (Number(ecpmClient) * impressionsJoin) / 1000
           : null);
@@ -11481,7 +11464,7 @@ function App() {
       };
       entry.impressions += toNumber(row.impressions);
       entry.clicks += toNumber(row.clicks);
-      entry.revenue += toNumber(row.revenue_client || row.revenue);
+      entry.revenue += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
       map.set(key, entry);
     });
     return map;

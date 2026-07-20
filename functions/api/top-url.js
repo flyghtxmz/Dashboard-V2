@@ -78,7 +78,7 @@ export async function onRequest({ request, env }) {
       item.impressions += Number(row.impressions || 0);
       item.clicks += Number(row.clicks || 0);
       item.revenue += Number(row.revenue || row.earnings || 0);
-      item.revenue_client += Number(row.revenue_client || row.earnings_client || 0);
+      item.revenue_client += Number(row.revenue_client ?? row.earnings_client ?? 0);
       byUrl.set(key, item);
     });
     const data = Array.from(byUrl.values()).map((row) => ({
