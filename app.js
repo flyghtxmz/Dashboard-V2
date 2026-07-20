@@ -66,7 +66,7 @@ const formatFxDate = (value) => {
   return `${d}/${m}/${y}`;
 };
 
-const readCachedFxInfo = () => {
+const readCachedFxInfo = (requestedDate = "") => {
   if (typeof localStorage === "undefined") return null;
   try {
     const raw = localStorage.getItem(FX_CACHE_KEY);
@@ -76,9 +76,11 @@ const readCachedFxInfo = () => {
     const savedAt = Number(parsed?.savedAt);
     if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(savedAt)) return null;
     if (Date.now() - savedAt > FX_CACHE_MAX_AGE_MS) return null;
+    const cachedRequestedDate = parsed.requestedDate || parsed.effectiveDate || "";
+    if (requestedDate && cachedRequestedDate !== requestedDate) return null;
     return {
       rate,
-      requestedDate: parsed.requestedDate || parsed.effectiveDate || formatDate(new Date()),
+      requestedDate: cachedRequestedDate || formatDate(new Date()),
       effectiveDate: parsed.effectiveDate || parsed.requestedDate || formatDate(new Date()),
       source: "cache",
     };
@@ -347,10 +349,10 @@ function addIsoDays(dateString, days) {
 
 function toNumber(value) {
   if (value === null || value === undefined) return 0;
-  if (typeof value === "number") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
     const n = Number(value.replace?.(",", ".") || value);
-    return Number.isNaN(n) ? 0 : n;
+    return Number.isFinite(n) ? n : 0;
   }
   if (Array.isArray(value)) {
     return value.length ? toNumber(value[0]) : 0;
@@ -481,14 +483,14 @@ function useTotalsFromEarnings(earnings, fallbackSuper) {
 
     const sum = source.reduce(
       (acc, row) => {
-        acc.revenue += Number(row.revenue ?? row.earnings ?? 0);
-        acc.revenueClient += Number(row.revenue_client ?? row.earnings_client ?? 0);
-        acc.impressions += Number(row.impressions || 0);
-        acc.clicks += Number(row.clicks || 0);
-        const imps = Number(row.impressions || 0);
-        acc.ecpmWeighted += Number(row.ecpm ?? 0) * imps;
-        acc.ecpmClientWeighted += Number(row.ecpm_client ?? 0) * imps;
-        acc.activeViewWeighted += Number(row.active_view || 0) * imps;
+        acc.revenue += toNumber(row.revenue ?? row.earnings ?? 0);
+        acc.revenueClient += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
+        acc.impressions += toNumber(row.impressions);
+        acc.clicks += toNumber(row.clicks);
+        const imps = toNumber(row.impressions);
+        acc.ecpmWeighted += toNumber(row.ecpm) * imps;
+        acc.ecpmClientWeighted += toNumber(row.ecpm_client) * imps;
+        acc.activeViewWeighted += toNumber(row.active_view) * imps;
         return acc;
       },
       {
@@ -960,7 +962,8 @@ function buildMessengerAttributionAudit({
       .filter((item) => item?.sourceKey && item?.adId)
       .map((item) => [normalizeKey(item.sourceKey), normalizeKey(item.adId)])
   );
-  // adIds que ja casam por utm_content=ad_id (esses bloqueiam o casamento por source key em mergedMeta).
+  // Sobreposicao com utm_content e diagnostica. Um src_ valido continua sendo a fonte oficial
+  // de atribuicao e nunca deve ser rebaixado apenas porque o mesmo anuncio apareceu em outro relatorio.
   const contentAdIdSet = new Set();
   (contentRows || []).forEach((row) => {
     if (!inDomain(row)) return;
@@ -1001,7 +1004,6 @@ function buildMessengerAttributionAudit({
     }
     if (contentAdIdSet.has(adId)) {
       add(audit.contentConflict);
-      return;
     }
     add(audit.attributed);
     audit.matchedAdIds.add(adId);
@@ -1017,8 +1019,7 @@ function buildMessengerAttributionAudit({
   const grossUsd = audit.gross.revenueUsd;
   const leakedUsd =
     audit.unresolved.revenueUsd +
-    audit.adNotLoaded.revenueUsd +
-    audit.contentConflict.revenueUsd;
+    audit.adNotLoaded.revenueUsd;
 
   return {
     domainScoped: !!domainKey,
@@ -1204,7 +1205,7 @@ function MetricasMensagensView({
           clicks: toNumber(row.clicks),
           earnings_usd: toNumber(row.earnings ?? row.revenue),
           earnings_client_usd: toNumber(row.earnings_client ?? row.revenue_client),
-          ecpm_client_usd: toNumber(row.ecpm_client ?? row.ecpm),
+          ecpm_client_usd: toNumber(row.ecpm_client ?? 0),
           ctr_percent: toNumber(row.ctr),
           active_view_percent: toNumber(row.active_view_viewable ?? row.active_view),
           requests: toNumber(row.requests_served ?? row.ad_requests ?? row.elegible_ad_requests ?? row.eligible_ad_requests),
@@ -3216,7 +3217,8 @@ function MetricasMensagensView({
             </div>
             <p className="muted small">
               Segue a ponte <code>src_</code> (JoinAds) -> <code>adId</code> (Messenlead) -> anuncio Meta.
-              A "receita bruta" e tudo que a JoinAds reporta nas <code>src_</code> do periodo; cada etapa
+              A "receita cliente nas src_" e tudo que a JoinAds reporta em campos <code>_client</code>
+              para as <code>src_</code> do periodo; cada etapa
               abaixo mostra quanto vaza antes de entrar na tabela acima.
               ${attributionAudit.domainScoped
                 ? html`<strong> Atencao: ha um dominio selecionado, entao src_ de outros dominios foram excluidas.</strong>`
@@ -3224,7 +3226,7 @@ function MetricasMensagensView({
             </p>
             <div className="metrics-grid">
               <div className="metric-card">
-                <div className="metric-label">Receita bruta JoinAds (src_)</div>
+                <div className="metric-label">Receita cliente JoinAds (src_)</div>
                 <div className="metric-helper">${attributionAudit.gross.keys} src_ / ${attributionAudit.gross.rows} linhas</div>
                 <div className="metric-value">${currencyBRL.format(attributionAudit.gross.revenueBrl || 0)}</div>
               </div>
@@ -3235,7 +3237,7 @@ function MetricasMensagensView({
               </div>
               <div className="metric-card">
                 <div className="metric-label">Total nao atribuido</div>
-                <div className="metric-helper">${attributionAudit.leakPercent.toFixed(1)}% da bruta</div>
+                <div className="metric-helper">${attributionAudit.leakPercent.toFixed(1)}% da receita cliente em src_</div>
                 <div className="metric-value">${currencyBRL.format(attributionAudit.leaked.revenueBrl || 0)}</div>
               </div>
               <div className="metric-card">
@@ -3249,8 +3251,8 @@ function MetricasMensagensView({
                 <div className="metric-value">${currencyBRL.format(attributionAudit.adNotLoaded.revenueBrl || 0)}</div>
               </div>
               <div className="metric-card">
-                <div className="metric-label">Conflito com utm_content</div>
-                <div className="metric-helper">${attributionAudit.contentConflict.keys} src_ ignoradas</div>
+                <div className="metric-label">Sobreposicao com utm_content</div>
+                <div className="metric-helper">${attributionAudit.contentConflict.keys} src_ tambem presentes em utm_content</div>
                 <div className="metric-value">${currencyBRL.format(attributionAudit.contentConflict.revenueBrl || 0)}</div>
               </div>
             </div>
@@ -3754,8 +3756,8 @@ function TopUrlTable({ rows, totals }) {
               <th>Impressoes</th>
               <th>Cliques</th>
               <th>CTR</th>
-              <th>eCPM</th>
-              <th>Receita</th>
+              <th>eCPM cliente</th>
+              <th>Receita cliente</th>
             </tr>
           </thead>
           <tbody>
@@ -3778,8 +3780,8 @@ function TopUrlTable({ rows, totals }) {
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
                       <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
-                      <td>${currencyUSD.format(row.ecpm || 0)}</td>
-                      <td>${currencyUSD.format(row.revenue || 0)}</td>
+                      <td>${currencyUSD.format(row.ecpm_client || 0)}</td>
+                      <td>${currencyUSD.format(row.revenue_client || 0)}</td>
                     </tr>
                   `
                 )}
@@ -8380,7 +8382,7 @@ function App() {
   const [metaRows, setMetaRows] = useState([]);
   const [metaLtvRows, setMetaLtvRows] = useState([]);
   const [metaDiagnostics, setMetaDiagnostics] = useState({});
-  const [fxInfo, setFxInfo] = useState(() => readCachedFxInfo());
+  const [fxInfo, setFxInfo] = useState(() => readCachedFxInfo(formatDate(new Date())));
   const [fxStatus, setFxStatus] = useState("idle");
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
   const [paramPairs, setParamPairs] = useState([]);
@@ -11057,12 +11059,14 @@ function App() {
       const sourceKey = normalizeKey(row.custom_value);
       if (!sourceKey.startsWith("src_")) return;
       const adId = sourceKeyToAdId.get(sourceKey);
-      if (adId && metaAdIds.has(adId) && !contentByAdId.has(adId)) {
+      if (adId && metaAdIds.has(adId)) {
         addJoinadsByAdId(sourceByAdId, adId, row, "messenlead_source_key", row.custom_value);
       }
     });
 
-    const joinadsByAdId = new Map([...sourceByAdId, ...contentByAdId]);
+    // Atribuicao persistida por src_ tem precedencia. utm_content e apenas fallback quando
+    // nao existe uma origem Messenlead resolvida para o anuncio.
+    const joinadsByAdId = new Map([...contentByAdId, ...sourceByAdId]);
 
     const earningsByDate = {};
     (earnings || []).forEach((row) => {
@@ -11563,7 +11567,7 @@ function App() {
       (acc, row) => {
         acc.impressions += Number(row.impressions || 0);
         acc.clicks += Number(row.clicks || 0);
-        acc.revenue += Number(row.revenue || 0);
+        acc.revenue += Number(row.revenue_client ?? row.earnings_client ?? 0);
         return acc;
       },
       { impressions: 0, clicks: 0, revenue: 0 }
@@ -11665,9 +11669,12 @@ function App() {
 
   useEffect(() => {
     const requestedDate = fxTargetDate || formatDate(new Date());
-    const cached = readCachedFxInfo();
+    const cached = readCachedFxInfo(requestedDate);
     if (cached?.rate) {
       setFxInfo(cached);
+    } else {
+      // Nao recalcula um periodo com a cotacao em cache de outra data.
+      setFxInfo(null);
     }
     setFxStatus("loading");
 
@@ -11684,7 +11691,7 @@ function App() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setFxStatus(cached?.rate || fxInfo?.rate ? "stale" : "unavailable");
+        setFxStatus(cached?.rate ? "stale" : "unavailable");
         pushLog("dollar", {
           message:
             err?.name === "AbortError"

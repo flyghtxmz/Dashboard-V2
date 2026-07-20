@@ -83,6 +83,9 @@ export async function onRequest({ request, env }) {
     });
   }
 
+  const dateRange = validateDateRange(start_date, end_date, 15);
+  if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
+
   try {
     if (domain) {
       const access = requireDomainAccess(session, domain);
@@ -108,6 +111,4 @@ export async function onRequest({ request, env }) {
       details: error.details || error.message,
     });
   }
-  const dateRange = validateDateRange(start_date, end_date, 15);
-  if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
 }

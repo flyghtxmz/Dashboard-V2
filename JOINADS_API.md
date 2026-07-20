@@ -32,6 +32,8 @@ Não existe nesta fórmula uma nova multiplicação por `(1 - revshare)`.
 
 Se o campo cliente estiver ausente, o Dashboard deve usar zero/sinalizar dado ausente. Ele não deve substituir silenciosamente pelo campo bruto, pois isso poderia inflar receita, ROAS e lucro.
 
+Quando o mesmo anúncio aparecer simultaneamente nos relatórios `utm_campaign=src_` e `utm_content`, a atribuição persistida por `src_` tem precedência. O relatório por `utm_content` funciona apenas como fallback; os dois valores nunca devem ser somados entre si.
+
 ## Endpoints utilizados
 
 ### `GET /earnings`
@@ -63,6 +65,7 @@ O cache diário do backend existe para evitar consultar novamente dias históric
 - Depois da atualização posterior às 10h, o dia anterior pode ser consolidado no banco.
 - Dias históricos consolidados podem ser lidos do banco.
 - A interface não deve aplicar um snapshot antigo ao clicar em **Carregar dados**. Ela mantém os dados atuais visíveis e troca o conjunto somente quando a nova consulta termina.
+- Uma cotação USD/BRL armazenada só pode ser reutilizada para a mesma data de referência. Uma cotação de outra data não deve recalcular temporariamente ROAS ou lucro.
 
 Essa separação é importante: armazenamento diário consolidado não é o mesmo que exibir temporariamente um snapshot antigo na tela.
 
@@ -78,4 +81,3 @@ Essa separação é importante: armazenamento diário consolidado não é o mesm
 ## Pergunta recomendada para a JoinAds
 
 > Podem confirmar formalmente se `revenue_client`/`earnings_client` representam o valor líquido pertencente ao cliente, já após a aplicação integral do revshare, e se esse é o valor que será considerado no pagamento? Podem também explicar a fórmula entre `revenue`, `revenue_client` e `revshare`, além de informar se `AD_EXCHANGE_LINE_ITEM_LEVEL_REVENUE` é bruto ou líquido?
-
