@@ -428,7 +428,7 @@ button.small {
   background: var(--card);
   transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 .metric-card::before {
   content: "";
@@ -458,6 +458,7 @@ button.small {
   font-size: 0.76rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+  padding-right: 24px;
 }
 .metric-value {
   font-weight: 680;
@@ -472,6 +473,64 @@ button.small {
 .metric-helper {
   color: var(--muted);
   font-size: 0.78rem;
+}
+.metric-info {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 8;
+}
+.metric-info-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  cursor: help;
+}
+.metric-info-button:hover,
+.metric-info-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+.metric-info-popup {
+  position: absolute;
+  top: 27px;
+  right: 0;
+  width: min(310px, calc(100vw - 48px));
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.14s, transform 0.14s, visibility 0.14s;
+}
+.metric-info:hover .metric-info-popup,
+.metric-info:focus-within .metric-info-popup {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.metric-card:has(.metric-info):hover,
+.metric-card:has(.metric-info):focus-within {
+  z-index: 20;
 }
 
 .token-grid {

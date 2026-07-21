@@ -826,6 +826,15 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
   `;
 }
 
+function MetricInfo({ text, label = "Explicação da métrica" }) {
+  return html`
+    <span className="metric-info">
+      <button type="button" className="metric-info-button" aria-label=${label}>i</button>
+      <span className="metric-info-popup" role="tooltip">${text}</span>
+    </span>
+  `;
+}
+
 function UserCommissionOverview({ totals, usdToBrl, commissionPercent, fxDateLabel }) {
   const percent = normalizeCommissionPercent(commissionPercent);
   const revenueClientUsd = Number(totals?.revenueClient || 0);
@@ -3134,71 +3143,86 @@ function MetricasMensagensView({
         <div className="metrics-grid">
           <div className="metric-card">
             <div className="metric-label">Impressoes JoinAds</div>
+            <${MetricInfo} text="Total de impressoes de anuncios JoinAds registradas com utm_medium=messenger no dominio e periodo. Inclui trafego atribuido, sem classificacao e organic_ do Evo." />
             <div className="metric-value">${number.format(messengerMedium.impressions || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Cliques JoinAds</div>
+            <${MetricInfo} text="Total de cliques nos anuncios JoinAds para utm_medium=messenger. Nao sao cliques do anuncio Meta; sao interacoes com os anuncios monetizados no site." />
             <div className="metric-value">${number.format(messengerMedium.clicks || 0)}</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Receita USD</div>
+            <div className="metric-label">Receita Messenger USD</div>
             <div className="metric-helper">Total utm_medium=messenger, antes da reconciliação</div>
+            <${MetricInfo} text="Receita cliente em USD informada pela JoinAds para todo utm_medium=messenger, antes de separar src_, unknown_messenger e organic_. Usa revenue_client/earnings_client e nao aplica outro desconto de revshare." />
             <div className="metric-value">${currencyUSD.format(messengerMedium.revenue_usd || 0)}</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Receita USD</div>
+            <div className="metric-label">Receita orgânica externa USD</div>
             <div className="metric-helper">(utm_medium=organic)</div>
+            <${MetricInfo} text="Receita cliente em USD das linhas cujo utm_medium e organic. Nao recebe gasto nem imposto Meta. E diferente do organic_ declarado pelo Evo dentro do Messenger." />
             <div className="metric-value">${currencyUSD.format(organicMedium.revenue_usd || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita BRL</div>
+            <${MetricInfo} text="Receita cliente de todo o Messenger convertida de USD para BRL pela cotacao exibida. Formula: receita cliente USD do Messenger x cambio USD/BRL." />
             <div className="metric-value">${currencyBRL.format(messengerMedium.revenue_brl || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Gasto Meta total</div>
             <div className="metric-helper">Somente campanhas pagas; inclui impostos</div>
+            <${MetricInfo} text="Custo total das campanhas Meta de mensagens. Soma gasto de midia e impostos Meta conforme aliquota, vigencia e modo configurados. Trafego organico nao recebe custo." />
             <div className="metric-value">${currencyBRL.format(messengerMedium.spend_brl || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">ROAS atribuído</div>
             <div className="metric-helper">Receita src_ ligada às campanhas</div>
+            <${MetricInfo} text="Indicador oficial por campanha. Formula: receita cliente BRL efetivamente ligada aos src_ resolvidos / gasto Meta total com impostos. Receita sem atribuicao nao entra no numerador." />
             <div className="metric-value">${totalsRow.roas != null ? `${totalsRow.roas.toFixed(2)}x` : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">ROAS econômico estimado</div>
             <div className="metric-helper">Messenger menos organic_; não distribui sobra por campanha</div>
+            <${MetricInfo} text="Cenario de reconciliacao, nao ROAS atribuido. Considera a receita Messenger potencialmente paga, removendo organic_ declarado pelo Evo, e divide pelo mesmo gasto Meta total com impostos." />
             <div className="metric-value">${economicRoas != null ? `${economicRoas.toFixed(2)}x` : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Lucro atribuído</div>
+            <${MetricInfo} text="Resultado comprovadamente atribuido. Formula: receita cliente BRL ligada aos src_ das campanhas - gasto Meta total com impostos." />
             <div className="metric-value">${currencyBRL.format(totalsRow.profit_brl || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Lucro econômico estimado</div>
+            <${MetricInfo} text="Cenario economico estimado. Formula: receita BRL potencialmente paga do Messenger - gasto Meta total com impostos. A sobra sem classificacao nao e distribuida entre campanhas." />
             <div className="metric-value">${currencyBRL.format(economicProfitBrl || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Cobertura real da receita</div>
             <div className="metric-helper">src_ atribuído / Messenger potencialmente pago</div>
+            <${MetricInfo} text="Percentual da receita potencialmente paga que foi ligada a campanhas. Formula: receita cliente atribuida aos src_ / receita Messenger potencialmente paga, excluindo organic_ declarado pelo Evo." />
             <div className=${`metric-value ${realRevenueCoverage != null && realRevenueCoverage < 0.9 ? "neg" : ""}`}>${realRevenueCoverage != null ? `${(realRevenueCoverage * 100).toFixed(1)}%` : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Cobertura real das impressões</div>
             <div className="metric-helper">Exclui organic_ do denominador</div>
+            <${MetricInfo} text="Percentual das impressoes potencialmente pagas ligado a campanhas. Formula: impressoes atribuidas aos src_ / impressoes Messenger potencialmente pagas, excluindo organic_." />
             <div className=${`metric-value ${realImpressionCoverage != null && realImpressionCoverage < 0.9 ? "neg" : ""}`}>${realImpressionCoverage != null ? `${(realImpressionCoverage * 100).toFixed(1)}%` : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Messenger orgânico do Evo</div>
             <div className="metric-helper">organic_ · custo e imposto zero</div>
+            <${MetricInfo} text="Receita marcada como organic_ pelo Evo. Essa marcacao ainda nao comprova origem organica; fica separada como evo_declared_organic. Nenhum gasto ou imposto Meta e atribuido diretamente a ela." />
             <div className="metric-value">${currencyUSD.format(campaignOriginTotals.evoOrganic.revenueUsd || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Messenger sem classificação</div>
             <div className="metric-helper">${number.format(unclassifiedMessengerImpressions)} impressões</div>
+            <${MetricInfo} text="Receita Messenger nao explicada por src_, por outras campanhas identificadas nem por organic_ do Evo. Pode conter perda de parametro, retorno direto ou trafego pago sem sinal suficiente." />
             <div className=${`metric-value ${unclassifiedMessengerRevenueUsd > 0 ? "neg" : ""}`}>${currencyUSD.format(unclassifiedMessengerRevenueUsd)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">${label}</div>
+            <${MetricInfo} text="eCPM cliente do Messenger. Formula: receita cliente USD do Messenger / impressoes JoinAds do Messenger x 1.000. Nao usa a receita bruta." />
             <div className="metric-value">${messengerMedium.ecpm != null ? currencyUSD.format(messengerMedium.ecpm) : "-"}</div>
           </div>
         </div>
