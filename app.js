@@ -1048,6 +1048,7 @@ function buildMessengerAttributionAudit({
 
 function MetricasMensagensView({
   rows = [],
+  earningsRows = [],
   joinadsDetailRows = [],
   advertiserRows = [],
   advertiserDiagnostics = {},
@@ -1078,6 +1079,15 @@ function MetricasMensagensView({
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
+  const isTodayOnly =
+    reportFilters.startDate === formatDate(new Date()) &&
+    reportFilters.endDate === formatDate(new Date());
+  const todayDomainRevenueUsd = isTodayOnly
+    ? (Array.isArray(earningsRows) ? earningsRows : []).reduce(
+        (sum, row) => sum + toNumber(row.revenue_client ?? row.earnings_client ?? 0),
+        0
+      )
+    : 0;
   const selectedLtvExtraDays = OPTIONAL_LTV_DAYS.filter((day) =>
     (Array.isArray(ltvExtraDays) ? ltvExtraDays : []).map(Number).includes(day)
   );
@@ -3140,7 +3150,27 @@ function MetricasMensagensView({
             : html`Reconcilia <code>utm_medium</code> com <code>utm_campaign</code>. Somente
                 <code>src_</code> recebe gasto Meta e impostos; <code>organic_</code> permanece com custo zero.`}
         </p>
+        ${isTodayOnly
+          ? html`<div className=${`alert ${todayDomainRevenueUsd > 0 && messengerMedium.revenue_usd <= 0 ? "warn" : "info"}`} style=${{ marginBottom: "14px" }}>
+              <strong>Atualização de hoje:</strong>
+              <code>/earnings</code> retornou ${currencyUSD.format(todayDomainRevenueUsd)} de receita cliente total do domínio;
+              a visão segmentada por <code>utm_medium=messenger</code> retornou ${currencyUSD.format(messengerMedium.revenue_usd || 0)}.
+              ${todayDomainRevenueUsd > 0 && messengerMedium.revenue_usd <= 0
+                ? " A JoinAds já publicou o total, mas ainda não publicou a segmentação UTM. O valor provisório não entra no ROAS das campanhas."
+                : todayDomainRevenueUsd <= 0
+                ? " A própria resposta ao vivo da JoinAds ainda não trouxe receita para hoje."
+                : " Os dois relatórios já possuem dados; diferenças podem representar outras origens do domínio."}
+            </div>`
+          : null}
         <div className="metrics-grid">
+          ${isTodayOnly
+            ? html`<div className="metric-card">
+                <div className="metric-label">Receita total do domínio hoje</div>
+                <${MetricInfo} text="Valor provisório retornado ao vivo pelo endpoint /earnings para o domínio. Pode aparecer antes dos relatórios por UTM. Não é atribuído automaticamente ao Messenger e não entra no ROAS por campanha." />
+                <div className="metric-helper">/earnings · não atribuída às campanhas</div>
+                <div className="metric-value">${currencyUSD.format(todayDomainRevenueUsd)}</div>
+              </div>`
+            : null}
           <div className="metric-card">
             <div className="metric-label">Impressoes JoinAds</div>
             <${MetricInfo} text="Total de impressoes de anuncios JoinAds registradas com utm_medium=messenger no dominio e periodo. Inclui trafego atribuido, sem classificacao e organic_ do Evo." />
@@ -11868,6 +11898,7 @@ function App() {
           : html`
               <${MetricasMensagensView}
                 rows=${metaMessageFiltered}
+                earningsRows=${earnings}
                 joinadsDetailRows=${keyValueContent}
                 advertiserRows=${advertiserRows}
                 advertiserDiagnostics=${advertiserDiagnostics}
@@ -12073,6 +12104,7 @@ function App() {
         : activeTab === "metricas_mensagens"
         ? html`<${MetricasMensagensView}
             rows=${metaMessageFiltered}
+            earningsRows=${earnings}
             joinadsDetailRows=${keyValueContent}
             advertiserRows=${advertiserRows}
             advertiserDiagnostics=${advertiserDiagnostics}
