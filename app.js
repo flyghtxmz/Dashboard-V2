@@ -1082,12 +1082,16 @@ function MetricasMensagensView({
   const isTodayOnly =
     reportFilters.startDate === formatDate(new Date()) &&
     reportFilters.endDate === formatDate(new Date());
-  const todayDomainRevenueUsd = isTodayOnly
-    ? (Array.isArray(earningsRows) ? earningsRows : []).reduce(
-        (sum, row) => sum + toNumber(row.revenue_client ?? row.earnings_client ?? 0),
-        0
-      )
-    : 0;
+  const domainTotalsWithoutUtmFilter = (Array.isArray(earningsRows) ? earningsRows : []).reduce(
+    (acc, row) => {
+      acc.revenueUsd += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
+      acc.grossRevenueUsd += toNumber(row.revenue ?? row.earnings ?? 0);
+      acc.impressions += toNumber(row.impressions);
+      acc.clicks += toNumber(row.clicks);
+      return acc;
+    },
+    { revenueUsd: 0, grossRevenueUsd: 0, impressions: 0, clicks: 0 }
+  );
   const selectedLtvExtraDays = OPTIONAL_LTV_DAYS.filter((day) =>
     (Array.isArray(ltvExtraDays) ? ltvExtraDays : []).map(Number).includes(day)
   );
@@ -3151,26 +3155,30 @@ function MetricasMensagensView({
                 <code>src_</code> recebe gasto Meta e impostos; <code>organic_</code> permanece com custo zero.`}
         </p>
         ${isTodayOnly
-          ? html`<div className=${`alert ${todayDomainRevenueUsd > 0 && messengerMedium.revenue_usd <= 0 ? "warn" : "info"}`} style=${{ marginBottom: "14px" }}>
+          ? html`<div className=${`alert ${domainTotalsWithoutUtmFilter.revenueUsd > 0 && messengerMedium.revenue_usd <= 0 ? "warn" : "info"}`} style=${{ marginBottom: "14px" }}>
               <strong>Atualização de hoje:</strong>
-              <code>/earnings</code> retornou ${currencyUSD.format(todayDomainRevenueUsd)} de receita cliente total do domínio;
+              <code>/earnings</code> retornou ${currencyUSD.format(domainTotalsWithoutUtmFilter.revenueUsd)} de receita cliente total do domínio;
               a visão segmentada por <code>utm_medium=messenger</code> retornou ${currencyUSD.format(messengerMedium.revenue_usd || 0)}.
-              ${todayDomainRevenueUsd > 0 && messengerMedium.revenue_usd <= 0
+              ${domainTotalsWithoutUtmFilter.revenueUsd > 0 && messengerMedium.revenue_usd <= 0
                 ? " A JoinAds já publicou o total, mas ainda não publicou a segmentação UTM. O valor provisório não entra no ROAS das campanhas."
-                : todayDomainRevenueUsd <= 0
+                : domainTotalsWithoutUtmFilter.revenueUsd <= 0
                 ? " A própria resposta ao vivo da JoinAds ainda não trouxe receita para hoje."
                 : " Os dois relatórios já possuem dados; diferenças podem representar outras origens do domínio."}
             </div>`
           : null}
         <div className="metrics-grid">
-          ${isTodayOnly
-            ? html`<div className="metric-card">
-                <div className="metric-label">Receita total do domínio hoje</div>
-                <${MetricInfo} text="Valor provisório retornado ao vivo pelo endpoint /earnings para o domínio. Pode aparecer antes dos relatórios por UTM. Não é atribuído automaticamente ao Messenger e não entra no ROAS por campanha." />
-                <div className="metric-helper">/earnings · não atribuída às campanhas</div>
-                <div className="metric-value">${currencyUSD.format(todayDomainRevenueUsd)}</div>
-              </div>`
-            : null}
+          <div className="metric-card">
+            <div className="metric-label">Receita cliente do domínio (sem filtro UTM)</div>
+            <${MetricInfo} text="Total retornado pelo endpoint /earnings para o domínio e período selecionados, sem filtrar utm_source, utm_medium ou utm_campaign. Inclui acessos com UTM, sem UTM, Messenger, orgânico e outras origens. É uma visão econômica do domínio e não entra automaticamente no ROAS por campanha." />
+            <div className="metric-helper">${number.format(domainTotalsWithoutUtmFilter.impressions)} impressoes · ${number.format(domainTotalsWithoutUtmFilter.clicks)} cliques</div>
+            <div className="metric-value">${currencyUSD.format(domainTotalsWithoutUtmFilter.revenueUsd)}</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Receita bruta do domínio (sem filtro UTM)</div>
+            <${MetricInfo} text="Receita bruta total retornada em revenue/earnings pelo endpoint /earnings, antes do revshare da JoinAds, sem qualquer filtro UTM. É exibida apenas para auditoria e comparação; não entra no ROAS, lucro ou receita a receber." />
+            <div className="metric-helper">Antes do revshare · somente auditoria</div>
+            <div className="metric-value">${currencyUSD.format(domainTotalsWithoutUtmFilter.grossRevenueUsd)}</div>
+          </div>
           <div className="metric-card">
             <div className="metric-label">Impressoes JoinAds</div>
             <${MetricInfo} text="Total de impressoes de anuncios JoinAds registradas com utm_medium=messenger no dominio e periodo. Inclui trafego atribuido, sem classificacao e organic_ do Evo." />
