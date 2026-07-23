@@ -1071,6 +1071,7 @@ function MetricasMensagensView({
   onBidUpdate,
   bidLoading = {},
   bidFeedback = {},
+  bidHistoryRows = [],
   allowBidControl = false,
   showLtvTable = true,
   ltvExtraDays = [],
@@ -1548,6 +1549,63 @@ function MetricasMensagensView({
       ["media_spend_brl", "Gasto de midia Meta BRL"], ["meta_tax_brl", "Impostos Meta BRL"], ["spend_brl", "Custo Meta total BRL"],
       ["roas", "ROAS"], ["treatment", "Tratamento"],
     ].map(([key, label]) => ({ key, label }));
+    const formatHistoryDateTime = (value) => {
+      if (!value) return "";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return String(value);
+      return new Intl.DateTimeFormat("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(parsed);
+    };
+    const historyStrategyLabel = (value) => ({
+      LOWEST_COST_WITH_BID_CAP: "Limite de lance",
+      COST_CAP: "Limite de custo",
+      LOWEST_COST_WITHOUT_CAP: "Menor custo (sem limite)",
+    })[String(value || "").toUpperCase()] || value || "Nao informado";
+    const bidHistoryExport = (Array.isArray(bidHistoryRows) ? bidHistoryRows : [])
+      .slice()
+      .sort((a, b) => String(a.changed_at || "").localeCompare(String(b.changed_at || "")))
+      .map((row) => {
+        const previous = row.previous_amount_brl == null ? null : toNumber(row.previous_amount_brl);
+        const requested = row.requested_amount_brl == null ? null : toNumber(row.requested_amount_brl);
+        const confirmed = row.confirmed_amount_brl == null ? null : toNumber(row.confirmed_amount_brl);
+        return {
+          changed_at: formatHistoryDateTime(row.changed_at),
+          actor: row.actor_username || row.actor_id || "Usuario do Dashboard",
+          campaign_name: row.campaign_name || "-",
+          campaign_id: row.campaign_id || "",
+          adset_name: row.adset_name || "-",
+          adset_id: row.adset_id || "",
+          previous_strategy: historyStrategyLabel(row.previous_strategy),
+          requested_strategy: historyStrategyLabel(row.requested_strategy),
+          confirmed_strategy: historyStrategyLabel(row.confirmed_strategy),
+          previous_amount_brl: previous == null ? "Nao conhecido" : { value: previous, style: "Money" },
+          requested_amount_brl: requested == null ? "Sem valor" : { value: requested, style: "Money" },
+          confirmed_amount_brl: confirmed == null ? "Sem limite" : { value: confirmed, style: "Money" },
+          variation_brl: previous != null && confirmed != null ? { value: confirmed - previous, style: "Money" } : "",
+          meta_updated_time_before: formatHistoryDateTime(row.meta_updated_time_before),
+          meta_updated_time_after: formatHistoryDateTime(row.meta_updated_time_after),
+          status: row.status === "confirmed" ? "Confirmado na Meta" : row.status || "",
+          source: row.source === "dashboard" ? "Dashboard" : row.source || "",
+        };
+      });
+    const bidHistoryColumns = [
+      ["changed_at", "Alterado em (Sao Paulo)"], ["actor", "Responsavel"],
+      ["campaign_name", "Campanha"], ["campaign_id", "ID campanha"],
+      ["adset_name", "Conjunto"], ["adset_id", "ID conjunto"],
+      ["previous_strategy", "Estrategia anterior"], ["requested_strategy", "Estrategia solicitada"],
+      ["confirmed_strategy", "Estrategia confirmada"], ["previous_amount_brl", "Limite anterior BRL"],
+      ["requested_amount_brl", "Limite solicitado BRL"], ["confirmed_amount_brl", "Limite confirmado BRL"],
+      ["variation_brl", "Variacao BRL"], ["meta_updated_time_before", "Atualizacao Meta anterior"],
+      ["meta_updated_time_after", "Atualizacao Meta atual"], ["status", "Status"], ["source", "Origem"],
+    ].map(([key, label]) => ({ key, label }));
     const parameterColumns = [{ key: "parameter", label: "Parametro editavel" }, { key: "value", label: "Valor" }, { key: "note", label: "Como usar" }];
     const parameterRows = [
       { parameter: "Cambio BRL/USD", value: { value: toNumber(brlRate), style: "Input" }, note: "Altere esta celula; as formulas da aba Meta x JoinAds recalculam a receita em BRL." },
@@ -1564,12 +1622,14 @@ function MetricasMensagensView({
       { parameter: "Aliquota Meta (%)", value: toNumber(metaTaxSettings.metaTaxRatePercent), note: `Vigencia: ${metaTaxSettings.metaTaxEffectiveDate || "2026-01-01"}.` },
       { parameter: "Modo do spend Meta", value: metaTaxSettings.metaTaxMode === "included" ? "Imposto ja incluido" : "Somar imposto", note: "Evita duplicar tributos se o campo spend da API mudar." },
       { parameter: "Impressoes organicas JoinAds", value: organicExportRow?.impressions || 0, note: "Total de utm_medium=organic no dominio e periodo selecionados. Veja a aba Resumo por Origem." },
+      { parameter: "Alteracoes de limite registradas", value: bidHistoryExport.length, note: "Mudancas confirmadas pela Meta e gravadas pelo Dashboard no periodo. Consulte a aba Historico limite custo." },
     ];
     downloadExcelWorkbook(
       `metricas-mensagens_${reportFilters.domain || "dominio"}_${reportFilters.startDate || "inicio"}_${reportFilters.endDate || "fim"}.xls`,
       [
         { name: "Parametros", columns: parameterColumns, rows: parameterRows },
         { name: "Meta x JoinAds", columns: metaColumns, rows: crossing },
+        { name: "Historico limite custo", columns: bidHistoryColumns, rows: bidHistoryExport },
         { name: "JoinAds por src e bloco", columns: detailColumns, rows: detail },
         { name: "Resumo por Pais", columns: summaryColumns, rows: countrySummary },
         { name: "Resumo por Conta", columns: summaryColumns, rows: accountSummary },
@@ -8463,6 +8523,7 @@ function App() {
   const [budgetLoading, setBudgetLoading] = useState({});
   const [bidLoading, setBidLoading] = useState({});
   const [bidFeedback, setBidFeedback] = useState({});
+  const [bidHistoryRows, setBidHistoryRows] = useState([]);
   const [appliedFilters, setAppliedFilters] = useState(null);
   const [dupCampaigns, setDupCampaigns] = useState([]);
   const [dupLoading, setDupLoading] = useState(false);
@@ -8532,6 +8593,7 @@ function App() {
     setMetaSourceRows([]);
     setSuperTermRows([]);
     setJoinadsTermDailyRows([]);
+    setBidHistoryRows([]);
     setDupCampaigns([]);
     setDupError("");
     setDrafts([]);
@@ -9002,6 +9064,17 @@ function App() {
         pushLog("meta-edit-list-load", err);
         return { data: [] };
       });
+      const bidHistoryPromise = session?.role === "admin" || session?.role === "gestor"
+        ? fetchJson(`${API_BASE}/meta-bid-history?${new URLSearchParams({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            account_id: filters.metaAccountId.trim(),
+            _ts: String(Date.now()),
+          }).toString()}`, { force: true, cache: "no-store" }).catch((err) => {
+            pushLog("meta-bid-history-load", err);
+            return { data: [], available: false };
+          })
+        : Promise.resolve({ data: [], available: false });
 
       const [
         topRes,
@@ -9013,6 +9086,7 @@ function App() {
         metaSourceRes,
         metaMediumRes,
         joinadsUserRes,
+        bidHistoryRes,
       ] = await Promise.all([
         topPromise,
         earningsPromise,
@@ -9073,7 +9147,10 @@ function App() {
             group: ["domain", "custom_value"],
           }),
         }).catch((err) => { pushLog("joinads-utmuser", err); return { data: [] }; }),
+        bidHistoryPromise,
       ]);
+
+      setBidHistoryRows(Array.isArray(bidHistoryRes?.data) ? bidHistoryRes.data : []);
 
       const superTermRowsData = Array.isArray(superTermRes?.data) ? superTermRes.data : [];
       setJoinadsSuperFilterDiagnostics((prev) => ({
@@ -10498,6 +10575,32 @@ function App() {
       bidStrategy === BID_STRATEGY_WITH_BID ||
       bidStrategy === BID_STRATEGY_COST_CAP;
 
+    const syncBidHistory = async (response) => {
+      const history = response?.history;
+      if (history?.saved === false && history?.reason && history.reason !== "NO_CONFIRMED_CHANGE") {
+        pushLog("meta-bid-history", {
+          message: `A alteracao foi enviada a Meta, mas o historico nao foi gravado (${history.reason}).`,
+          data: history,
+        });
+      }
+      if (!history?.saved) return;
+      try {
+        const params = new URLSearchParams({
+          start_date: filters.startDate,
+          end_date: filters.endDate,
+          account_id: filters.metaAccountId.trim(),
+          _ts: String(Date.now()),
+        });
+        const refreshed = await fetchJson(`${API_BASE}/meta-bid-history?${params.toString()}`, {
+          force: true,
+          cache: "no-store",
+        });
+        setBidHistoryRows(Array.isArray(refreshed?.data) ? refreshed.data : []);
+      } catch (historyError) {
+        pushLog("meta-bid-history-refresh", historyError);
+      }
+    };
+
     const confirmLiveBid = async () => {
       let actual = null;
       let rawActual = null;
@@ -10615,6 +10718,7 @@ function App() {
                 data: adsetRes,
               };
             }
+            await syncBidHistory(adsetRes);
             adsetUpdated = adsetRes?.adset || null;
           } catch (err) {
             adsetStrategyError = err;
@@ -10634,6 +10738,7 @@ function App() {
                   data: adsetRes,
                 });
               } else {
+                await syncBidHistory(adsetRes);
                 adsetUpdated = adsetRes?.adset || null;
               }
             } catch (fallbackErr) {
@@ -10703,6 +10808,7 @@ function App() {
         method: "POST",
         body: JSON.stringify(payload),
       });
+      await syncBidHistory(res);
       const updated = res?.adset || null;
       if (updated) {
         setMetaRows((prev) =>
@@ -11938,6 +12044,7 @@ function App() {
                 unresolvedLeadIds=${messenleadUnresolvedLeadIds}
                 showLtvTable=${settingsData.showMessagesLtvTable !== false}
                 ltvExtraDays=${settingsData.messagesLtvExtraDays || []}
+                bidHistoryRows=${bidHistoryRows}
                 allowBidControl=${false}
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
@@ -12149,6 +12256,7 @@ function App() {
             onBidUpdate=${handleUpdateBid}
             bidLoading=${bidLoading}
             bidFeedback=${bidFeedback}
+            bidHistoryRows=${bidHistoryRows}
             allowBidControl=${session?.role === "admin"}
             attributionAudit=${messengerAttributionAudit}
             diagnostics=${{

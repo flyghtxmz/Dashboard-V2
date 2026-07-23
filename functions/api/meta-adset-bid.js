@@ -1,10 +1,34 @@
 ﻿import { jsonResponse, readJson, getMetaToken, safeJson } from "../_utils.js";
 
+import { getSession } from "../_auth.js";
+import { recordMetaBidHistory } from "../_meta-bid-history.js";
+
 const API_BASE = "https://graph.facebook.com/v24.0";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
+
+function bidAmountCents(adset) {
+  const strategy = String(adset?.bid_strategy || "").toUpperCase();
+  const constraints = adset?.bid_constraints || {};
+  if (strategy === BID_STRATEGY_COST_CAP) {
+    return constraints.cost_per_result_goal ?? constraints.cost_cap ?? adset?.bid_amount ?? null;
+  }
+  if (strategy === BID_STRATEGY_WITH_BID) {
+    return adset?.bid_amount ?? constraints.bid_cap ?? null;
+  }
+  return null;
+}
+
+async function fetchAdsetSnapshot(token, adsetId) {
+  const response = await fetch(
+    `${API_BASE}/${encodeURIComponent(adsetId)}?fields=id,name,account_id,campaign{id,name},bid_amount,bid_strategy,optimization_goal,bid_constraints,updated_time&access_token=${token}`,
+    { cache: "no-store" }
+  );
+  const data = await safeJson(response);
+  return response.ok ? data : null;
+}
 
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
@@ -72,6 +96,13 @@ export async function onRequest({ request, env }) {
   }
 
   try {
+    const session = await getSession(request, env);
+    let previousAdset = null;
+    try {
+      previousAdset = await fetchAdsetSnapshot(token, adset_id);
+    } catch (_) {
+      previousAdset = null;
+    }
     const amountCents = requiresAmount ? Math.round(bidNumber * 100) : null;
     const attempts = [];
     const base = {};
@@ -143,12 +174,7 @@ export async function onRequest({ request, env }) {
 
     let adset = null;
     try {
-      const checkRes = await fetch(
-        `${API_BASE}/${encodeURIComponent(
-          adset_id
-        )}?fields=bid_amount,bid_strategy,optimization_goal,bid_constraints&access_token=${token}`
-      );
-      adset = await safeJson(checkRes);
+      adset = await fetchAdsetSnapshot(token, adset_id);
     } catch (e) {
       adset = null;
     }
@@ -176,6 +202,41 @@ export async function onRequest({ request, env }) {
         ? `A Meta manteve a estrategia "${actualStrategy}" em vez de "${bidStrategy}". Normalmente a estrategia de lance e controlada na campanha (orcamento de campanha/CBO) ou a transicao nao e permitida neste nivel — nesse caso, altere a estrategia na campanha.`
         : undefined;
 
+    const previousAmountCents = bidAmountCents(previousAdset);
+    const confirmedAmountCents = bidAmountCents(adset);
+    const previousStrategy = String(previousAdset?.bid_strategy || "").toUpperCase() || null;
+    const confirmedStrategy = String(adset?.bid_strategy || "").toUpperCase() || null;
+    const stateChanged =
+      previousStrategy !== confirmedStrategy ||
+      Number(previousAmountCents ?? -1) !== Number(confirmedAmountCents ?? -1);
+    let history = { saved: false, reason: stateChanged ? "NOT_RECORDED" : "NO_CONFIRMED_CHANGE" };
+    if (stateChanged && adset) {
+      try {
+        history = await recordMetaBidHistory(env, {
+          actorId: session?.id || null,
+          actorUsername: session?.username || session?.email || null,
+          actorRole: session?.role || null,
+          accountId: adset.account_id || previousAdset?.account_id || null,
+          campaignId: adset.campaign?.id || previousAdset?.campaign?.id || null,
+          campaignName: adset.campaign?.name || previousAdset?.campaign?.name || null,
+          adsetId: adset_id,
+          adsetName: adset.name || previousAdset?.name || null,
+          previousStrategy,
+          requestedStrategy: updateStrategy ? bidStrategy : previousStrategy,
+          confirmedStrategy,
+          previousAmountBrl: previousAmountCents != null ? Number(previousAmountCents) / 100 : null,
+          requestedAmountBrl: bidNumber,
+          confirmedAmountBrl: confirmedAmountCents != null ? Number(confirmedAmountCents) / 100 : null,
+          amountOnly: !!amount_only,
+          metaUpdatedTimeBefore: previousAdset?.updated_time || null,
+          metaUpdatedTimeAfter: adset?.updated_time || null,
+          status: "confirmed",
+        });
+      } catch (historyError) {
+        history = { saved: false, reason: "HISTORY_WRITE_FAILED", error: historyError.message };
+      }
+    }
+
     return jsonResponse(200, {
       code: "success",
       ok: true,
@@ -187,6 +248,7 @@ export async function onRequest({ request, env }) {
       amount_applied: amountApplied,
       applied,
       warning: amountWarning || warning,
+      history,
     });
   } catch (error) {
     return jsonResponse(500, {

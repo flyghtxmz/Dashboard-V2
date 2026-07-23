@@ -19,6 +19,7 @@ const ADMIN_OR_GESTOR_PATHS = new Set([
   "/api/report-cache",
   "/api/meta-campaign-create",
   "/api/meta-insights",
+  "/api/meta-bid-history",
   "/api/meta-media",
   "/api/meta-pages",
   "/api/meta-pixels",
