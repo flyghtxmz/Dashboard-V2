@@ -1181,6 +1181,7 @@ function MetricasMensagensView({
         spend_brl: 0,
         media_spend_brl: 0,
         meta_tax_brl: 0,
+        active_cost_limit_brl: null,
         reach: 0,
         frequency_weighted: 0,
         frequency_weight: 0,
@@ -1194,6 +1195,19 @@ function MetricasMensagensView({
       item.spend_brl += toNumber(row.spend_value ?? row.spend);
       item.media_spend_brl += toNumber(row.spend_media_value ?? row.spend_value ?? row.spend);
       item.meta_tax_brl += toNumber(row.meta_tax_value);
+      const bidStrategy = String(row.adset_bid_strategy || "").toUpperCase();
+      const bidConstraints = row.adset_bid_constraints || {};
+      const rawBidCents = bidStrategy === BID_STRATEGY_COST_CAP
+        ? bidConstraints.cost_per_result_goal ?? bidConstraints.cost_cap ?? row.adset_bid_amount
+        : bidStrategy === BID_STRATEGY_WITH_BID
+        ? row.adset_bid_amount ?? bidConstraints.bid_cap
+        : null;
+      const rowLimitBrl = row.adset_bid_amount_brl != null
+        ? toNumber(row.adset_bid_amount_brl)
+        : rawBidCents != null
+        ? toNumber(rawBidCents) / 100
+        : null;
+      if (rowLimitBrl != null && rowLimitBrl > 0) item.active_cost_limit_brl = rowLimitBrl;
       if (row.period_reach != null) {
         item.reach = Math.max(item.reach, toNumber(row.period_reach));
         item.has_period_reach = true;
@@ -1261,6 +1275,16 @@ function MetricasMensagensView({
       const revenueBrl = toNumber(join.earnings_client_usd) * toNumber(brlRate);
       const roasValue = meta.spend_brl > 0 ? revenueBrl / meta.spend_brl : 0;
       const statusValue = roasValue >= 1.45 ? "Escalar" : roasValue >= 1 ? "Observar" : "Cortar";
+      const cpaValue = meta.conversations > 0 ? meta.spend_brl / meta.conversations : 0;
+      const activeLimit = meta.active_cost_limit_brl;
+      const cpaLimitDifference = activeLimit != null ? cpaValue - activeLimit : null;
+      const cpaLimitStatus = meta.conversations <= 0
+        ? "Sem CPA"
+        : activeLimit == null
+        ? "Sem limite"
+        : cpaLimitDifference <= 0
+        ? `Dentro - folga R$ ${Math.abs(cpaLimitDifference).toFixed(2)}`
+        : `Acima - R$ ${cpaLimitDifference.toFixed(2)}`;
       const dimensions = inferDimensions(meta.campaign_name);
       return {
         ...meta,
@@ -1276,14 +1300,16 @@ function MetricasMensagensView({
         revenue_client_usd: toNumber(join.earnings_client_usd),
         exchange_rate: { value: toNumber(brlRate), formula: "=Parametros!R2C2", style: "Input" },
         revenue_client_brl: { value: revenueBrl, formula: "=RC[-2]*RC[-1]", style: "Money" },
-        cpa_brl: { value: meta.conversations > 0 ? meta.spend_brl / meta.conversations : 0, formula: "=IF(RC[-7]>0,RC[-6]/RC[-7],0)", style: "Money" },
-        revenue_per_conversation_brl: { value: meta.conversations > 0 ? revenueBrl / meta.conversations : 0, formula: "=IF(RC[-8]>0,RC[-2]/RC[-8],0)", style: "Money" },
-        impressions_per_conversation: { value: meta.conversations > 0 ? toNumber(join.impressions) / meta.conversations : 0, formula: "=IF(RC[-9]>0,RC[-7]/RC[-9],0)" },
-        effective_ecpm_usd: { value: toNumber(join.impressions) > 0 ? toNumber(join.earnings_client_usd) / toNumber(join.impressions) * 1000 : 0, formula: "=IF(RC[-8]>0,RC[-6]/RC[-8]*1000,0)", style: "Usd" },
-        joinads_ctr_percent: { value: toNumber(join.impressions) > 0 ? toNumber(join.clicks) / toNumber(join.impressions) * 100 : 0, formula: "=IF(RC[-9]>0,RC[-8]/RC[-9]*100,0)" },
-        roas: { value: roasValue, formula: "=IF(RC[-11]>0,RC[-6]/RC[-11],0)", style: roasValue >= 1.45 ? "Green" : roasValue >= 1 ? "Yellow" : "Red" },
-        profit_brl: { value: revenueBrl - meta.spend_brl, formula: "=RC[-7]-RC[-12]", style: revenueBrl - meta.spend_brl >= 0 ? "Green" : "Red" },
-        margin_percent: { value: revenueBrl > 0 ? (revenueBrl - meta.spend_brl) / revenueBrl * 100 : 0, formula: "=IF(RC[-8]>0,RC[-1]/RC[-8]*100,0)" },
+        cpa_brl: { value: cpaValue, formula: "=IF(RC[-7]>0,RC[-6]/RC[-7],0)", style: "Money" },
+        active_cost_limit_brl: activeLimit == null ? "Sem limite" : { value: activeLimit, style: "Money" },
+        cpa_vs_limit: { value: cpaLimitStatus, formula: '=IF(RC[-9]<=0,"Sem CPA",IF(RC[-1]="Sem limite","Sem limite",IF(RC[-2]<=RC[-1],"Dentro - folga R$ "&TEXT(RC[-1]-RC[-2],"0.00"),"Acima - R$ "&TEXT(RC[-2]-RC[-1],"0.00"))))', style: meta.conversations <= 0 || activeLimit == null ? "Yellow" : cpaLimitDifference <= 0 ? "Green" : "Red" },
+        revenue_per_conversation_brl: { value: meta.conversations > 0 ? revenueBrl / meta.conversations : 0, formula: "=IF(RC[-10]>0,RC[-4]/RC[-10],0)", style: "Money" },
+        impressions_per_conversation: { value: meta.conversations > 0 ? toNumber(join.impressions) / meta.conversations : 0, formula: "=IF(RC[-11]>0,RC[-9]/RC[-11],0)" },
+        effective_ecpm_usd: { value: toNumber(join.impressions) > 0 ? toNumber(join.earnings_client_usd) / toNumber(join.impressions) * 1000 : 0, formula: "=IF(RC[-10]>0,RC[-8]/RC[-10]*1000,0)", style: "Usd" },
+        joinads_ctr_percent: { value: toNumber(join.impressions) > 0 ? toNumber(join.clicks) / toNumber(join.impressions) * 100 : 0, formula: "=IF(RC[-11]>0,RC[-10]/RC[-11]*100,0)" },
+        roas: { value: roasValue, formula: "=IF(RC[-13]>0,RC[-8]/RC[-13],0)", style: roasValue >= 1.45 ? "Green" : roasValue >= 1 ? "Yellow" : "Red" },
+        profit_brl: { value: revenueBrl - meta.spend_brl, formula: "=RC[-9]-RC[-14]", style: revenueBrl - meta.spend_brl >= 0 ? "Green" : "Red" },
+        margin_percent: { value: revenueBrl > 0 ? (revenueBrl - meta.spend_brl) / revenueBrl * 100 : 0, formula: "=IF(RC[-10]>0,RC[-1]/RC[-10]*100,0)" },
         status: { value: statusValue, formula: '=IF(RC[-3]>=Parametros!R3C2+0.2,"Escalar",IF(RC[-3]>=1,"Observar","Cortar"))', style: statusValue === "Escalar" ? "Green" : statusValue === "Observar" ? "Yellow" : "Red" },
         delivery_relevance: meta.spend_brl < 1 || meta.meta_impressions < 100 ? "Entrega residual/insuficiente" : "Entrega relevante",
       };
@@ -1511,6 +1537,7 @@ function MetricasMensagensView({
       ["conversations_reach_percent", "Conversas / alcance"], ["conversations", "Conversas iniciadas"], ["spend_brl", "Gasto Meta total BRL"],
       ["joinads_impressions", "Impressoes JoinAds"], ["joinads_clicks", "Cliques JoinAds"], ["revenue_client_usd", "Receita cliente USD"],
       ["exchange_rate", "Cambio BRL/USD"], ["revenue_client_brl", "Receita cliente BRL"], ["cpa_brl", "CPA BRL"],
+      ["active_cost_limit_brl", "Limite de custo ativo BRL"], ["cpa_vs_limit", "CPA vs limite"],
       ["revenue_per_conversation_brl", "Receita por conversa BRL"], ["impressions_per_conversation", "Impressoes por conversa"],
       ["effective_ecpm_usd", "eCPM efetivo USD"], ["joinads_ctr_percent", "CTR JoinAds (%)"], ["roas", "ROAS"],
       ["profit_brl", "Lucro operacional BRL"], ["margin_percent", "Margem (%)"], ["status", "Status"],
