@@ -66,14 +66,9 @@ async function deleteStored(storage, key) {
   else if (storage.kv) await storage.kv.delete(`joinads-daily:${key}`);
 }
 
-async function writeStored(storage, key, reportName, day, payload) {
-  const now = new Date().toISOString();
+function summarizePayload(payload) {
   const rows = Array.isArray(payload?.data) ? payload.data : [];
-  const envelope = {
-    schema: CACHE_SCHEMA,
-    reportName,
-    reportDate: day,
-    savedAt: now,
+  return {
     rowCount: rows.length,
     totals: rows.reduce((acc, row) => {
       acc.impressions += Number(row?.impressions ?? row?.AD_EXCHANGE_LINE_ITEM_LEVEL_IMPRESSIONS ?? 0) || 0;
@@ -81,6 +76,20 @@ async function writeStored(storage, key, reportName, day, payload) {
       acc.revenue += Number(row?.revenue_client ?? row?.earnings_client ?? row?.revenue ?? row?.earnings ?? row?.AD_EXCHANGE_LINE_ITEM_LEVEL_REVENUE ?? 0) || 0;
       return acc;
     }, { impressions: 0, clicks: 0, revenue: 0 }),
+  };
+}
+
+async function writeStored(storage, key, reportName, day, payload, { provisional = false } = {}) {
+  const now = new Date().toISOString();
+  const summary = summarizePayload(payload);
+  const envelope = {
+    schema: CACHE_SCHEMA,
+    reportName,
+    reportDate: day,
+    savedAt: now,
+    provisional,
+    rowCount: summary.rowCount,
+    totals: summary.totals,
     payload,
   };
   if (storage.db) {
@@ -112,6 +121,7 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
   const hits = [];
   const apiDays = [];
   const provisionalDays = [];
+  const fallbackDays = [];
   const dayAudit = [];
   const worker = async () => {
     while (cursor < days.length) {
@@ -121,9 +131,11 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
       const provisionalYesterday = day === yesterday && nowLocal.hour < finalHour;
       const finalizable = day < yesterday || (day === yesterday && nowLocal.hour >= finalHour);
       const key = await hashKey({ schema: CACHE_SCHEMA, reportName, day, identity });
-      let envelope = finalizable ? await readStored(storage, key) : null;
-      if (envelope && (envelope.schema !== CACHE_SCHEMA || envelope.reportName !== reportName || envelope.reportDate !== day || !envelope.payload)) {
+      let storedEnvelope = await readStored(storage, key);
+      let envelope = finalizable && storedEnvelope?.provisional !== true ? storedEnvelope : null;
+      if (storedEnvelope && (storedEnvelope.schema !== CACHE_SCHEMA || storedEnvelope.reportName !== reportName || storedEnvelope.reportDate !== day || !storedEnvelope.payload)) {
         await deleteStored(storage, key);
+        storedEnvelope = null;
         envelope = null;
       }
       let payload = envelope?.payload || null;
@@ -136,21 +148,44 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
           pending = Promise.resolve().then(() => fetchDay(day)).finally(() => inFlight.delete(key));
           inFlight.set(key, pending);
         }
-        payload = await pending;
+        let liveError = null;
+        try {
+          payload = await pending;
+        } catch (error) {
+          liveError = error;
+          payload = null;
+        }
         const valid = validatePayload
-          ? validatePayload(payload, day)
+          ? !!payload && validatePayload(payload, day)
           : !!payload && payload.code !== "error" && Array.isArray(payload.data);
-        if (!valid) {
+        const liveSummary = valid ? summarizePayload(payload) : null;
+        const storedRevenue = Number(storedEnvelope?.totals?.revenue || 0);
+        const suspiciousEmptyRevenue = valid && liveSummary.totals.revenue <= 0 && storedRevenue > 0;
+        const canUseSameDayFallback = !!storedEnvelope?.payload && (suspiciousEmptyRevenue || !valid);
+        if (canUseSameDayFallback) {
+          payload = storedEnvelope.payload;
+          fallbackDays.push(day);
+          provisionalDays.push(day);
+          dayAudit.push({
+            day,
+            origin: "database_same_day_fallback",
+            reason: liveError ? "api_error" : "api_zero_after_positive",
+            rowCount: storedEnvelope.rowCount,
+            totals: storedEnvelope.totals,
+            savedAt: storedEnvelope.savedAt,
+          });
+        } else if (!valid) {
           const error = new Error(`Resposta invalida da JoinAds para ${reportName} em ${day}`);
           error.code = "INVALID_JOINADS_PAYLOAD";
           error.payload = payload;
+          error.cause = liveError;
           throw error;
+        } else {
+          apiDays.push(day);
+          if (provisionalYesterday) provisionalDays.push(day);
+          await writeStored(storage, key, reportName, day, payload, { provisional: !finalizable });
+          dayAudit.push({ day, origin: "api", rowCount: liveSummary.rowCount, totals: liveSummary.totals, savedAt: new Date().toISOString() });
         }
-        apiDays.push(day);
-        if (provisionalYesterday) provisionalDays.push(day);
-        if (finalizable) await writeStored(storage, key, reportName, day, payload);
-        const rows = Array.isArray(payload?.data) ? payload.data : [];
-        dayAudit.push({ day, origin: "api", rowCount: rows.length, savedAt: new Date().toISOString() });
       }
       results[index] = payload;
       if (liveToday) provisionalDays.push(day);
@@ -163,6 +198,7 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
       reportName, startDate, endDate, finalHour, timeZone: TIME_ZONE,
       cacheSchema: CACHE_SCHEMA,
       cacheHitDays: hits.sort(), apiDays: apiDays.sort(),
+      sameDayFallbackDays: Array.from(new Set(fallbackDays)).sort(),
       provisionalDays: Array.from(new Set(provisionalDays)).sort(),
       dayAudit: dayAudit.sort((a, b) => a.day.localeCompare(b.day)),
     },

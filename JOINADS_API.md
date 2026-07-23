@@ -61,6 +61,7 @@ Usado somente para diagnóstico de anunciantes. A resposta possui `AD_EXCHANGE_L
 O cache diário do backend existe para evitar consultar novamente dias históricos consolidados.
 
 - O dia atual continua sendo consultado na JoinAds.
+- Se uma consulta ao vivo retornar vazia ou falhar depois de já existir um resultado positivo para o mesmo dia, o Dashboard preserva provisoriamente o último resultado válido daquele dia. Esse fallback nunca cruza datas e aparece nos diagnósticos.
 - O dia anterior é provisório até aproximadamente 10h no horário de São Paulo.
 - Depois da atualização posterior às 10h, o dia anterior pode ser consolidado no banco.
 - Dias históricos consolidados podem ser lidos do banco.

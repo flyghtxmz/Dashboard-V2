@@ -1092,6 +1092,10 @@ function MetricasMensagensView({
     },
     { revenueUsd: 0, grossRevenueUsd: 0, impressions: 0, clicks: 0 }
   );
+  const earningsCacheDiagnostics = diagnostics?.joinadsSuperFilterDiagnostics?.earnings?.cache || {};
+  const earningsUsedSameDayFallback = (earningsCacheDiagnostics.sameDayFallbackDays || []).includes(
+    reportFilters.endDate
+  );
   const selectedLtvExtraDays = OPTIONAL_LTV_DAYS.filter((day) =>
     (Array.isArray(ltvExtraDays) ? ltvExtraDays : []).map(Number).includes(day)
   );
@@ -3164,6 +3168,9 @@ function MetricasMensagensView({
                 : domainTotalsWithoutUtmFilter.revenueUsd <= 0
                 ? " A própria resposta ao vivo da JoinAds ainda não trouxe receita para hoje."
                 : " Os dois relatórios já possuem dados; diferenças podem representar outras origens do domínio."}
+              ${earningsUsedSameDayFallback
+                ? " A resposta ao vivo voltou vazia e o Dashboard preservou o último resultado positivo deste mesmo dia."
+                : ""}
             </div>`
           : null}
         <div className="metrics-grid">
@@ -3360,7 +3367,7 @@ function MetricasMensagensView({
           ? html`<div className="status error"><strong>Falha ao consultar a JoinAds:</strong> ${keyValueCountryDiagnostic.error}</div>`
           : html`<p className="muted small">Endpoint confirmou ${keyValueCountryDiagnostic.rows ?? blockDiagnosticRows.length} linhas. Campos encontrados no lote: ${(keyValueCountryDiagnostic.fields || []).join(", ") || "nenhum"}.</p>`}
         ${keyValueCountryDiagnostic.cache
-          ? html`<div className="status success"><strong>Origem por dia:</strong> banco: ${(keyValueCountryDiagnostic.cache.cacheHitDays || []).join(", ") || "nenhum"}; API JoinAds: ${(keyValueCountryDiagnostic.cache.apiDays || []).join(", ") || "nenhum"}; provisórios: ${(keyValueCountryDiagnostic.cache.provisionalDays || []).join(", ") || "nenhum"}.</div>`
+          ? html`<div className="status success"><strong>Origem por dia:</strong> banco definitivo: ${(keyValueCountryDiagnostic.cache.cacheHitDays || []).join(", ") || "nenhum"}; API JoinAds: ${(keyValueCountryDiagnostic.cache.apiDays || []).join(", ") || "nenhum"}; fallback do mesmo dia: ${(keyValueCountryDiagnostic.cache.sameDayFallbackDays || []).join(", ") || "nenhum"}; provisórios: ${(keyValueCountryDiagnostic.cache.provisionalDays || []).join(", ") || "nenhum"}.</div>`
           : null}
         <div className="table-wrapper scroll-x">
           <table>
@@ -9071,6 +9078,11 @@ function App() {
       const superTermRowsData = Array.isArray(superTermRes?.data) ? superTermRes.data : [];
       setJoinadsSuperFilterDiagnostics((prev) => ({
         ...(prev || {}),
+        earnings: {
+          endpoint: "https://office.joinads.me/api/clients-endpoints/earnings",
+          rows: Array.isArray(earningsRes?.data) ? earningsRes.data.length : 0,
+          cache: earningsRes?.cache || null,
+        },
         keyValueCountry: {
           endpoint: "https://office.joinads.me/api/clients-endpoints/key-value-country",
           reportType: "Analytical",
