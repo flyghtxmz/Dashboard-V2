@@ -1,0 +1,26 @@
+name: JoinAds Daily Finalize
+
+on:
+  schedule:
+    # 10:00 America/Sao_Paulo (UTC-3).
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Persist complete JoinAds data for yesterday
+        env:
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+          JOINADS_CRON_SECRET: ${{ secrets.JOINADS_CRON_SECRET }}
+          CPA_CRON_SECRET: ${{ secrets.CPA_CRON_SECRET }}
+        run: |
+          SECRET="${JOINADS_CRON_SECRET:-$CPA_CRON_SECRET}"
+          if [ -z "$DASHBOARD_URL" ] || [ -z "$SECRET" ]; then
+            echo "Missing DASHBOARD_URL and JOINADS_CRON_SECRET (or CPA_CRON_SECRET)."
+            exit 1
+          fi
+          curl --fail-with-body --retry 2 --retry-delay 30 -sS -X POST \
+            "$DASHBOARD_URL/api/joinads-finalize" \
+            -H "x-cron-secret: $SECRET"

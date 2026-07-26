@@ -108,6 +108,33 @@ export function hasJoinadsDailyStorage(env) {
   return !!(storage.db || storage.kv);
 }
 
+export async function refreshJoinadsDailyCache({ env, reportName, day, identity, fetchDay, validatePayload }) {
+  const storage = getStorage(env);
+  if (!storage.db && !storage.kv) throw new Error("JOINADS_DAILY_STORAGE_NOT_CONFIGURED");
+  if (storage.db) await ensureSchema(storage.db);
+  const key = await hashKey({ schema: CACHE_SCHEMA, reportName, day, identity });
+  const storedEnvelope = await readStored(storage, key);
+  const payload = await fetchDay(day);
+  const valid = validatePayload
+    ? !!payload && validatePayload(payload, day)
+    : !!payload && payload.code !== "error" && Array.isArray(payload.data);
+  if (!valid) {
+    const error = new Error(`Resposta invalida da JoinAds para ${reportName} em ${day}`);
+    error.code = "INVALID_JOINADS_PAYLOAD";
+    error.payload = payload;
+    throw error;
+  }
+  const nextSummary = summarizePayload(payload);
+  const storedRevenue = Number(storedEnvelope?.totals?.revenue || 0);
+  if (storedRevenue > 0 && nextSummary.totals.revenue <= 0) {
+    const error = new Error(`JoinAds retornou receita zero para ${reportName} em ${day}; cache positivo preservado`);
+    error.code = "SUSPICIOUS_ZERO_AFTER_POSITIVE";
+    throw error;
+  }
+  await writeStored(storage, key, reportName, day, payload, { provisional: false });
+  return { reportName, day, ...nextSummary, finalized: true };
+}
+
 export async function fetchJoinadsDailyCached({ env, reportName, startDate, endDate, identity, fetchDay, validatePayload }) {
   const storage = getStorage(env);
   if (!storage.db && !storage.kv) throw new Error("JOINADS_DAILY_STORAGE_NOT_CONFIGURED");
