@@ -160,15 +160,12 @@ const fetchJsonForFx = async (url, signal) => {
 };
 
 const fetchFrankfurterFx = async (requestedDate, today, signal) => {
-  const url =
-    requestedDate === today
-      ? "https://api.frankfurter.dev/v2/rates?base=USD&quotes=BRL"
-      : `https://api.frankfurter.dev/v2/rates?base=USD&quotes=BRL&date=${encodeURIComponent(
-          requestedDate
-        )}`;
+  const url = `https://api.frankfurter.dev/v2/rate/USD/BRL${
+    requestedDate === today ? "" : `?date=${encodeURIComponent(requestedDate)}`
+  }`;
   const data = await fetchJsonForFx(url, signal);
   return {
-    rate: parseFxRate(data?.rates?.BRL),
+    rate: parseFxRate(data?.rate),
     requestedDate,
     effectiveDate: data?.date || requestedDate,
     source: "frankfurter",
@@ -8538,7 +8535,9 @@ function App() {
   const [metaRows, setMetaRows] = useState([]);
   const [metaLtvRows, setMetaLtvRows] = useState([]);
   const [metaDiagnostics, setMetaDiagnostics] = useState({});
-  const [fxInfo, setFxInfo] = useState(() => readCachedFxInfo(formatDate(new Date())));
+  const [fxInfo, setFxInfo] = useState(() =>
+    readCachedFxInfo(formatDate(new Date())) || readCachedFxInfo("")
+  );
   const [fxStatus, setFxStatus] = useState("idle");
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard | urls
   const [paramPairs, setParamPairs] = useState([]);
@@ -11876,13 +11875,12 @@ function App() {
 
   useEffect(() => {
     const requestedDate = fxTargetDate || formatDate(new Date());
-    const cached = readCachedFxInfo(requestedDate);
-    if (cached?.rate) {
-      setFxInfo(cached);
-    } else {
-      // Nao recalcula um periodo com a cotacao em cache de outra data.
-      setFxInfo(null);
-    }
+    const exactCached = readCachedFxInfo(requestedDate);
+    // Nunca zera receita/ROAS enquanto a cotacao da data escolhida esta carregando. Se ainda
+    // nao houver a referencia exata, preserva a ultima cotacao valida por ate 3 dias e a marca
+    // como provisoria. A resposta historica correta a substitui assim que chegar.
+    const fallbackCached = exactCached || readCachedFxInfo("");
+    if (fallbackCached?.rate) setFxInfo(fallbackCached);
     setFxStatus("loading");
 
     const controller = new AbortController();
@@ -11898,7 +11896,7 @@ function App() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setFxStatus(cached?.rate ? "stale" : "unavailable");
+        setFxStatus(fallbackCached?.rate ? "stale" : "unavailable");
         pushLog("dollar", {
           message:
             err?.name === "AbortError"
