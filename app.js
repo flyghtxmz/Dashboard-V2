@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 135;
+const APP_VERSION_BUILD = 136;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1990,6 +1990,7 @@ function MetricasMensagensView({
       return;
     }
     if (!campaignRows.length || typeof localStorage === "undefined") return;
+    let cancelled = false;
     const currentSnapshot = {
       savedAt: new Date().toISOString(),
       finalized: reportFilters.startDate === reportFilters.endDate
@@ -2052,6 +2053,25 @@ function MetricasMensagensView({
         }));
       }
       setPreviousRefreshMetrics(previous?.campaigns ? previous : null);
+      fetchJson(`${API_BASE}/message-refresh-snapshot`, {
+        method: "POST",
+        body: JSON.stringify({
+          domain: reportFilters.domain,
+          account_id: reportFilters.metaAccountId,
+          start_date: reportFilters.startDate,
+          end_date: reportFilters.endDate,
+          refresh_id: refreshToken,
+          variant: refreshComparisonKey,
+          snapshot: currentSnapshot,
+          previous_snapshot: previous?.campaigns ? previous : null,
+        }),
+      }).then((response) => {
+        if (!cancelled && response?.previous?.campaigns) {
+          setPreviousRefreshMetrics(response.previous);
+        }
+      }).catch(() => {
+        // Sem banco, a comparacao local continua funcionando normalmente.
+      });
       const prefix = "__messages_refresh_metrics_v3__:";
       const storedScopes = [];
       for (let index = 0; index < localStorage.length; index += 1) {
@@ -2070,6 +2090,7 @@ function MetricasMensagensView({
     }
     // Cada token representa uma carga completa concluida. Nao depende de novas chamadas de API.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; };
   }, [refreshToken, refreshComparisonKey, legacyRefreshComparisonKey]);
   const explicitComparisonDate = reportFilters.compareDate || "";
   const comparisonMetrics = explicitComparisonDate ? dateComparisonSnapshot : previousRefreshMetrics;
