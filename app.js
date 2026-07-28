@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 134;
+const APP_VERSION_BUILD = 135;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -368,6 +368,17 @@ function messageMetricsStorageKey({
     normalizeKey(adsetFilter || "sem-filtro"),
     taxSignature || "imposto-padrao",
     hiddenSignature || "nenhuma-oculta",
+  ].join(":");
+}
+
+function legacyMessageMetricsStorageKey({ domain, startDate, endDate, metaAccountId, pageId }) {
+  return [
+    "__messages_refresh_metrics_v1__",
+    domain || "sem-dominio",
+    startDate || "sem-inicio",
+    endDate || "sem-fim",
+    metaAccountId || "sem-conta",
+    pageId || "todas-paginas",
   ].join(":");
 }
 
@@ -1966,6 +1977,13 @@ function MetricasMensagensView({
     ].join("-"),
     hiddenSignature: hiddenCampaignSignature,
   });
+  const legacyRefreshComparisonKey = legacyMessageMetricsStorageKey({
+    domain: reportFilters.domain,
+    startDate: reportFilters.startDate,
+    endDate: reportFilters.endDate,
+    metaAccountId: reportFilters.metaAccountId,
+    pageId: reportFilters.pageId,
+  });
   useEffect(() => {
     if (!refreshToken) {
       setPreviousRefreshMetrics(null);
@@ -2000,9 +2018,40 @@ function MetricasMensagensView({
     };
     try {
       const raw = localStorage.getItem(refreshComparisonKey);
-      const previous = raw ? JSON.parse(raw) : null;
+      const stored = raw ? JSON.parse(raw) : null;
+      const storedCurrent = stored?.current?.campaigns
+        ? stored.current
+        : stored?.campaigns
+        ? stored
+        : null;
+      const sameCompletedRefresh = stored?.lastRefreshToken === refreshToken;
+      let previous = sameCompletedRefresh && stored?.previous?.campaigns
+        ? stored.previous
+        : sameCompletedRefresh
+        ? null
+        : storedCurrent;
+      if (!sameCompletedRefresh) {
+        const storedSavedAt = Date.parse(storedCurrent?.savedAt || "");
+        const refreshSavedAt = Date.parse(refreshToken || "");
+        const storedLooksLikeThisRefresh = Number.isFinite(storedSavedAt)
+          && Number.isFinite(refreshSavedAt)
+          && Math.abs(storedSavedAt - refreshSavedAt) < 15000;
+        if (!storedCurrent || storedLooksLikeThisRefresh) {
+          try {
+            const legacy = JSON.parse(localStorage.getItem(legacyRefreshComparisonKey) || "null");
+            if (legacy?.campaigns) previous = legacy;
+          } catch (_) {
+            // Snapshot legado invalido nao impede a comparacao atual.
+          }
+        }
+        localStorage.setItem(refreshComparisonKey, JSON.stringify({
+          schema: 4,
+          lastRefreshToken: refreshToken,
+          current: currentSnapshot,
+          previous: previous?.campaigns ? previous : null,
+        }));
+      }
       setPreviousRefreshMetrics(previous?.campaigns ? previous : null);
-      localStorage.setItem(refreshComparisonKey, JSON.stringify(currentSnapshot));
       const prefix = "__messages_refresh_metrics_v3__:";
       const storedScopes = [];
       for (let index = 0; index < localStorage.length; index += 1) {
@@ -2010,7 +2059,7 @@ function MetricasMensagensView({
         if (!key?.startsWith(prefix)) continue;
         try {
           const value = JSON.parse(localStorage.getItem(key) || "{}");
-          storedScopes.push({ key, savedAt: Date.parse(value.savedAt || "") || 0 });
+          storedScopes.push({ key, savedAt: Date.parse(value.current?.savedAt || value.savedAt || "") || 0 });
         } catch (_) {
           storedScopes.push({ key, savedAt: 0 });
         }
@@ -2021,7 +2070,7 @@ function MetricasMensagensView({
     }
     // Cada token representa uma carga completa concluida. Nao depende de novas chamadas de API.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshToken, refreshComparisonKey]);
+  }, [refreshToken, refreshComparisonKey, legacyRefreshComparisonKey]);
   const explicitComparisonDate = reportFilters.compareDate || "";
   const comparisonMetrics = explicitComparisonDate ? dateComparisonSnapshot : previousRefreshMetrics;
   const explicitComparisonLabel = explicitComparisonDate
@@ -9005,7 +9054,10 @@ function App() {
     if (finalized && typeof localStorage !== "undefined") {
       try {
         const stored = JSON.parse(localStorage.getItem(storageKey) || "null");
-        if (stored?.finalized === true && stored?.campaigns && stored?.totals) return stored;
+        const storedSnapshot = stored?.current?.campaigns ? stored.current : stored;
+        if (storedSnapshot?.finalized === true && storedSnapshot?.campaigns && storedSnapshot?.totals) {
+          return storedSnapshot;
+        }
       } catch (_) {
         // Um snapshot local invalido e ignorado; a fonte oficial sera consultada abaixo.
       }
