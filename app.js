@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 133;
+const APP_VERSION_BUILD = 134;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -342,6 +342,50 @@ function addIsoDays(dateString, days) {
   if (!date) return "";
   date.setUTCDate(date.getUTCDate() + Number(days || 0));
   return date.toISOString().slice(0, 10);
+}
+
+function messageMetricsStorageKey({
+  domain,
+  startDate,
+  endDate,
+  metaAccountId,
+  pageId,
+  adsetFilter,
+  taxSignature,
+  hiddenSignature,
+}) {
+  const scope = typeof window !== "undefined"
+    ? window.__cd_session_scope__ || "anon"
+    : "anon";
+  return [
+    "__messages_refresh_metrics_v3__",
+    scope,
+    domain || "sem-dominio",
+    startDate || "sem-inicio",
+    endDate || "sem-fim",
+    metaAccountId || "sem-conta",
+    pageId || "todas-paginas",
+    normalizeKey(adsetFilter || "sem-filtro"),
+    taxSignature || "imposto-padrao",
+    hiddenSignature || "nenhuma-oculta",
+  ].join(":");
+}
+
+function isJoinadsDateFinalized(dateString, finalHour = 10) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateString || ""))) return false;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date()).filter((part) => part.type !== "literal").map((part) => [part.type, part.value])
+  );
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const yesterday = addIsoDays(today, -1);
+  return dateString < yesterday || (dateString === yesterday && Number(parts.hour || 0) >= finalHour);
 }
 
 function toNumber(value) {
@@ -1044,6 +1088,7 @@ function buildMessengerAttributionAudit({
 }
 
 function RefreshDelta({ current, previous, format = "number" }) {
+  if (current === null || current === undefined || previous === null || previous === undefined) return null;
   const currentNumber = Number(current);
   const previousNumber = Number(previous);
   if (!Number.isFinite(currentNumber) || !Number.isFinite(previousNumber)) return null;
@@ -1097,6 +1142,9 @@ function MetricasMensagensView({
   attributionAudit = null,
   pageScoped = false,
   refreshToken = "",
+  dateComparisonSnapshot = null,
+  dateComparisonError = "",
+  hiddenCampaignSignature = "",
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -1903,14 +1951,21 @@ function MetricasMensagensView({
     totalsRow.revenue_brl > 0 ? (totalsRow.profit_brl / totalsRow.revenue_brl) * 100 : null;
   totalsRow.ctr_meta =
     totalsRow.meta_impressions > 0 ? (totalsRow.meta_clicks / totalsRow.meta_impressions) * 100 : null;
-  const refreshComparisonKey = [
-    "__messages_refresh_metrics_v1__",
-    reportFilters.domain || "sem-dominio",
-    reportFilters.startDate || "sem-inicio",
-    reportFilters.endDate || "sem-fim",
-    reportFilters.metaAccountId || "sem-conta",
-    reportFilters.pageId || "todas-paginas",
-  ].join(":");
+  const refreshComparisonKey = messageMetricsStorageKey({
+    domain: reportFilters.domain,
+    startDate: reportFilters.startDate,
+    endDate: reportFilters.endDate,
+    metaAccountId: reportFilters.metaAccountId,
+    pageId: reportFilters.pageId,
+    adsetFilter: reportFilters.adsetFilter,
+    taxSignature: [
+      metaTaxSettings?.metaTaxEnabled !== false ? "on" : "off",
+      metaTaxSettings?.metaTaxRatePercent ?? 12.15,
+      metaTaxSettings?.metaTaxEffectiveDate || "2026-01-01",
+      metaTaxSettings?.metaTaxMode || "add",
+    ].join("-"),
+    hiddenSignature: hiddenCampaignSignature,
+  });
   useEffect(() => {
     if (!refreshToken) {
       setPreviousRefreshMetrics(null);
@@ -1919,6 +1974,9 @@ function MetricasMensagensView({
     if (!campaignRows.length || typeof localStorage === "undefined") return;
     const currentSnapshot = {
       savedAt: new Date().toISOString(),
+      finalized: reportFilters.startDate === reportFilters.endDate
+        ? isJoinadsDateFinalized(reportFilters.endDate)
+        : false,
       totals: {
         meta_impressions: totalsRow.meta_impressions || 0,
         conversations: totalsRow.conversations || 0,
@@ -1945,7 +2003,7 @@ function MetricasMensagensView({
       const previous = raw ? JSON.parse(raw) : null;
       setPreviousRefreshMetrics(previous?.campaigns ? previous : null);
       localStorage.setItem(refreshComparisonKey, JSON.stringify(currentSnapshot));
-      const prefix = "__messages_refresh_metrics_v1__:";
+      const prefix = "__messages_refresh_metrics_v3__:";
       const storedScopes = [];
       for (let index = 0; index < localStorage.length; index += 1) {
         const key = localStorage.key(index);
@@ -1964,7 +2022,12 @@ function MetricasMensagensView({
     // Cada token representa uma carga completa concluida. Nao depende de novas chamadas de API.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshToken, refreshComparisonKey]);
-  const previousTotals = previousRefreshMetrics?.totals || null;
+  const explicitComparisonDate = reportFilters.compareDate || "";
+  const comparisonMetrics = explicitComparisonDate ? dateComparisonSnapshot : previousRefreshMetrics;
+  const explicitComparisonLabel = explicitComparisonDate
+    ? explicitComparisonDate.split("-").reverse().join("/")
+    : "";
+  const previousTotals = comparisonMetrics?.totals || null;
   const previousTotalsRevenueBrl = previousTotals
     ? toNumber(previousTotals.revenue_usd) * toNumber(brlRate)
     : null;
@@ -2758,8 +2821,13 @@ function MetricasMensagensView({
           </div>
           <div className="inline-actions">
             <span className="chip neutral">${campaignRows.length} campanhas de mensagem</span>
-            ${previousRefreshMetrics?.campaigns
+            ${explicitComparisonDate && comparisonMetrics?.campaigns
+              ? html`<span className="chip neutral" title=${`Setas comparam os dados atuais com o dia ${explicitComparisonLabel}`}>Comparando com ${explicitComparisonLabel}</span>`
+              : !explicitComparisonDate && previousRefreshMetrics?.campaigns
               ? html`<span className="chip neutral" title="Setas comparam esta carga com a atualizacao completa anterior do mesmo filtro">Comparando com atualizacao anterior</span>`
+              : null}
+            ${explicitComparisonDate && dateComparisonError
+              ? html`<span className="chip danger" title=${dateComparisonError}>Comparacao indisponivel</span>`
               : null}
             <button
               className="primary"
@@ -2824,9 +2892,19 @@ function MetricasMensagensView({
               ${campaignRows.length === 0
                 ? html`<tr><td colSpan=${showUserCommission ? 11 : allowBidControl ? 24 : 20} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
                 : campaignRows.map((row) => {
-                  const previousRow = previousRefreshMetrics?.campaigns?.[
+                  const previousRow = comparisonMetrics?.campaigns?.[
                     String(row.campaign_id || row.campaign_name)
-                  ] || null;
+                  ] || (explicitComparisonDate && comparisonMetrics
+                    ? {
+                        meta_impressions: 0,
+                        conversations: 0,
+                        joinads_impressions: 0,
+                        joinads_clicks: 0,
+                        spend_brl: 0,
+                        revenue_usd: 0,
+                        ecpm: null,
+                      }
+                    : null);
                   const previousRevenueBrl = previousRow
                     ? toNumber(previousRow.revenue_usd) * toNumber(brlRate)
                     : null;
@@ -3798,6 +3876,16 @@ function Filters({
           />
         </label>
         <label className="field">
+          <span>Comparar com</span>
+          <input
+            type="date"
+            value=${filters.compareDate || ""}
+            max=${formatDate(new Date())}
+            onChange=${(e) => setFilters((prev) => ({ ...prev, compareDate: e.target.value }))}
+          />
+          <span className="muted small">Opcional. Vazio compara com a ultima atualizacao.</span>
+        </label>
+        <label className="field">
           <span>Dominio *</span>
           ${domains && domains.length > 0
             ? html`
@@ -3870,6 +3958,9 @@ function Filters({
         <button className="ghost" onClick=${() => setPreset("last15")} disabled=${loading}>
           Últimos 15 dias
         </button>
+        ${filters.compareDate
+          ? html`<button className="ghost" onClick=${() => setFilters((prev) => ({ ...prev, compareDate: "" }))} disabled=${loading}>Limpar comparação</button>`
+          : null}
       </div>
     </section>
   `;
@@ -8547,6 +8638,7 @@ function EditorPlaceholderView({ session, onLogout }) {
 function App() {
   const [filters, setFilters] = useState({
     ...defaultDates(),
+    compareDate: "",
     domain: "",
     reportType: "Analytical",
     metaAccountId: "act_728792692620145",
@@ -8575,6 +8667,8 @@ function App() {
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [snapshotEligible, setSnapshotEligible] = useState(false);
+  const [dateComparisonSnapshot, setDateComparisonSnapshot] = useState(null);
+  const [dateComparisonError, setDateComparisonError] = useState("");
   const [loadHealth, setLoadHealth] = useState({});
   const restoredSnapshotRef = useRef(false);
   const [domains, setDomains] = useState([]);
@@ -8657,6 +8751,8 @@ function App() {
     setError("");
     setLastRefreshed(null);
     setSnapshotEligible(false);
+    setDateComparisonSnapshot(null);
+    setDateComparisonError("");
     setLoadHealth({});
     setDomains([]);
     setLogs([]);
@@ -8889,6 +8985,178 @@ function App() {
     setLogs((prev) => [entry, ...prev].slice(0, 50));
   };
 
+  const loadMessageDateComparison = async (date, selectedFilters) => {
+    const storageKey = messageMetricsStorageKey({
+      domain: selectedFilters.domain,
+      startDate: date,
+      endDate: date,
+      metaAccountId: selectedFilters.metaAccountId,
+      pageId: selectedFilters.pageId,
+      adsetFilter: selectedFilters.adsetFilter,
+      taxSignature: [
+        settingsData.metaTaxEnabled !== false ? "on" : "off",
+        settingsData.metaTaxRatePercent ?? 12.15,
+        settingsData.metaTaxEffectiveDate || "2026-01-01",
+        settingsData.metaTaxMode || "add",
+      ].join("-"),
+      hiddenSignature: Array.from(hiddenCampaigns).sort().join(","),
+    });
+    const finalized = isJoinadsDateFinalized(date);
+    if (finalized && typeof localStorage !== "undefined") {
+      try {
+        const stored = JSON.parse(localStorage.getItem(storageKey) || "null");
+        if (stored?.finalized === true && stored?.campaigns && stored?.totals) return stored;
+      } catch (_) {
+        // Um snapshot local invalido e ignorado; a fonte oficial sera consultada abaixo.
+      }
+    }
+
+    const domain = selectedFilters.domain.trim();
+    const superPayload = (customKey) => ({
+      start_date: date,
+      end_date: date,
+      "domain[]": [domain],
+      custom_key: customKey,
+      group: ["domain", "custom_value"],
+    });
+    const metaParams = new URLSearchParams({
+      account_id: selectedFilters.metaAccountId.trim(),
+      start_date: date,
+      end_date: date,
+      include_assets: "0",
+      summary_only: selectedFilters.pageId ? "0" : "1",
+      schema: "message-date-comparison-v1",
+    });
+    if (date === formatDate(new Date())) metaParams.set("_ts", String(Date.now()));
+
+    const [metaResponse, contentResponse, campaignResponse] = await Promise.all([
+      fetchJson(`${API_BASE}/meta-insights?${metaParams.toString()}`, { force: true }),
+      fetchJson(`${API_BASE}/super-filter`, {
+        method: "POST",
+        body: JSON.stringify(superPayload("utm_content")),
+      }),
+      fetchJson(`${API_BASE}/super-filter`, {
+        method: "POST",
+        body: JSON.stringify(superPayload("utm_campaign")),
+      }),
+    ]);
+
+    const metaComparisonRows = Array.isArray(metaResponse?.data) ? metaResponse.data : [];
+    const contentComparisonRows = Array.isArray(contentResponse?.data) ? contentResponse.data : [];
+    const campaignComparisonRows = Array.isArray(campaignResponse?.data) ? campaignResponse.data : [];
+    const sourceKeys = Array.from(new Set(
+      campaignComparisonRows
+        .map((row) => normalizeKey(row.custom_value ?? row.custon_value))
+        .filter((value) => value.startsWith("src_"))
+    ));
+    const resolvedSources = sourceKeys.length
+      ? await fetchJson(`${API_BASE}/messenlead-resolve`, {
+          method: "POST",
+          body: JSON.stringify({ sourceKeys }),
+        })
+      : { sources: [] };
+    const sourceToAdId = new Map(
+      (Array.isArray(resolvedSources?.sources) ? resolvedSources.sources : [])
+        .filter((item) => item?.sourceKey && item?.adId)
+        .map((item) => [normalizeKey(item.sourceKey), normalizeKey(item.adId)])
+    );
+    const metaAdIds = new Set(
+      metaComparisonRows.map((row) => normalizeKey(row.ad_id)).filter(Boolean)
+    );
+    const addJoinadsRow = (map, adId, row) => {
+      const key = normalizeKey(adId);
+      if (!key || !metaAdIds.has(key)) return;
+      const entry = map.get(key) || { impressions: 0, clicks: 0, revenue_usd: 0 };
+      entry.impressions += toNumber(row.impressions);
+      entry.clicks += toNumber(row.clicks);
+      entry.revenue_usd += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
+      map.set(key, entry);
+    };
+    const contentByAdId = new Map();
+    contentComparisonRows.forEach((row) => {
+      const adId = normalizeKey(row.custom_value ?? row.custon_value);
+      addJoinadsRow(contentByAdId, adId, row);
+    });
+    const sourceByAdId = new Map();
+    campaignComparisonRows.forEach((row) => {
+      const sourceKey = normalizeKey(row.custom_value ?? row.custon_value);
+      const adId = sourceToAdId.get(sourceKey);
+      if (adId) addJoinadsRow(sourceByAdId, adId, row);
+    });
+    // src_ persistido tem precedencia sobre utm_content, igual a tabela principal.
+    const joinadsByAdId = new Map([...contentByAdId, ...sourceByAdId]);
+    const campaignMap = new Map();
+    metaComparisonRows
+      .filter((row) => isMessageMetricsRow(row))
+      .filter((row) => !hiddenCampaigns.has(row.campaign_id))
+      .filter((row) => !isGestorSession(session) || rowMatchesDashboardUser(row, session?.username))
+      .filter((row) => !selectedFilters.pageId || String(row.page_id || "") === String(selectedFilters.pageId))
+      .filter((row) => {
+        const term = String(selectedFilters.adsetFilter || "").trim().toLocaleLowerCase("pt-BR");
+        return !term || [row.campaign_name, row.adset_name, row.ad_name]
+          .join(" ")
+          .toLocaleLowerCase("pt-BR")
+          .includes(term);
+      })
+      .forEach((row) => {
+        const campaignKey = String(row.campaign_id || row.campaign_name || "Sem campanha");
+        const item = campaignMap.get(campaignKey) || {
+          meta_impressions: 0,
+          meta_clicks: 0,
+          conversations: 0,
+          joinads_impressions: 0,
+          joinads_clicks: 0,
+          spend_brl: 0,
+          revenue_usd: 0,
+          countedJoinadsAds: new Set(),
+        };
+        const charge = calculateMetaCharge(row.spend, row.date_start || date, settingsData);
+        item.meta_impressions += toNumber(row.impressions);
+        item.meta_clicks += toNumber(row.clicks);
+        item.conversations += getMessagingConversationStarts(row);
+        item.spend_brl += charge.total;
+        const adId = normalizeKey(row.ad_id);
+        if (adId && !item.countedJoinadsAds.has(adId)) {
+          const joinads = joinadsByAdId.get(adId);
+          if (joinads) {
+            item.joinads_impressions += joinads.impressions;
+            item.joinads_clicks += joinads.clicks;
+            item.revenue_usd += joinads.revenue_usd;
+          }
+          item.countedJoinadsAds.add(adId);
+        }
+        campaignMap.set(campaignKey, item);
+      });
+
+    const campaigns = Object.fromEntries(Array.from(campaignMap.entries()).map(([key, item]) => [key, {
+      meta_impressions: item.meta_impressions,
+      meta_clicks: item.meta_clicks,
+      conversations: item.conversations,
+      joinads_impressions: item.joinads_impressions,
+      joinads_clicks: item.joinads_clicks,
+      spend_brl: item.spend_brl,
+      revenue_usd: item.revenue_usd,
+      ecpm: item.joinads_impressions > 0 ? (item.revenue_usd / item.joinads_impressions) * 1000 : null,
+    }]));
+    const totals = Object.values(campaigns).reduce((acc, row) => {
+      acc.meta_impressions += row.meta_impressions;
+      acc.conversations += row.conversations;
+      acc.joinads_impressions += row.joinads_impressions;
+      acc.joinads_clicks += row.joinads_clicks;
+      acc.spend_brl += row.spend_brl;
+      acc.revenue_usd += row.revenue_usd;
+      return acc;
+    }, { meta_impressions: 0, conversations: 0, joinads_impressions: 0, joinads_clicks: 0, spend_brl: 0, revenue_usd: 0 });
+    totals.ecpm = totals.joinads_impressions > 0
+      ? (totals.revenue_usd / totals.joinads_impressions) * 1000
+      : null;
+    const snapshot = { savedAt: new Date().toISOString(), finalized, comparisonDate: date, totals, campaigns };
+    if (finalized && typeof localStorage !== "undefined") {
+      try { localStorage.setItem(storageKey, JSON.stringify(snapshot)); } catch (_) { /* armazenamento opcional */ }
+    }
+    return snapshot;
+  };
+
   const applyDashboardDataSnapshot = (snapshot) => {
     const d = snapshot?.data || snapshot || {};
     const arr = (value) => (Array.isArray(value) ? value : []);
@@ -8959,9 +9227,16 @@ function App() {
     setLoading(true);
     setError("");
     setSnapshotEligible(false);
+    setDateComparisonSnapshot(null);
+    setDateComparisonError("");
     const criticalFailures = [];
     const loadStartedAt = new Date().toISOString();
     let loadedMetaRowsCount = 0;
+    const comparisonPromise = filters.compareDate
+      ? loadMessageDateComparison(filters.compareDate, { ...filters })
+          .then((snapshot) => ({ snapshot, error: "" }))
+          .catch((err) => ({ snapshot: null, error: formatError(err), rawError: err }))
+      : Promise.resolve({ snapshot: null, error: "" });
 
     try {
       // Nao aplica snapshots antigos na interface durante uma atualizacao. Os dados que ja
@@ -9640,6 +9915,16 @@ function App() {
           joinadsContentRows: Array.isArray(contentSuperRes?.data) ? contentSuperRes.data.length : 0,
         },
       };
+      const comparisonResult = await comparisonPromise;
+      if (completedHealth.complete && filters.compareDate && comparisonResult.snapshot) {
+        setDateComparisonSnapshot(comparisonResult.snapshot);
+      } else {
+        setDateComparisonSnapshot(null);
+      }
+      setDateComparisonError(filters.compareDate
+        ? comparisonResult.error || (!completedHealth.complete ? "Comparacao suspensa porque a carga principal ficou parcial." : "")
+        : "");
+      if (comparisonResult.rawError) pushLog("comparacao-data", comparisonResult.rawError);
       setLoadHealth(completedHealth);
       setSnapshotEligible(completedHealth.complete);
       if (!completedHealth.complete) {
@@ -9660,6 +9945,7 @@ function App() {
       setKeyValueContent([]);
       setMetaSourceRows([]);
       setSuperTermRows([]);
+      setDateComparisonSnapshot(null);
     } finally {
       setLoading(false);
     }
@@ -12105,6 +12391,9 @@ function App() {
                 reportFilters=${appliedFilters || filters}
                 pageScoped=${!!filters.pageId}
                 refreshToken=${lastRefreshed && snapshotEligible ? String(lastRefreshed) : ""}
+                dateComparisonSnapshot=${dateComparisonSnapshot}
+                dateComparisonError=${dateComparisonError}
+                hiddenCampaignSignature=${Array.from(hiddenCampaigns).sort().join(",")}
                 usePmLabels=${true}
                 brlRate=${brlRate}
                 metaTaxSettings=${settingsData}
@@ -12313,6 +12602,9 @@ function App() {
             reportFilters=${appliedFilters || filters}
             pageScoped=${!!filters.pageId}
             refreshToken=${lastRefreshed && snapshotEligible ? String(lastRefreshed) : ""}
+            dateComparisonSnapshot=${dateComparisonSnapshot}
+            dateComparisonError=${dateComparisonError}
+            hiddenCampaignSignature=${Array.from(hiddenCampaigns).sort().join(",")}
             usePmLabels=${usePmLabels}
             brlRate=${brlRate}
             metaTaxSettings=${settingsData}

@@ -68,6 +68,9 @@ export async function onRequest({ request, env }) {
   const include_assets =
     params.get("include_assets") === "1" ||
     params.get("include_assets") === "true";
+  const summary_only =
+    params.get("summary_only") === "1" ||
+    params.get("summary_only") === "true";
 
   const missing = [];
   if (!account_id) missing.push("account_id");
@@ -129,6 +132,21 @@ export async function onRequest({ request, env }) {
       });
     }
     const insights = dailyPage.data;
+
+    // Comparacoes historicas precisam apenas das metricas diarias. Evita consultas extras
+    // de alcance, status, orcamento, pagina e criativos quando nao existe filtro por pagina.
+    if (summary_only) {
+      return jsonResponse(200, {
+        code: "success",
+        data: insights,
+        diagnostics: {
+          dailyRows: dailyPage.data.length,
+          dailyPages: dailyPage.pages,
+          truncated: false,
+          summaryOnly: true,
+        },
+      });
+    }
 
     // Alcance e frequencia nao podem ser somados por dia. Esta consulta sem time_increment
     // traz os valores consolidados do periodo para cada anuncio.
