@@ -2704,6 +2704,49 @@ tbody tr:last-child td {
   background: none;
 }
 
+.refresh-delta {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.refresh-delta.up {
+  color: #075985;
+  background: rgba(14, 165, 233, 0.13);
+}
+
+.refresh-delta.down {
+  color: #9a3412;
+  background: rgba(249, 115, 22, 0.13);
+}
+
+.sortable-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sortable-header span {
+  font-size: 0.66rem;
+  opacity: 0.72;
+}
+
 @media (max-width: 960px) {
   .manager-filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));

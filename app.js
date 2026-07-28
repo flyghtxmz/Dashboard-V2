@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 132;
+const APP_VERSION_BUILD = 133;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1043,6 +1043,28 @@ function buildMessengerAttributionAudit({
   };
 }
 
+function RefreshDelta({ current, previous, format = "number" }) {
+  const currentNumber = Number(current);
+  const previousNumber = Number(previous);
+  if (!Number.isFinite(currentNumber) || !Number.isFinite(previousNumber)) return null;
+  const delta = currentNumber - previousNumber;
+  if (Math.abs(delta) < 0.000001) return null;
+  const formatted = format === "brl"
+    ? currencyBRL.format(Math.abs(delta))
+    : format === "usd"
+    ? currencyUSD.format(Math.abs(delta))
+    : format === "roas"
+    ? `${Math.abs(delta).toFixed(2)}x`
+    : format === "percent"
+    ? `${Math.abs(delta).toFixed(2)} p.p.`
+    : number.format(Math.abs(delta));
+  const up = delta > 0;
+  return html`<span
+    className=${`refresh-delta ${up ? "up" : "down"}`}
+    title=${`Comparado a ultima atualizacao: ${up ? "aumentou" : "diminuiu"} ${formatted}`}
+  >${up ? "↑" : "↓"} ${formatted}</span>`;
+}
+
 function MetricasMensagensView({
   rows = [],
   earningsRows = [],
@@ -1074,6 +1096,7 @@ function MetricasMensagensView({
   ltvExtraDays = [],
   attributionAudit = null,
   pageScoped = false,
+  refreshToken = "",
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -1105,6 +1128,8 @@ function MetricasMensagensView({
   const [messageBudgetInputs, setMessageBudgetInputs] = useState({});
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
+  const [previousRefreshMetrics, setPreviousRefreshMetrics] = useState(null);
+  const [advertiserSort, setAdvertiserSort] = useState({ key: "revenue", direction: "desc" });
   const exportMessagesExcel = () => {
     const dimensionKey = (value) => String(value || "")
       .normalize("NFD")
@@ -1878,6 +1903,77 @@ function MetricasMensagensView({
     totalsRow.revenue_brl > 0 ? (totalsRow.profit_brl / totalsRow.revenue_brl) * 100 : null;
   totalsRow.ctr_meta =
     totalsRow.meta_impressions > 0 ? (totalsRow.meta_clicks / totalsRow.meta_impressions) * 100 : null;
+  const refreshComparisonKey = [
+    "__messages_refresh_metrics_v1__",
+    reportFilters.domain || "sem-dominio",
+    reportFilters.startDate || "sem-inicio",
+    reportFilters.endDate || "sem-fim",
+    reportFilters.metaAccountId || "sem-conta",
+    reportFilters.pageId || "todas-paginas",
+  ].join(":");
+  useEffect(() => {
+    if (!refreshToken) {
+      setPreviousRefreshMetrics(null);
+      return;
+    }
+    if (!campaignRows.length || typeof localStorage === "undefined") return;
+    const currentSnapshot = {
+      savedAt: new Date().toISOString(),
+      totals: {
+        meta_impressions: totalsRow.meta_impressions || 0,
+        conversations: totalsRow.conversations || 0,
+        joinads_impressions: totalsRow.joinads_impressions || 0,
+        joinads_clicks: totalsRow.joinads_clicks || 0,
+        spend_brl: totalsRow.spend_brl || 0,
+        revenue_usd: totalsRow.revenue_usd || 0,
+        ecpm: totalsRow.ecpm,
+      },
+      campaigns: Object.fromEntries(campaignRows.map((row) => [String(row.campaign_id || row.campaign_name), {
+        meta_impressions: row.meta_impressions || 0,
+        meta_clicks: row.meta_clicks || 0,
+        conversations: row.conversations || 0,
+        joinads_impressions: row.joinads_impressions || 0,
+        joinads_clicks: row.joinads_clicks || 0,
+        spend_brl: row.spend_brl || 0,
+        revenue_usd: row.revenue_usd || 0,
+        profit_brl: row.profit_brl || 0,
+        ecpm: row.ecpm,
+      }])),
+    };
+    try {
+      const raw = localStorage.getItem(refreshComparisonKey);
+      const previous = raw ? JSON.parse(raw) : null;
+      setPreviousRefreshMetrics(previous?.campaigns ? previous : null);
+      localStorage.setItem(refreshComparisonKey, JSON.stringify(currentSnapshot));
+      const prefix = "__messages_refresh_metrics_v1__:";
+      const storedScopes = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith(prefix)) continue;
+        try {
+          const value = JSON.parse(localStorage.getItem(key) || "{}");
+          storedScopes.push({ key, savedAt: Date.parse(value.savedAt || "") || 0 });
+        } catch (_) {
+          storedScopes.push({ key, savedAt: 0 });
+        }
+      }
+      storedScopes.sort((a, b) => b.savedAt - a.savedAt).slice(40).forEach(({ key }) => localStorage.removeItem(key));
+    } catch (_) {
+      setPreviousRefreshMetrics(null);
+    }
+    // Cada token representa uma carga completa concluida. Nao depende de novas chamadas de API.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken, refreshComparisonKey]);
+  const previousTotals = previousRefreshMetrics?.totals || null;
+  const previousTotalsRevenueBrl = previousTotals
+    ? toNumber(previousTotals.revenue_usd) * toNumber(brlRate)
+    : null;
+  const previousTotalsRoas = previousTotals && toNumber(previousTotals.spend_brl) > 0
+    ? previousTotalsRevenueBrl / toNumber(previousTotals.spend_brl)
+    : null;
+  const previousTotalsProfitBrl = previousTotals
+    ? previousTotalsRevenueBrl - toNumber(previousTotals.spend_brl)
+    : null;
   const buildMediumSummary = (mediumName, spendBrl = 0) => {
     const rowsForMedium = (Array.isArray(mediumRows) ? mediumRows : []).filter(
       (row) => normalizeKey(row.custom_value) === normalizeKey(mediumName)
@@ -2617,42 +2713,7 @@ function MetricasMensagensView({
     },
     samples: sampleRows,
   };
-  const blockDiagnosticRows = (Array.isArray(joinadsDetailRows) ? joinadsDetailRows : [])
-    .map((row, index) => {
-      const source = String(row.custon_value ?? row.custom_value ?? "");
-      const directEntries = [
-        ["ad_unit", row.ad_unit], ["adUnit", row.adUnit], ["AD_UNIT", row.AD_UNIT],
-        ["ad_unit_name", row.ad_unit_name], ["AD_UNIT_NAME", row.AD_UNIT_NAME],
-        ["block", row.block], ["placement", row.placement],
-      ].filter(([, value]) => value != null && String(value).trim());
-      const searchable = Object.values(row || {}).filter((value) => typeof value === "string").join(" ");
-      const inferredMatch = searchable.match(/(?:^|[_\s-])(Anchor|Content\s*[1-9]|Interstitial|Rewards?)(?:[_\s-]|$)/i);
-      const direct = directEntries[0];
-      const resolved = direct ? String(direct[1]) : inferredMatch ? inferredMatch[1].replace(/\s+/g, "") : "";
-      return {
-        index: index + 1,
-        date: row.date || "-",
-        source: source || "-",
-        isSource: normalizeKey(source).startsWith("src_"),
-        country: row.country || row.COUNTRY || "-",
-        rawField: direct?.[0] || "-",
-        rawValue: direct ? String(direct[1]) : "-",
-        resolved: resolved || "Sem bloco informado",
-        reason: direct
-          ? `Recebido diretamente em ${direct[0]}`
-          : inferredMatch
-          ? "Inferido a partir de outro texto da linha"
-          : "A API nao enviou campo de bloco nem texto reconhecivel",
-        keys: Object.keys(row || {}).sort().join(", "),
-        raw: row,
-      };
-    })
-    .sort((a, b) => Number(b.resolved === "Sem bloco informado") - Number(a.resolved === "Sem bloco informado"));
-  const blockDiagnosticMissing = blockDiagnosticRows.filter((row) => row.resolved === "Sem bloco informado").length;
-  const blockDiagnosticDirect = blockDiagnosticRows.filter((row) => row.rawField !== "-").length;
-  const blockDiagnosticInferred = blockDiagnosticRows.length - blockDiagnosticDirect - blockDiagnosticMissing;
-  const keyValueCountryDiagnostic = diagnostics?.joinadsSuperFilterDiagnostics?.keyValueCountry || {};
-  const advertiserDiagnosticRows = (Array.isArray(advertiserRows) ? advertiserRows : []).map((row, index) => ({
+  const advertiserDiagnosticRowsRaw = (Array.isArray(advertiserRows) ? advertiserRows : []).map((row, index) => ({
     index: index + 1,
     date: row.DATE || row.date || "-",
     domain: row.DOMAIN || row.domain || "-",
@@ -2665,7 +2726,28 @@ function MetricasMensagensView({
     ecpm: toNumber(row.AD_EXCHANGE_LINE_ITEM_LEVEL_AVERAGE_ECPM ?? row.ecpm),
     activeView: toNumber(row.AD_EXCHANGE_ACTIVE_VIEW_VIEWABLE_IMPRESSIONS_RATE ?? row.active_view),
     raw: row,
-  })).sort((a, b) => b.revenue - a.revenue || b.impressions - a.impressions);
+  }));
+  const advertiserSortValue = (row, key) => {
+    const value = row?.[key];
+    return typeof value === "number" ? value : String(value ?? "").toLocaleLowerCase("pt-BR");
+  };
+  const advertiserDiagnosticRows = advertiserDiagnosticRowsRaw.slice().sort((a, b) => {
+    const left = advertiserSortValue(a, advertiserSort.key);
+    const right = advertiserSortValue(b, advertiserSort.key);
+    const comparison = typeof left === "number" && typeof right === "number"
+      ? left - right
+      : String(left).localeCompare(String(right), "pt-BR", { numeric: true });
+    return advertiserSort.direction === "asc" ? comparison : -comparison;
+  });
+  const toggleAdvertiserSort = (key) => setAdvertiserSort((current) => ({
+    key,
+    direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+  }));
+  const advertiserSortHeader = (key, label) => html`<th aria-sort=${
+    advertiserSort.key === key ? (advertiserSort.direction === "asc" ? "ascending" : "descending") : "none"
+  }><button className="sortable-header" onClick=${() => toggleAdvertiserSort(key)}>
+    ${label}<span aria-hidden="true">${advertiserSort.key === key ? (advertiserSort.direction === "asc" ? "▲" : "▼") : "↕"}</span>
+  </button></th>`;
   return html`
     <main className="grid">
       <section className="card wide">
@@ -2676,6 +2758,9 @@ function MetricasMensagensView({
           </div>
           <div className="inline-actions">
             <span className="chip neutral">${campaignRows.length} campanhas de mensagem</span>
+            ${previousRefreshMetrics?.campaigns
+              ? html`<span className="chip neutral" title="Setas comparam esta carga com a atualizacao completa anterior do mesmo filtro">Comparando com atualizacao anterior</span>`
+              : null}
             <button
               className="primary"
               onClick=${exportMessagesExcel}
@@ -2739,6 +2824,18 @@ function MetricasMensagensView({
               ${campaignRows.length === 0
                 ? html`<tr><td colSpan=${showUserCommission ? 11 : allowBidControl ? 24 : 20} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
                 : campaignRows.map((row) => {
+                  const previousRow = previousRefreshMetrics?.campaigns?.[
+                    String(row.campaign_id || row.campaign_name)
+                  ] || null;
+                  const previousRevenueBrl = previousRow
+                    ? toNumber(previousRow.revenue_usd) * toNumber(brlRate)
+                    : null;
+                  const previousRoas = previousRow && toNumber(previousRow.spend_brl) > 0
+                    ? previousRevenueBrl / toNumber(previousRow.spend_brl)
+                    : null;
+                  const previousProfitBrl = previousRow
+                    ? previousRevenueBrl - toNumber(previousRow.spend_brl)
+                    : null;
                   const userCommission = showUserCommission
                     ? calculateUserCommission(row.revenue_brl, commissionPercent)
                     : null;
@@ -2756,9 +2853,9 @@ function MetricasMensagensView({
                   return html`
                     <tr key=${row.campaign_name}>
                       <td>${row.campaign_name || "-"}</td>
-                      <td>${number.format(row.meta_impressions || 0)}</td>
+                      <td>${number.format(row.meta_impressions || 0)}<${RefreshDelta} current=${row.meta_impressions} previous=${previousRow?.meta_impressions} /></td>
                       <td>${row.ctr_meta != null ? `${row.ctr_meta.toFixed(2)}%` : "-"}</td>
-                      <td>${row.conversations ? number.format(row.conversations) : "-"}</td>
+                      <td>${row.conversations ? number.format(row.conversations) : "-"}<${RefreshDelta} current=${row.conversations} previous=${previousRow?.conversations} /></td>
                       ${showUserCommission
                         ? null
                         : html`
@@ -2767,24 +2864,25 @@ function MetricasMensagensView({
                             <td>${row.revenue_per_conversation != null ? currencyBRL.format(row.revenue_per_conversation) : "-"}</td>
                             <td>${row.profit_per_conversation != null ? html`<span className=${row.profit_per_conversation >= 0 ? "pos-pill" : "neg-pill"}>${currencyBRL.format(row.profit_per_conversation)}</span>` : "-"}</td>
                           `}
-                      <td>${number.format(row.joinads_impressions || 0)}</td>
+                      <td>${number.format(row.joinads_impressions || 0)}<${RefreshDelta} current=${row.joinads_impressions} previous=${previousRow?.joinads_impressions} /></td>
                       <td>${row.joinads_impressions_per_conversation != null ? row.joinads_impressions_per_conversation.toFixed(2) : "-"}</td>
                       <td>${row.visits_per_conversation != null ? row.visits_per_conversation.toFixed(2) : "-"}</td>
-                      <td>${number.format(row.joinads_clicks || 0)}</td>
+                      <td>${number.format(row.joinads_clicks || 0)}<${RefreshDelta} current=${row.joinads_clicks} previous=${previousRow?.joinads_clicks} /></td>
                       ${showUserCommission ? null : html`<td>
                         ${currencyBRL.format(row.spend_brl || 0)}
+                        <${RefreshDelta} current=${row.spend_brl} previous=${previousRow?.spend_brl} format="brl" />
                         <div className="muted small">mídia ${currencyBRL.format(row.media_spend_brl || 0)} · impostos ${currencyBRL.format(row.meta_tax_brl || 0)}</div>
                       </td>`}
                       ${showUserCommission
                         ? html`<td>${userCommission != null ? currencyBRL.format(userCommission) : "-"}</td>`
                         : html`
-                            <td>${currencyUSD.format(row.revenue_usd || 0)}</td>
-                            <td>${currencyBRL.format(row.revenue_brl || 0)}</td>
-                            <td>${row.roas != null ? html`<span className=${row.roas >= 1 ? "pos" : "neg"}>${row.roas.toFixed(2)}x</span>` : "-"}</td>
-                            <td><span className=${row.profit_brl > 0 ? "pos" : row.profit_brl < 0 ? "neg" : ""}>${currencyBRL.format(row.profit_brl || 0)}</span></td>
+                            <td>${currencyUSD.format(row.revenue_usd || 0)}<${RefreshDelta} current=${row.revenue_usd} previous=${previousRow?.revenue_usd} format="usd" /></td>
+                            <td>${currencyBRL.format(row.revenue_brl || 0)}<${RefreshDelta} current=${row.revenue_brl} previous=${previousRevenueBrl} format="brl" /></td>
+                            <td>${row.roas != null ? html`<span className=${row.roas >= 1 ? "pos" : "neg"}>${row.roas.toFixed(2)}x</span>` : "-"}<${RefreshDelta} current=${row.roas} previous=${previousRoas} format="roas" /></td>
+                            <td><span className=${row.profit_brl > 0 ? "pos" : row.profit_brl < 0 ? "neg" : ""}>${currencyBRL.format(row.profit_brl || 0)}</span><${RefreshDelta} current=${row.profit_brl} previous=${previousProfitBrl} format="brl" /></td>
                             <td>${row.margin_pct != null ? html`<span className=${row.margin_pct >= 0 ? "pos" : "neg"}>${row.margin_pct.toFixed(1)}%</span>` : "-"}</td>
                           `}
-                      <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td>
+                      <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}<${RefreshDelta} current=${row.ecpm} previous=${previousRow?.ecpm} format="usd" /></td>
                       ${allowBidControl
                         ? html`
                             <td>
@@ -2948,9 +3046,9 @@ function MetricasMensagensView({
                 ? html`
                     <tr className="summary-row">
                       <td><strong>Total</strong></td>
-                      <td><strong>${number.format(totalsRow.meta_impressions)}</strong></td>
+                      <td><strong>${number.format(totalsRow.meta_impressions)}</strong><${RefreshDelta} current=${totalsRow.meta_impressions} previous=${previousTotals?.meta_impressions} /></td>
                       <td><strong>${totalsRow.ctr_meta != null ? `${totalsRow.ctr_meta.toFixed(2)}%` : "-"}</strong></td>
-                      <td><strong>${totalsRow.conversations ? number.format(totalsRow.conversations) : "-"}</strong></td>
+                      <td><strong>${totalsRow.conversations ? number.format(totalsRow.conversations) : "-"}</strong><${RefreshDelta} current=${totalsRow.conversations} previous=${previousTotals?.conversations} /></td>
                       ${showUserCommission
                         ? null
                         : html`
@@ -2959,21 +3057,21 @@ function MetricasMensagensView({
                             <td><strong>${totalsRow.revenue_per_conversation != null ? currencyBRL.format(totalsRow.revenue_per_conversation) : "-"}</strong></td>
                             <td><strong>${totalsRow.profit_per_conversation != null ? currencyBRL.format(totalsRow.profit_per_conversation) : "-"}</strong></td>
                           `}
-                      <td><strong>${number.format(totalsRow.joinads_impressions)}</strong></td>
+                      <td><strong>${number.format(totalsRow.joinads_impressions)}</strong><${RefreshDelta} current=${totalsRow.joinads_impressions} previous=${previousTotals?.joinads_impressions} /></td>
                       <td><strong>${totalsRow.joinads_impressions_per_conversation != null ? totalsRow.joinads_impressions_per_conversation.toFixed(2) : "-"}</strong></td>
                       <td><strong>${totalsRow.visits_per_conversation != null ? totalsRow.visits_per_conversation.toFixed(2) : "-"}</strong></td>
-                      <td><strong>${number.format(totalsRow.joinads_clicks)}</strong></td>
-                      ${showUserCommission ? null : html`<td><strong>${currencyBRL.format(totalsRow.spend_brl)}</strong></td>`}
+                      <td><strong>${number.format(totalsRow.joinads_clicks)}</strong><${RefreshDelta} current=${totalsRow.joinads_clicks} previous=${previousTotals?.joinads_clicks} /></td>
+                      ${showUserCommission ? null : html`<td><strong>${currencyBRL.format(totalsRow.spend_brl)}</strong><${RefreshDelta} current=${totalsRow.spend_brl} previous=${previousTotals?.spend_brl} format="brl" /></td>`}
                       ${showUserCommission
                         ? html`<td><strong>${currencyBRL.format(calculateUserCommission(totalsRow.revenue_brl, commissionPercent) || 0)}</strong></td>`
                         : html`
-                            <td><strong>${currencyUSD.format(totalsRow.revenue_usd)}</strong></td>
-                            <td><strong>${currencyBRL.format(totalsRow.revenue_brl)}</strong></td>
-                            <td><strong>${totalsRow.roas != null ? `${totalsRow.roas.toFixed(2)}x` : "-"}</strong></td>
-                            <td><strong>${currencyBRL.format(totalsRow.profit_brl)}</strong></td>
+                            <td><strong>${currencyUSD.format(totalsRow.revenue_usd)}</strong><${RefreshDelta} current=${totalsRow.revenue_usd} previous=${previousTotals?.revenue_usd} format="usd" /></td>
+                            <td><strong>${currencyBRL.format(totalsRow.revenue_brl)}</strong><${RefreshDelta} current=${totalsRow.revenue_brl} previous=${previousTotalsRevenueBrl} format="brl" /></td>
+                            <td><strong>${totalsRow.roas != null ? `${totalsRow.roas.toFixed(2)}x` : "-"}</strong><${RefreshDelta} current=${totalsRow.roas} previous=${previousTotalsRoas} format="roas" /></td>
+                            <td><strong>${currencyBRL.format(totalsRow.profit_brl)}</strong><${RefreshDelta} current=${totalsRow.profit_brl} previous=${previousTotalsProfitBrl} format="brl" /></td>
                             <td><strong>${totalsRow.margin_pct != null ? `${totalsRow.margin_pct.toFixed(1)}%` : "-"}</strong></td>
                           `}
-                      <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong></td>
+                      <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong><${RefreshDelta} current=${totalsRow.ecpm} previous=${previousTotals?.ecpm} format="usd" /></td>
                       ${allowBidControl ? html`<td></td><td></td><td></td><td></td>` : null}
                       <td></td>
                     </tr>
@@ -3433,56 +3531,6 @@ function MetricasMensagensView({
         <div className="card-head">
           <div>
             <span className="eyebrow">Diagnostico</span>
-            <h2 className="section-title">Blocos recebidos da JoinAds</h2>
-          </div>
-          <div className="chip-group">
-            <span className="chip neutral">${blockDiagnosticRows.length} linhas brutas</span>
-            <span className="chip neutral">${blockDiagnosticDirect} com campo direto</span>
-            <span className="chip neutral">${blockDiagnosticInferred} inferidas</span>
-            <span className=${`chip ${blockDiagnosticMissing ? "danger" : "neutral"}`}>${blockDiagnosticMissing} sem bloco</span>
-            ${keyValueCountryDiagnostic.error ? html`<span className="chip danger">erro no endpoint</span>` : null}
-          </div>
-        </div>
-        <p className="muted small">
-          Resposta bruta de <code>/key-value-country</code>. A coluna "Campos presentes" confirma exatamente
-          quais propriedades a JoinAds enviou; nenhuma linha desta tabela depende da planilha exportada.
-        </p>
-        ${keyValueCountryDiagnostic.error
-          ? html`<div className="status error"><strong>Falha ao consultar a JoinAds:</strong> ${keyValueCountryDiagnostic.error}</div>`
-          : html`<p className="muted small">Endpoint confirmou ${keyValueCountryDiagnostic.rows ?? blockDiagnosticRows.length} linhas. Campos encontrados no lote: ${(keyValueCountryDiagnostic.fields || []).join(", ") || "nenhum"}.</p>`}
-        ${keyValueCountryDiagnostic.cache
-          ? html`<div className="status success"><strong>Origem por dia:</strong> banco definitivo: ${(keyValueCountryDiagnostic.cache.cacheHitDays || []).join(", ") || "nenhum"}; API JoinAds: ${(keyValueCountryDiagnostic.cache.apiDays || []).join(", ") || "nenhum"}; fallback do mesmo dia: ${(keyValueCountryDiagnostic.cache.sameDayFallbackDays || []).join(", ") || "nenhum"}; provisórios: ${(keyValueCountryDiagnostic.cache.provisionalDays || []).join(", ") || "nenhum"}.</div>`
-          : null}
-        <div className="table-wrapper scroll-x">
-          <table>
-            <thead>
-              <tr>
-                <th>#</th><th>Data</th><th>src_ / custom_value</th><th>Pais</th><th>Campo bruto</th>
-                <th>Valor bruto</th><th>Bloco resolvido</th><th>Diagnostico</th><th>Campos presentes</th><th>JSON bruto</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${blockDiagnosticRows.length
-                ? blockDiagnosticRows.slice(0, 200).map((row) => html`
-                    <tr key=${`${row.index}:${row.source}`}>
-                      <td>${row.index}</td><td>${row.date}</td>
-                      <td><code>${row.source}</code>${row.isSource ? null : html`<div className="muted small">nao inicia com src_</div>`}</td>
-                      <td>${row.country}</td><td><code>${row.rawField}</code></td><td>${row.rawValue}</td>
-                      <td><span className=${`chip ${row.resolved === "Sem bloco informado" ? "danger" : "neutral"}`}>${row.resolved}</span></td>
-                      <td>${row.reason}</td><td className="muted small">${row.keys}</td>
-                      <td><details><summary>Ver JSON</summary><pre className="debug-log">${JSON.stringify(row.raw, null, 2)}</pre></details></td>
-                    </tr>
-                  `)
-                : html`<tr><td colSpan="10" className="muted">Nenhuma linha foi recebida de /key-value-country para o periodo e dominio selecionados.</td></tr>`}
-            </tbody>
-          </table>
-        </div>
-        ${blockDiagnosticRows.length > 200 ? html`<p className="muted small">Exibindo as primeiras 200 de ${blockDiagnosticRows.length} linhas.</p>` : null}
-      </section>
-      <section className="card wide">
-        <div className="card-head">
-          <div>
-            <span className="eyebrow">Diagnostico</span>
             <h2 className="section-title">Anunciantes por campanha UTM</h2>
           </div>
           <div className="chip-group">
@@ -3511,13 +3559,13 @@ function MetricasMensagensView({
         <div className="table-wrapper scroll-x">
           <table>
             <thead><tr>
-              <th>#</th><th>Data</th><th>Dominio</th><th>utm_campaign / src_</th><th>Anunciante</th>
-              <th>Impressoes</th><th>Cliques</th><th>CTR</th><th>Receita USD</th><th>eCPM USD</th><th>Active View</th><th>JSON bruto</th>
+              <th>#</th>${advertiserSortHeader("date", "Data")}${advertiserSortHeader("domain", "Dominio")}${advertiserSortHeader("campaign", "utm_campaign / src_")}${advertiserSortHeader("advertiser", "Anunciante")}
+              ${advertiserSortHeader("impressions", "Impressoes")}${advertiserSortHeader("clicks", "Cliques")}${advertiserSortHeader("ctr", "CTR")}${advertiserSortHeader("revenue", "Receita USD")}${advertiserSortHeader("ecpm", "eCPM USD")}${advertiserSortHeader("activeView", "Active View")}<th>JSON bruto</th>
             </tr></thead>
             <tbody>
               ${advertiserDiagnosticRows.length
-                ? advertiserDiagnosticRows.slice(0, 500).map((row) => html`<tr key=${`${row.index}:${row.campaign}:${row.advertiser}`}>
-                    <td>${row.index}</td><td>${row.date}</td><td>${row.domain}</td><td><code>${row.campaign}</code></td><td><strong>${row.advertiser}</strong></td>
+                ? advertiserDiagnosticRows.slice(0, 500).map((row, sortedIndex) => html`<tr key=${`${row.index}:${row.campaign}:${row.advertiser}`}>
+                    <td>${sortedIndex + 1}</td><td>${row.date}</td><td>${row.domain}</td><td><code>${row.campaign}</code></td><td><strong>${row.advertiser}</strong></td>
                     <td>${number.format(row.impressions)}</td><td>${number.format(row.clicks)}</td><td>${row.ctr.toFixed(2)}%</td>
                     <td>${currencyUSD.format(row.revenue)}</td><td>${currencyUSD.format(row.ecpm)}</td><td>${row.activeView.toFixed(2)}%</td>
                     <td><details><summary>Ver JSON</summary><pre className="debug-log">${JSON.stringify(row.raw, null, 2)}</pre></details></td>
@@ -12056,6 +12104,7 @@ function App() {
                 messenleadSources=${messenleadSources}
                 reportFilters=${appliedFilters || filters}
                 pageScoped=${!!filters.pageId}
+                refreshToken=${lastRefreshed && snapshotEligible ? String(lastRefreshed) : ""}
                 usePmLabels=${true}
                 brlRate=${brlRate}
                 metaTaxSettings=${settingsData}
@@ -12263,6 +12312,7 @@ function App() {
             messenleadSources=${messenleadSources}
             reportFilters=${appliedFilters || filters}
             pageScoped=${!!filters.pageId}
+            refreshToken=${lastRefreshed && snapshotEligible ? String(lastRefreshed) : ""}
             usePmLabels=${usePmLabels}
             brlRate=${brlRate}
             metaTaxSettings=${settingsData}
