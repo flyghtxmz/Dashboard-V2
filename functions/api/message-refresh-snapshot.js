@@ -53,6 +53,7 @@ export async function onRequest({ request, env }) {
   const endDate = clean(body?.end_date, 10);
   const refreshId = clean(body?.refresh_id, 150);
   const variant = clean(body?.variant, 5000);
+  const legacyVariant = clean(body?.legacy_variant, 5000);
   const snapshot = body?.snapshot;
   const previousSnapshot = body?.previous_snapshot?.campaigns && body?.previous_snapshot?.totals
     ? body.previous_snapshot
@@ -78,7 +79,22 @@ export async function onRequest({ request, env }) {
   const userKey = `${session.role}:${session.id || session.username || session.email || "user"}`;
   const domain = domainAccess.domains[0];
   const snapshotKey = await hashKey([userKey, domain, accountId, startDate, endDate, variant].join("|"));
+  let seedPreviousSnapshot = previousSnapshot;
+  let migratedLegacy = false;
+  if (!seedPreviousSnapshot && legacyVariant && legacyVariant !== variant) {
+    const legacySnapshotKey = await hashKey(
+      [userKey, domain, accountId, startDate, endDate, legacyVariant].join("|")
+    );
+    const legacyRow = await db.prepare(
+      "SELECT current_payload, previous_payload FROM message_refresh_snapshots WHERE snapshot_key = ?1"
+    ).bind(legacySnapshotKey).first();
+    seedPreviousSnapshot = parseSnapshot(legacyRow?.current_payload)
+      || parseSnapshot(legacyRow?.previous_payload)
+      || null;
+    migratedLegacy = !!seedPreviousSnapshot;
+  }
   const now = new Date().toISOString();
+  const seedPreviousPayload = seedPreviousSnapshot ? JSON.stringify(seedPreviousSnapshot) : null;
   const row = await db.prepare(`INSERT INTO message_refresh_snapshots
     (snapshot_key, user_key, domain, meta_account_id, start_date, end_date, refresh_id, current_payload, previous_payload, updated_at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
@@ -101,7 +117,7 @@ export async function onRequest({ request, env }) {
         ELSE excluded.updated_at
       END
     RETURNING refresh_id, current_payload, previous_payload, updated_at`)
-    .bind(snapshotKey, userKey, domain, accountId, startDate, endDate, refreshId, payload, previousPayload, now)
+    .bind(snapshotKey, userKey, domain, accountId, startDate, endDate, refreshId, payload, seedPreviousPayload, now)
     .first();
 
   return jsonResponse(200, {
@@ -111,5 +127,6 @@ export async function onRequest({ request, env }) {
     previous: parseSnapshot(row?.previous_payload),
     updatedAt: row?.updated_at || now,
     storage: "d1",
+    migratedLegacy,
   });
 }

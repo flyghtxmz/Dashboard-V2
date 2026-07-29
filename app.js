@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 140;
+const APP_VERSION_BUILD = 141;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -379,6 +379,16 @@ function legacyMessageMetricsStorageKey({ domain, startDate, endDate, metaAccoun
     endDate || "sem-fim",
     metaAccountId || "sem-conta",
     pageId || "todas-paginas",
+  ].join(":");
+}
+
+function messageMetricsServerVariant({ pageId, adsetFilter, taxSignature, hiddenSignature }) {
+  return [
+    "message-refresh-v4",
+    pageId || "todas-paginas",
+    normalizeKey(adsetFilter || "sem-filtro"),
+    taxSignature || "imposto-padrao",
+    hiddenSignature || "nenhuma-oculta",
   ].join(":");
 }
 
@@ -1123,6 +1133,115 @@ function RefreshDelta({ current, previous, format = "number" }) {
   >${up ? "↑" : "↓"} ${formatted}</span>`;
 }
 
+function buildMessageRefreshSnapshot(rows, reportFilters = {}) {
+  const campaignMap = new Map();
+  (Array.isArray(rows) ? rows : [])
+    .filter((row) => isMessageMetricsRow(row))
+    .forEach((row) => {
+      const key = String(row.campaign_id || row.campaign_name || "Sem campanha");
+      const item = campaignMap.get(key) || {
+        meta_impressions: 0,
+        meta_clicks: 0,
+        conversations: 0,
+        joinads_impressions: 0,
+        joinads_clicks: 0,
+        spend_brl: 0,
+        revenue_usd: 0,
+        meta_cost_weighted: 0,
+        meta_cost_weight: 0,
+        meta_cost_sum: 0,
+        meta_cost_count: 0,
+        countedJoinadsAds: new Set(),
+      };
+      const rowSpend = toNumber(row.spend_value || row.spend);
+      const metaCostPerResult = toNumber(row.cost_per_result_value);
+      item.meta_impressions += toNumber(row.meta_impressions_value || row.impressions);
+      item.meta_clicks += toNumber(row.meta_clicks_value || row.clicks);
+      item.conversations += toNumber(row.messaging_conversations_started);
+      item.spend_brl += rowSpend;
+      if (metaCostPerResult > 0) {
+        item.meta_cost_sum += metaCostPerResult;
+        item.meta_cost_count += 1;
+        if (rowSpend > 0) {
+          item.meta_cost_weighted += metaCostPerResult * rowSpend;
+          item.meta_cost_weight += rowSpend;
+        }
+      }
+      const joinadsAdKey = String(row.ad_id || row.ad_name || "");
+      if (!joinadsAdKey || !item.countedJoinadsAds.has(joinadsAdKey)) {
+        item.joinads_impressions += toNumber(row.impressions_joinads);
+        item.joinads_clicks += toNumber(row.clicks_joinads);
+        item.revenue_usd += toNumber(row.revenue_client_value);
+        if (joinadsAdKey) item.countedJoinadsAds.add(joinadsAdKey);
+      }
+      campaignMap.set(key, item);
+    });
+
+  const campaigns = Object.fromEntries(Array.from(campaignMap.entries()).map(([key, item]) => [key, {
+    meta_impressions: item.meta_impressions,
+    meta_clicks: item.meta_clicks,
+    conversations: item.conversations,
+    meta_cost_per_result: item.meta_cost_weight > 0
+      ? item.meta_cost_weighted / item.meta_cost_weight
+      : item.meta_cost_count > 0
+      ? item.meta_cost_sum / item.meta_cost_count
+      : null,
+    joinads_impressions: item.joinads_impressions,
+    joinads_clicks: item.joinads_clicks,
+    spend_brl: item.spend_brl,
+    revenue_usd: item.revenue_usd,
+    ecpm: item.joinads_impressions > 0
+      ? (item.revenue_usd / item.joinads_impressions) * 1000
+      : null,
+  }]));
+  const totals = Array.from(campaignMap.values()).reduce((acc, item) => {
+    acc.meta_impressions += item.meta_impressions;
+    acc.meta_clicks += item.meta_clicks;
+    acc.conversations += item.conversations;
+    acc.joinads_impressions += item.joinads_impressions;
+    acc.joinads_clicks += item.joinads_clicks;
+    acc.spend_brl += item.spend_brl;
+    acc.revenue_usd += item.revenue_usd;
+    acc.meta_cost_weighted += item.meta_cost_weighted;
+    acc.meta_cost_weight += item.meta_cost_weight;
+    acc.meta_cost_sum += item.meta_cost_sum;
+    acc.meta_cost_count += item.meta_cost_count;
+    return acc;
+  }, {
+    meta_impressions: 0,
+    meta_clicks: 0,
+    conversations: 0,
+    joinads_impressions: 0,
+    joinads_clicks: 0,
+    spend_brl: 0,
+    revenue_usd: 0,
+    meta_cost_weighted: 0,
+    meta_cost_weight: 0,
+    meta_cost_sum: 0,
+    meta_cost_count: 0,
+  });
+  totals.meta_cost_per_result = totals.meta_cost_weight > 0
+    ? totals.meta_cost_weighted / totals.meta_cost_weight
+    : totals.meta_cost_count > 0
+    ? totals.meta_cost_sum / totals.meta_cost_count
+    : null;
+  totals.ecpm = totals.joinads_impressions > 0
+    ? (totals.revenue_usd / totals.joinads_impressions) * 1000
+    : null;
+  delete totals.meta_cost_weighted;
+  delete totals.meta_cost_weight;
+  delete totals.meta_cost_sum;
+  delete totals.meta_cost_count;
+  return {
+    savedAt: new Date().toISOString(),
+    finalized: reportFilters.startDate === reportFilters.endDate
+      ? isJoinadsDateFinalized(reportFilters.endDate)
+      : false,
+    totals,
+    campaigns,
+  };
+}
+
 function MetricasMensagensView({
   rows = [],
   earningsRows = [],
@@ -1154,10 +1273,11 @@ function MetricasMensagensView({
   ltvExtraDays = [],
   attributionAudit = null,
   pageScoped = false,
-  refreshToken = "",
+  refreshComparisonSnapshot = null,
+  refreshSyncStatus = "idle",
+  refreshSyncError = "",
   dateComparisonSnapshot = null,
   dateComparisonError = "",
-  hiddenCampaignSignature = "",
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -1190,8 +1310,6 @@ function MetricasMensagensView({
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
   const [messageSearch, setMessageSearch] = useState("");
-  const [previousRefreshMetrics, setPreviousRefreshMetrics] = useState(null);
-  const [refreshSyncStatus, setRefreshSyncStatus] = useState("idle");
   const [advertiserSort, setAdvertiserSort] = useState({ key: "revenue", direction: "desc" });
   const exportMessagesExcel = () => {
     const dimensionKey = (value) => String(value || "")
@@ -1975,144 +2093,8 @@ function MetricasMensagensView({
     totalsRow.revenue_brl > 0 ? (totalsRow.profit_brl / totalsRow.revenue_brl) * 100 : null;
   totalsRow.ctr_meta =
     totalsRow.meta_impressions > 0 ? (totalsRow.meta_clicks / totalsRow.meta_impressions) * 100 : null;
-  const refreshComparisonKey = messageMetricsStorageKey({
-    domain: reportFilters.domain,
-    startDate: reportFilters.startDate,
-    endDate: reportFilters.endDate,
-    metaAccountId: reportFilters.metaAccountId,
-    pageId: reportFilters.pageId,
-    adsetFilter: reportFilters.adsetFilter,
-    taxSignature: [
-      metaTaxSettings?.metaTaxEnabled !== false ? "on" : "off",
-      metaTaxSettings?.metaTaxRatePercent ?? 12.15,
-      metaTaxSettings?.metaTaxEffectiveDate || "2026-01-01",
-      metaTaxSettings?.metaTaxMode || "add",
-    ].join("-"),
-    hiddenSignature: hiddenCampaignSignature,
-  });
-  const legacyRefreshComparisonKey = legacyMessageMetricsStorageKey({
-    domain: reportFilters.domain,
-    startDate: reportFilters.startDate,
-    endDate: reportFilters.endDate,
-    metaAccountId: reportFilters.metaAccountId,
-    pageId: reportFilters.pageId,
-  });
-  useEffect(() => {
-    if (!refreshToken) {
-      setPreviousRefreshMetrics(null);
-      setRefreshSyncStatus("idle");
-      return;
-    }
-    if (!campaignRows.length) return;
-    let cancelled = false;
-    let previous = null;
-    const currentSnapshot = {
-      savedAt: new Date().toISOString(),
-      finalized: reportFilters.startDate === reportFilters.endDate
-        ? isJoinadsDateFinalized(reportFilters.endDate)
-        : false,
-      totals: {
-        meta_impressions: totalsRow.meta_impressions || 0,
-        conversations: totalsRow.conversations || 0,
-        joinads_impressions: totalsRow.joinads_impressions || 0,
-        joinads_clicks: totalsRow.joinads_clicks || 0,
-        spend_brl: totalsRow.spend_brl || 0,
-        revenue_usd: totalsRow.revenue_usd || 0,
-        ecpm: totalsRow.ecpm,
-      },
-      campaigns: Object.fromEntries(campaignRows.map((row) => [String(row.campaign_id || row.campaign_name), {
-        meta_impressions: row.meta_impressions || 0,
-        meta_clicks: row.meta_clicks || 0,
-        conversations: row.conversations || 0,
-        joinads_impressions: row.joinads_impressions || 0,
-        joinads_clicks: row.joinads_clicks || 0,
-        spend_brl: row.spend_brl || 0,
-        revenue_usd: row.revenue_usd || 0,
-        profit_brl: row.profit_brl || 0,
-        ecpm: row.ecpm,
-      }])),
-    };
-    try {
-      const raw = localStorage.getItem(refreshComparisonKey);
-      const stored = raw ? JSON.parse(raw) : null;
-      const storedCurrent = stored?.current?.campaigns
-        ? stored.current
-        : stored?.campaigns
-        ? stored
-        : null;
-      const sameCompletedRefresh = stored?.lastRefreshToken === refreshToken;
-      previous = sameCompletedRefresh && stored?.previous?.campaigns
-        ? stored.previous
-        : sameCompletedRefresh
-        ? null
-        : storedCurrent;
-      if (!sameCompletedRefresh) {
-        const storedSavedAt = Date.parse(storedCurrent?.savedAt || "");
-        const refreshSavedAt = Date.parse(refreshToken || "");
-        const storedLooksLikeThisRefresh = Number.isFinite(storedSavedAt)
-          && Number.isFinite(refreshSavedAt)
-          && Math.abs(storedSavedAt - refreshSavedAt) < 15000;
-        if (!storedCurrent || storedLooksLikeThisRefresh) {
-          try {
-            const legacy = JSON.parse(localStorage.getItem(legacyRefreshComparisonKey) || "null");
-            if (legacy?.campaigns) previous = legacy;
-          } catch (_) {
-            // Snapshot legado invalido nao impede a comparacao atual.
-          }
-        }
-        localStorage.setItem(refreshComparisonKey, JSON.stringify({
-          schema: 4,
-          lastRefreshToken: refreshToken,
-          current: currentSnapshot,
-          previous: previous?.campaigns ? previous : null,
-        }));
-      }
-      setPreviousRefreshMetrics(previous?.campaigns ? previous : null);
-      const prefix = "__messages_refresh_metrics_v3__:";
-      const storedScopes = [];
-      for (let index = 0; index < localStorage.length; index += 1) {
-        const key = localStorage.key(index);
-        if (!key?.startsWith(prefix)) continue;
-        try {
-          const value = JSON.parse(localStorage.getItem(key) || "{}");
-          storedScopes.push({ key, savedAt: Date.parse(value.current?.savedAt || value.savedAt || "") || 0 });
-        } catch (_) {
-          storedScopes.push({ key, savedAt: 0 });
-        }
-      }
-      storedScopes.sort((a, b) => b.savedAt - a.savedAt).slice(40).forEach(({ key }) => localStorage.removeItem(key));
-    } catch (_) {
-      setPreviousRefreshMetrics(null);
-    }
-    // O banco e independente do localStorage. Isso mantem a comparacao funcionando
-    // em navegadores desktop que bloqueiam o armazenamento local.
-    setRefreshSyncStatus("syncing");
-    fetchJson(`${API_BASE}/message-refresh-snapshot`, {
-      method: "POST",
-      body: JSON.stringify({
-        domain: reportFilters.domain,
-        account_id: reportFilters.metaAccountId,
-        start_date: reportFilters.startDate,
-        end_date: reportFilters.endDate,
-        refresh_id: refreshToken,
-        variant: refreshComparisonKey,
-        snapshot: currentSnapshot,
-        previous_snapshot: previous?.campaigns ? previous : null,
-      }),
-    }).then((response) => {
-      if (cancelled) return;
-      if (response?.previous?.campaigns) setPreviousRefreshMetrics(response.previous);
-      setRefreshSyncStatus(response?.previous?.campaigns ? "synced" : "seeded");
-    }).catch(() => {
-      // Sem banco, a comparacao local continua funcionando normalmente.
-      if (!cancelled) setRefreshSyncStatus(previous?.campaigns ? "local" : "error");
-    });
-    // Cada token representa uma carga completa concluida. Nao depende de novas chamadas de API.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => { cancelled = true; };
-  }, [refreshToken, refreshComparisonKey, legacyRefreshComparisonKey]);
   const explicitComparisonDate = reportFilters.compareDate || "";
-  const comparisonMetrics = explicitComparisonDate ? dateComparisonSnapshot : previousRefreshMetrics;
+  const comparisonMetrics = explicitComparisonDate ? dateComparisonSnapshot : refreshComparisonSnapshot;
   const explicitComparisonLabel = explicitComparisonDate
     ? explicitComparisonDate.split("-").reverse().join("/")
     : "";
@@ -2838,20 +2820,23 @@ function MetricasMensagensView({
             <span className="chip neutral">${normalizedMessageSearch ? `${visibleCampaignRows.length} de ${campaignRows.length}` : campaignRows.length} campanhas de mensagem</span>
             ${explicitComparisonDate && comparisonMetrics?.campaigns
               ? html`<span className="chip neutral" title=${`Setas comparam os dados atuais com o dia ${explicitComparisonLabel}`}>Comparando com ${explicitComparisonLabel}</span>`
-              : !explicitComparisonDate && previousRefreshMetrics?.campaigns
-              ? html`<span className="chip neutral" title="Setas comparam esta carga com a atualizacao completa anterior do mesmo filtro">Comparando com atualizacao anterior</span>`
+              : !explicitComparisonDate && refreshComparisonSnapshot?.campaigns
+              ? html`<span className="chip good" title="Setas comparam esta carga com a atualizacao completa anterior do mesmo filtro, salva no banco">Comparando com atualizacao anterior</span>`
               : null}
             ${explicitComparisonDate && dateComparisonError
               ? html`<span className="chip danger" title=${dateComparisonError}>Comparacao indisponivel</span>`
               : null}
-            ${!explicitComparisonDate && !previousRefreshMetrics?.campaigns && refreshSyncStatus === "syncing"
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "syncing"
               ? html`<span className="chip neutral">Sincronizando referencia...</span>`
               : null}
-            ${!explicitComparisonDate && !previousRefreshMetrics?.campaigns && refreshSyncStatus === "seeded"
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "seeded"
               ? html`<span className="chip neutral" title="Esta carga criou a primeira referencia compartilhada. A proxima atualizacao mostrara as diferencas.">Base criada agora</span>`
               : null}
-            ${!explicitComparisonDate && !previousRefreshMetrics?.campaigns && (refreshSyncStatus === "local" || refreshSyncStatus === "error")
-              ? html`<span className="chip danger" title="O banco compartilhado nao respondeu; a proxima comparacao ficara restrita a este navegador.">Referencia apenas local</span>`
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && (refreshSyncStatus === "local" || refreshSyncStatus === "error")
+              ? html`<span className="chip danger" title=${refreshSyncError || "O banco compartilhado nao respondeu; a proxima comparacao ficara restrita a este navegador."}>Referencia apenas local</span>`
+              : null}
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "idle"
+              ? html`<span className="chip neutral" title="Clique em Carregar dados para criar ou recuperar a referencia do banco.">Comparativo aguardando carga</span>`
               : null}
             <button
               className="primary"
@@ -2967,7 +2952,7 @@ function MetricasMensagensView({
                       ${showUserCommission
                         ? null
                         : html`
-                            <td>${row.meta_cost_per_result != null ? currencyBRL.format(row.meta_cost_per_result) : "-"}</td>
+                            <td>${row.meta_cost_per_result != null ? currencyBRL.format(row.meta_cost_per_result) : "-"}<${RefreshDelta} current=${row.meta_cost_per_result} previous=${previousRow?.meta_cost_per_result} format="brl" /></td>
                             <td>${row.cost_per_conversation != null ? currencyBRL.format(row.cost_per_conversation) : "-"}</td>
                             <td>${row.revenue_per_conversation != null ? currencyBRL.format(row.revenue_per_conversation) : "-"}</td>
                             <td>${row.profit_per_conversation != null ? html`<span className=${row.profit_per_conversation >= 0 ? "pos-pill" : "neg-pill"}>${currencyBRL.format(row.profit_per_conversation)}</span>` : "-"}</td>
@@ -3160,7 +3145,7 @@ function MetricasMensagensView({
                       ${showUserCommission
                         ? null
                         : html`
-                            <td><strong>${totalsRow.meta_cost_per_result != null ? currencyBRL.format(totalsRow.meta_cost_per_result) : "-"}</strong></td>
+                            <td><strong>${totalsRow.meta_cost_per_result != null ? currencyBRL.format(totalsRow.meta_cost_per_result) : "-"}</strong><${RefreshDelta} current=${totalsRow.meta_cost_per_result} previous=${previousTotals?.meta_cost_per_result} format="brl" /></td>
                             <td><strong>${totalsRow.cost_per_conversation != null ? currencyBRL.format(totalsRow.cost_per_conversation) : "-"}</strong></td>
                             <td><strong>${totalsRow.revenue_per_conversation != null ? currencyBRL.format(totalsRow.revenue_per_conversation) : "-"}</strong></td>
                             <td><strong>${totalsRow.profit_per_conversation != null ? currencyBRL.format(totalsRow.profit_per_conversation) : "-"}</strong></td>
@@ -8680,6 +8665,9 @@ function App() {
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [snapshotEligible, setSnapshotEligible] = useState(false);
+  const [messageRefreshComparison, setMessageRefreshComparison] = useState(null);
+  const [messageRefreshSyncStatus, setMessageRefreshSyncStatus] = useState("idle");
+  const [messageRefreshSyncError, setMessageRefreshSyncError] = useState("");
   const [dateComparisonSnapshot, setDateComparisonSnapshot] = useState(null);
   const [dateComparisonError, setDateComparisonError] = useState("");
   const [loadHealth, setLoadHealth] = useState({});
@@ -8764,6 +8752,9 @@ function App() {
     setError("");
     setLastRefreshed(null);
     setSnapshotEligible(false);
+    setMessageRefreshComparison(null);
+    setMessageRefreshSyncStatus("idle");
+    setMessageRefreshSyncError("");
     setDateComparisonSnapshot(null);
     setDateComparisonError("");
     setLoadHealth({});
@@ -9124,13 +9115,26 @@ function App() {
           joinads_clicks: 0,
           spend_brl: 0,
           revenue_usd: 0,
+          meta_cost_weighted: 0,
+          meta_cost_weight: 0,
+          meta_cost_sum: 0,
+          meta_cost_count: 0,
           countedJoinadsAds: new Set(),
         };
         const charge = calculateMetaCharge(row.spend, row.date_start || date, settingsData);
+        const metaCostPerResult = toNumber(row.cost_per_result) * charge.multiplier;
         item.meta_impressions += toNumber(row.impressions);
         item.meta_clicks += toNumber(row.clicks);
         item.conversations += getMessagingConversationStarts(row);
         item.spend_brl += charge.total;
+        if (metaCostPerResult > 0) {
+          item.meta_cost_sum += metaCostPerResult;
+          item.meta_cost_count += 1;
+          if (charge.total > 0) {
+            item.meta_cost_weighted += metaCostPerResult * charge.total;
+            item.meta_cost_weight += charge.total;
+          }
+        }
         const adId = normalizeKey(row.ad_id);
         if (adId && !item.countedJoinadsAds.has(adId)) {
           const joinads = joinadsByAdId.get(adId);
@@ -9148,6 +9152,11 @@ function App() {
       meta_impressions: item.meta_impressions,
       meta_clicks: item.meta_clicks,
       conversations: item.conversations,
+      meta_cost_per_result: item.meta_cost_weight > 0
+        ? item.meta_cost_weighted / item.meta_cost_weight
+        : item.meta_cost_count > 0
+        ? item.meta_cost_sum / item.meta_cost_count
+        : null,
       joinads_impressions: item.joinads_impressions,
       joinads_clicks: item.joinads_clicks,
       spend_brl: item.spend_brl,
@@ -9163,6 +9172,16 @@ function App() {
       acc.revenue_usd += row.revenue_usd;
       return acc;
     }, { meta_impressions: 0, conversations: 0, joinads_impressions: 0, joinads_clicks: 0, spend_brl: 0, revenue_usd: 0 });
+    const comparisonItems = Array.from(campaignMap.values());
+    const totalMetaCostWeighted = comparisonItems.reduce((sum, item) => sum + item.meta_cost_weighted, 0);
+    const totalMetaCostWeight = comparisonItems.reduce((sum, item) => sum + item.meta_cost_weight, 0);
+    const totalMetaCostSum = comparisonItems.reduce((sum, item) => sum + item.meta_cost_sum, 0);
+    const totalMetaCostCount = comparisonItems.reduce((sum, item) => sum + item.meta_cost_count, 0);
+    totals.meta_cost_per_result = totalMetaCostWeight > 0
+      ? totalMetaCostWeighted / totalMetaCostWeight
+      : totalMetaCostCount > 0
+      ? totalMetaCostSum / totalMetaCostCount
+      : null;
     totals.ecpm = totals.joinads_impressions > 0
       ? (totals.revenue_usd / totals.joinads_impressions) * 1000
       : null;
@@ -11927,9 +11946,10 @@ function App() {
     session?.username,
   ]);
 
+  const activeMessageFilters = appliedFilters || filters;
   const metaMessageFiltered = useMemo(() => {
-    const term = filters.adsetFilter.trim().toLowerCase();
-    const pageId = String(filters.pageId || "").trim();
+    const term = String(activeMessageFilters.adsetFilter || "").trim().toLowerCase();
+    const pageId = String(activeMessageFilters.pageId || "").trim();
     const base = mergedMeta.filter((row) => {
       if (hiddenCampaigns.has(row.campaign_id)) return false;
       return true;
@@ -11949,11 +11969,130 @@ function App() {
     );
   }, [
     mergedMeta,
-    filters.adsetFilter,
-    filters.pageId,
+    activeMessageFilters.adsetFilter,
+    activeMessageFilters.pageId,
     hiddenCampaigns,
     session?.role,
     session?.username,
+  ]);
+
+  const messageHiddenSignature = Array.from(hiddenCampaigns).sort().join(",");
+  const messageTaxSignature = [
+    settingsData.metaTaxEnabled !== false ? "on" : "off",
+    settingsData.metaTaxRatePercent ?? 12.15,
+    settingsData.metaTaxEffectiveDate || "2026-01-01",
+    settingsData.metaTaxMode || "add",
+  ].join("-");
+  const messageRefreshComparisonKey = messageMetricsStorageKey({
+    domain: activeMessageFilters.domain,
+    startDate: activeMessageFilters.startDate,
+    endDate: activeMessageFilters.endDate,
+    metaAccountId: activeMessageFilters.metaAccountId,
+    pageId: activeMessageFilters.pageId,
+    adsetFilter: activeMessageFilters.adsetFilter,
+    taxSignature: messageTaxSignature,
+    hiddenSignature: messageHiddenSignature,
+  });
+  const messageRefreshServerVariant = messageMetricsServerVariant({
+    pageId: activeMessageFilters.pageId,
+    adsetFilter: activeMessageFilters.adsetFilter,
+    taxSignature: messageTaxSignature,
+    hiddenSignature: messageHiddenSignature,
+  });
+  const legacyMessageRefreshComparisonKey = legacyMessageMetricsStorageKey({
+    domain: activeMessageFilters.domain,
+    startDate: activeMessageFilters.startDate,
+    endDate: activeMessageFilters.endDate,
+    metaAccountId: activeMessageFilters.metaAccountId,
+    pageId: activeMessageFilters.pageId,
+  });
+
+  useEffect(() => {
+    if (!lastRefreshed || !snapshotEligible) {
+      setMessageRefreshComparison(null);
+      setMessageRefreshSyncStatus("idle");
+      setMessageRefreshSyncError("");
+      return;
+    }
+    const currentSnapshot = buildMessageRefreshSnapshot(metaMessageFiltered, activeMessageFilters);
+    if (!Object.keys(currentSnapshot.campaigns).length) {
+      setMessageRefreshComparison(null);
+      setMessageRefreshSyncStatus("idle");
+      setMessageRefreshSyncError("");
+      return;
+    }
+    const refreshToken = lastRefreshed instanceof Date
+      ? lastRefreshed.toISOString()
+      : String(lastRefreshed);
+    let cancelled = false;
+    let previous = null;
+    try {
+      const stored = JSON.parse(localStorage.getItem(messageRefreshComparisonKey) || "null");
+      const storedCurrent = stored?.current?.campaigns
+        ? stored.current
+        : stored?.campaigns
+        ? stored
+        : null;
+      const sameCompletedRefresh = stored?.lastRefreshToken === refreshToken;
+      previous = sameCompletedRefresh && stored?.previous?.campaigns
+        ? stored.previous
+        : sameCompletedRefresh
+        ? null
+        : storedCurrent;
+      if (!sameCompletedRefresh) {
+        if (!storedCurrent) {
+          try {
+            const legacy = JSON.parse(localStorage.getItem(legacyMessageRefreshComparisonKey) || "null");
+            if (legacy?.campaigns) previous = legacy;
+          } catch (_) {
+            // Snapshot legado invalido nao impede a referencia compartilhada.
+          }
+        }
+        localStorage.setItem(messageRefreshComparisonKey, JSON.stringify({
+          schema: 5,
+          lastRefreshToken: refreshToken,
+          current: currentSnapshot,
+          previous: previous?.campaigns ? previous : null,
+        }));
+      }
+      setMessageRefreshComparison(previous?.campaigns ? previous : null);
+    } catch (_) {
+      // O banco continua sendo consultado mesmo quando o navegador bloqueia localStorage.
+      setMessageRefreshComparison(null);
+    }
+
+    setMessageRefreshSyncStatus("syncing");
+    setMessageRefreshSyncError("");
+    fetchJson(`${API_BASE}/message-refresh-snapshot`, {
+      method: "POST",
+      body: JSON.stringify({
+        domain: activeMessageFilters.domain,
+        account_id: activeMessageFilters.metaAccountId,
+        start_date: activeMessageFilters.startDate,
+        end_date: activeMessageFilters.endDate,
+        refresh_id: refreshToken,
+        variant: messageRefreshServerVariant,
+        legacy_variant: messageRefreshComparisonKey,
+        snapshot: currentSnapshot,
+        previous_snapshot: previous?.campaigns ? previous : null,
+      }),
+    }).then((response) => {
+      if (cancelled) return;
+      if (response?.previous?.campaigns) setMessageRefreshComparison(response.previous);
+      setMessageRefreshSyncStatus(response?.previous?.campaigns || previous?.campaigns ? "synced" : "seeded");
+    }).catch((err) => {
+      if (cancelled) return;
+      setMessageRefreshSyncError(formatError(err));
+      setMessageRefreshSyncStatus(previous?.campaigns ? "local" : "error");
+    });
+    return () => { cancelled = true; };
+  }, [
+    lastRefreshed,
+    snapshotEligible,
+    metaMessageFiltered,
+    messageRefreshComparisonKey,
+    messageRefreshServerVariant,
+    legacyMessageRefreshComparisonKey,
   ]);
 
   // Paginas (Facebook) presentes nas linhas de mensagem, para o filtro por Pagina.
@@ -12406,10 +12545,11 @@ function App() {
                 messenleadSources=${messenleadSources}
                 reportFilters=${appliedFilters || filters}
                 pageScoped=${!!filters.pageId}
-                refreshToken=${lastRefreshed ? String(lastRefreshed) : ""}
+                refreshComparisonSnapshot=${messageRefreshComparison}
+                refreshSyncStatus=${messageRefreshSyncStatus}
+                refreshSyncError=${messageRefreshSyncError}
                 dateComparisonSnapshot=${dateComparisonSnapshot}
                 dateComparisonError=${dateComparisonError}
-                hiddenCampaignSignature=${Array.from(hiddenCampaigns).sort().join(",")}
                 usePmLabels=${true}
                 brlRate=${brlRate}
                 metaTaxSettings=${settingsData}
@@ -12617,10 +12757,11 @@ function App() {
             messenleadSources=${messenleadSources}
             reportFilters=${appliedFilters || filters}
             pageScoped=${!!filters.pageId}
-            refreshToken=${lastRefreshed ? String(lastRefreshed) : ""}
+            refreshComparisonSnapshot=${messageRefreshComparison}
+            refreshSyncStatus=${messageRefreshSyncStatus}
+            refreshSyncError=${messageRefreshSyncError}
             dateComparisonSnapshot=${dateComparisonSnapshot}
             dateComparisonError=${dateComparisonError}
-            hiddenCampaignSignature=${Array.from(hiddenCampaigns).sort().join(",")}
             usePmLabels=${usePmLabels}
             brlRate=${brlRate}
             metaTaxSettings=${settingsData}
