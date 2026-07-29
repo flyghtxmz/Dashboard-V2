@@ -2726,6 +2726,11 @@ tbody tr:last-child td {
   background: rgba(249, 115, 22, 0.13);
 }
 
+.refresh-delta.same {
+  color: var(--muted);
+  background: var(--panel-3);
+}
+
 .sortable-header {
   display: inline-flex;
   align-items: center;

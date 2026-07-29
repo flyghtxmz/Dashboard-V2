@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 136;
+const APP_VERSION_BUILD = 138;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1104,7 +1104,9 @@ function RefreshDelta({ current, previous, format = "number" }) {
   const previousNumber = Number(previous);
   if (!Number.isFinite(currentNumber) || !Number.isFinite(previousNumber)) return null;
   const delta = currentNumber - previousNumber;
-  if (Math.abs(delta) < 0.000001) return null;
+  if (Math.abs(delta) < 0.000001) {
+    return html`<span className="refresh-delta same" title="Sem alteracao desde a referencia comparada">=</span>`;
+  }
   const formatted = format === "brl"
     ? currencyBRL.format(Math.abs(delta))
     : format === "usd"
@@ -1188,6 +1190,7 @@ function MetricasMensagensView({
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
   const [previousRefreshMetrics, setPreviousRefreshMetrics] = useState(null);
+  const [refreshSyncStatus, setRefreshSyncStatus] = useState("idle");
   const [advertiserSort, setAdvertiserSort] = useState({ key: "revenue", direction: "desc" });
   const exportMessagesExcel = () => {
     const dimensionKey = (value) => String(value || "")
@@ -1987,6 +1990,7 @@ function MetricasMensagensView({
   useEffect(() => {
     if (!refreshToken) {
       setPreviousRefreshMetrics(null);
+      setRefreshSyncStatus("idle");
       return;
     }
     if (!campaignRows.length || typeof localStorage === "undefined") return;
@@ -2053,6 +2057,7 @@ function MetricasMensagensView({
         }));
       }
       setPreviousRefreshMetrics(previous?.campaigns ? previous : null);
+      setRefreshSyncStatus("syncing");
       fetchJson(`${API_BASE}/message-refresh-snapshot`, {
         method: "POST",
         body: JSON.stringify({
@@ -2066,11 +2071,12 @@ function MetricasMensagensView({
           previous_snapshot: previous?.campaigns ? previous : null,
         }),
       }).then((response) => {
-        if (!cancelled && response?.previous?.campaigns) {
-          setPreviousRefreshMetrics(response.previous);
-        }
+        if (cancelled) return;
+        if (response?.previous?.campaigns) setPreviousRefreshMetrics(response.previous);
+        setRefreshSyncStatus(response?.previous?.campaigns ? "synced" : "seeded");
       }).catch(() => {
         // Sem banco, a comparacao local continua funcionando normalmente.
+        if (!cancelled) setRefreshSyncStatus("local");
       });
       const prefix = "__messages_refresh_metrics_v3__:";
       const storedScopes = [];
@@ -2087,6 +2093,7 @@ function MetricasMensagensView({
       storedScopes.sort((a, b) => b.savedAt - a.savedAt).slice(40).forEach(({ key }) => localStorage.removeItem(key));
     } catch (_) {
       setPreviousRefreshMetrics(null);
+      setRefreshSyncStatus("error");
     }
     // Cada token representa uma carga completa concluida. Nao depende de novas chamadas de API.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2772,80 +2779,6 @@ function MetricasMensagensView({
         "A elegibilidade final e validada pela Meta. Se recusar, esta otimizacao nao aceita Meta de custo.",
     };
   };
-  const engagementRows = safeRows.filter((row) => isEngagementObjective(row.objective));
-  const messageRows = safeRows.filter((row) => isMessageMetricsRow(row));
-  const trafficMessengerRows = safeRows.filter(
-    (row) => String(row.objective || "").toUpperCase() === "OUTCOME_TRAFFIC" && hasMessengerSignal(row)
-  );
-  const withJoinadsRows = safeRows.filter((row) => row.joinads_matched);
-  const messageWithJoinadsRows = messageRows.filter((row) => row.joinads_matched);
-  const rowsWithRevenue = safeRows.filter((row) => toNumber(row.revenue_client_value) !== 0);
-  const dataLevelCounts = safeRows.reduce((acc, row) => {
-    const key = row.data_level || "sem_data_level";
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  const objectiveCounts = safeRows.reduce((acc, row) => {
-    const key = row.objective || "sem_objective";
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  const sampleRows = safeRows.slice(0, 8).map((row) => ({
-    campaign: row.campaign_name || row.campaign_id || "-",
-    ad: row.ad_name || row.ad_id || "-",
-    objective: row.objective || "-",
-    matched: !!row.joinads_matched,
-    data_level: row.data_level || "-",
-    meta_impressions: toNumber(row.meta_impressions_value || row.impressions),
-    conversations_started: toNumber(row.messaging_conversations_started),
-    meta_cost_per_result: toNumber(row.cost_per_result_value),
-    cost_per_conversation: toNumber(row.messaging_cost_per_conversation),
-    action_types: Array.isArray(row.actions)
-      ? row.actions.map((action) => action?.action_type).filter(Boolean)
-      : [],
-    joinads_clicks: toNumber(row.clicks_joinads),
-    revenue: toNumber(row.revenue_client_value),
-    revenue_brl: toNumber(row.revenue_client_brl_value),
-    spend_brl: toNumber(row.spend_value || row.spend),
-    roas: row.roas_joinads || "-",
-    source: row.joinads_source_value || "-",
-  }));
-  const debugPayload = {
-    totalRows: safeRows.length,
-    engagementRows: engagementRows.length,
-    messageRows: messageRows.length,
-    trafficMessengerRows: trafficMessengerRows.length,
-    campaignRows: campaignRows.length,
-    withJoinadsRows: withJoinadsRows.length,
-    messageWithJoinadsRows: messageWithJoinadsRows.length,
-    rowsWithRevenue: rowsWithRevenue.length,
-    dataLevelCounts,
-    objectiveCounts,
-    rawJoinads: {
-      utmContentRows: diagnostics.joinadsContentRowsCount || 0,
-      utmCampaignRows: diagnostics.joinadsCampaignRowsCount || 0,
-      utmUserRows: diagnostics.joinadsUserRowsCount || 0,
-      utmTermRows: Array.isArray(termRows) ? termRows.length : 0,
-      utmTermLeadRows: leadTermRows.length,
-      utmTermLeadDailyRows: leadDailyRows.length,
-      utmMediumRows: Array.isArray(mediumRows) ? mediumRows.length : 0,
-      utmMediumMessengerRows: messengerMediumRows.length,
-      utmMediumOrganicRows: organicMediumRows.length,
-    },
-    superFilterReport: diagnostics.joinadsSuperFilterDiagnostics || {},
-    meta: diagnostics.metaDiagnostics || {},
-    messageFilter: {
-      sourceRows: diagnostics.messageSourceRowsCount || safeRows.length,
-      note: "Métricas Mensagens ignora filtro de domínio por URL porque campanhas Messenger apontam para chat, não para o domínio do blog.",
-    },
-    messenlead: {
-      sources: diagnostics.messenleadSourcesCount || 0,
-      unresolved: diagnostics.messenleadUnresolved || [],
-      leads: Array.isArray(leadRows) ? leadRows.length : 0,
-      unresolvedLeadIds,
-    },
-    samples: sampleRows,
-  };
   const advertiserDiagnosticRowsRaw = (Array.isArray(advertiserRows) ? advertiserRows : []).map((row, index) => ({
     index: index + 1,
     date: row.DATE || row.date || "-",
@@ -2898,6 +2831,15 @@ function MetricasMensagensView({
               : null}
             ${explicitComparisonDate && dateComparisonError
               ? html`<span className="chip danger" title=${dateComparisonError}>Comparacao indisponivel</span>`
+              : null}
+            ${!explicitComparisonDate && !previousRefreshMetrics?.campaigns && refreshSyncStatus === "syncing"
+              ? html`<span className="chip neutral">Sincronizando referencia...</span>`
+              : null}
+            ${!explicitComparisonDate && !previousRefreshMetrics?.campaigns && refreshSyncStatus === "seeded"
+              ? html`<span className="chip neutral" title="Esta carga criou a primeira referencia compartilhada. A proxima atualizacao mostrara as diferencas.">Base criada agora</span>`
+              : null}
+            ${!explicitComparisonDate && !previousRefreshMetrics?.campaigns && (refreshSyncStatus === "local" || refreshSyncStatus === "error")
+              ? html`<span className="chip danger" title="O banco compartilhado nao respondeu; a proxima comparacao ficara restrita a este navegador.">Referencia apenas local</span>`
               : null}
             <button
               className="primary"
@@ -3658,23 +3600,6 @@ function MetricasMensagensView({
           </section>
         `
         : null}
-      <section className="card wide">
-        <div className="card-head">
-          <div>
-            <span className="eyebrow">Diagnostico</span>
-            <h2 className="section-title">Logs Metricas Mensagens</h2>
-          </div>
-          <div className="chip-group">
-            <span className="chip neutral">${safeRows.length} linhas Meta</span>
-            <span className="chip neutral">${messageRows.length} mensagens</span>
-            <span className="chip neutral">${messageWithJoinadsRows.length} com JoinAds</span>
-          </div>
-        </div>
-        <p className="muted small">
-          Copie este bloco e me envie se as campanhas de mensagem nao aparecerem.
-        </p>
-        <pre className="debug-log">${JSON.stringify(debugPayload, null, 2)}</pre>
-      </section>
       <section className="card wide">
         <div className="card-head">
           <div>
@@ -12463,7 +12388,7 @@ function App() {
                 messenleadSources=${messenleadSources}
                 reportFilters=${appliedFilters || filters}
                 pageScoped=${!!filters.pageId}
-                refreshToken=${lastRefreshed && snapshotEligible ? String(lastRefreshed) : ""}
+                refreshToken=${lastRefreshed ? String(lastRefreshed) : ""}
                 dateComparisonSnapshot=${dateComparisonSnapshot}
                 dateComparisonError=${dateComparisonError}
                 hiddenCampaignSignature=${Array.from(hiddenCampaigns).sort().join(",")}
@@ -12674,7 +12599,7 @@ function App() {
             messenleadSources=${messenleadSources}
             reportFilters=${appliedFilters || filters}
             pageScoped=${!!filters.pageId}
-            refreshToken=${lastRefreshed && snapshotEligible ? String(lastRefreshed) : ""}
+            refreshToken=${lastRefreshed ? String(lastRefreshed) : ""}
             dateComparisonSnapshot=${dateComparisonSnapshot}
             dateComparisonError=${dateComparisonError}
             hiddenCampaignSignature=${Array.from(hiddenCampaigns).sort().join(",")}
