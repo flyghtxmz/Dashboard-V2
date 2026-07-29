@@ -2731,6 +2731,22 @@ tbody tr:last-child td {
   background: var(--panel-3);
 }
 
+.message-search-row {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.message-search-field {
+  width: min(520px, 100%);
+}
+
+.message-search-row .ghost {
+  flex: 0 0 auto;
+}
+
 .sortable-header {
   display: inline-flex;
   align-items: center;

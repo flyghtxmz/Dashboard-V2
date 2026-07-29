@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 138;
+const APP_VERSION_BUILD = 139;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1189,6 +1189,7 @@ function MetricasMensagensView({
   const [messageBudgetInputs, setMessageBudgetInputs] = useState({});
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
+  const [messageSearch, setMessageSearch] = useState("");
   const [previousRefreshMetrics, setPreviousRefreshMetrics] = useState(null);
   const [refreshSyncStatus, setRefreshSyncStatus] = useState("idle");
   const [advertiserSort, setAdvertiserSort] = useState({ key: "revenue", direction: "desc" });
@@ -1900,6 +1901,15 @@ function MetricasMensagensView({
       ctr_meta: row.meta_impressions > 0 ? (row.meta_clicks / row.meta_impressions) * 100 : null,
     }))
     .sort((a, b) => b.revenue_brl - a.revenue_brl);
+  const normalizedMessageSearch = normalizeKey(messageSearch);
+  const visibleCampaignRows = normalizedMessageSearch
+    ? campaignRows.filter((row) => {
+        const campaignName = normalizeKey(row.campaign_name || "");
+        const sourceValues = Array.from(row.sourceValues || []).map((value) => normalizeKey(value));
+        return campaignName.includes(normalizedMessageSearch)
+          || sourceValues.some((value) => value.includes(normalizedMessageSearch));
+      })
+    : campaignRows;
   const totalsRow = campaignRows.reduce(
     (acc, row) => {
       acc.ads += row.ads.size || 0;
@@ -1993,8 +2003,9 @@ function MetricasMensagensView({
       setRefreshSyncStatus("idle");
       return;
     }
-    if (!campaignRows.length || typeof localStorage === "undefined") return;
+    if (!campaignRows.length) return;
     let cancelled = false;
+    let previous = null;
     const currentSnapshot = {
       savedAt: new Date().toISOString(),
       finalized: reportFilters.startDate === reportFilters.endDate
@@ -2030,7 +2041,7 @@ function MetricasMensagensView({
         ? stored
         : null;
       const sameCompletedRefresh = stored?.lastRefreshToken === refreshToken;
-      let previous = sameCompletedRefresh && stored?.previous?.campaigns
+      previous = sameCompletedRefresh && stored?.previous?.campaigns
         ? stored.previous
         : sameCompletedRefresh
         ? null
@@ -2057,27 +2068,6 @@ function MetricasMensagensView({
         }));
       }
       setPreviousRefreshMetrics(previous?.campaigns ? previous : null);
-      setRefreshSyncStatus("syncing");
-      fetchJson(`${API_BASE}/message-refresh-snapshot`, {
-        method: "POST",
-        body: JSON.stringify({
-          domain: reportFilters.domain,
-          account_id: reportFilters.metaAccountId,
-          start_date: reportFilters.startDate,
-          end_date: reportFilters.endDate,
-          refresh_id: refreshToken,
-          variant: refreshComparisonKey,
-          snapshot: currentSnapshot,
-          previous_snapshot: previous?.campaigns ? previous : null,
-        }),
-      }).then((response) => {
-        if (cancelled) return;
-        if (response?.previous?.campaigns) setPreviousRefreshMetrics(response.previous);
-        setRefreshSyncStatus(response?.previous?.campaigns ? "synced" : "seeded");
-      }).catch(() => {
-        // Sem banco, a comparacao local continua funcionando normalmente.
-        if (!cancelled) setRefreshSyncStatus("local");
-      });
       const prefix = "__messages_refresh_metrics_v3__:";
       const storedScopes = [];
       for (let index = 0; index < localStorage.length; index += 1) {
@@ -2093,8 +2083,30 @@ function MetricasMensagensView({
       storedScopes.sort((a, b) => b.savedAt - a.savedAt).slice(40).forEach(({ key }) => localStorage.removeItem(key));
     } catch (_) {
       setPreviousRefreshMetrics(null);
-      setRefreshSyncStatus("error");
     }
+    // O banco e independente do localStorage. Isso mantem a comparacao funcionando
+    // em navegadores desktop que bloqueiam o armazenamento local.
+    setRefreshSyncStatus("syncing");
+    fetchJson(`${API_BASE}/message-refresh-snapshot`, {
+      method: "POST",
+      body: JSON.stringify({
+        domain: reportFilters.domain,
+        account_id: reportFilters.metaAccountId,
+        start_date: reportFilters.startDate,
+        end_date: reportFilters.endDate,
+        refresh_id: refreshToken,
+        variant: refreshComparisonKey,
+        snapshot: currentSnapshot,
+        previous_snapshot: previous?.campaigns ? previous : null,
+      }),
+    }).then((response) => {
+      if (cancelled) return;
+      if (response?.previous?.campaigns) setPreviousRefreshMetrics(response.previous);
+      setRefreshSyncStatus(response?.previous?.campaigns ? "synced" : "seeded");
+    }).catch(() => {
+      // Sem banco, a comparacao local continua funcionando normalmente.
+      if (!cancelled) setRefreshSyncStatus(previous?.campaigns ? "local" : "error");
+    });
     // Cada token representa uma carga completa concluida. Nao depende de novas chamadas de API.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { cancelled = true; };
@@ -2823,7 +2835,7 @@ function MetricasMensagensView({
             <h2 className="section-title">Metricas Mensagens</h2>
           </div>
           <div className="inline-actions">
-            <span className="chip neutral">${campaignRows.length} campanhas de mensagem</span>
+            <span className="chip neutral">${normalizedMessageSearch ? `${visibleCampaignRows.length} de ${campaignRows.length}` : campaignRows.length} campanhas de mensagem</span>
             ${explicitComparisonDate && comparisonMetrics?.campaigns
               ? html`<span className="chip neutral" title=${`Setas comparam os dados atuais com o dia ${explicitComparisonLabel}`}>Comparando com ${explicitComparisonLabel}</span>`
               : !explicitComparisonDate && previousRefreshMetrics?.campaigns
@@ -2851,13 +2863,20 @@ function MetricasMensagensView({
             </button>
           </div>
         </div>
-        ${!showUserCommission && metaTaxSettings.metaTaxEnabled !== false
-          ? html`<div className="alert info" style=${{ marginBottom: "14px" }}>
-              Custo real Meta por gross-up: gasto de mídia ÷ (1 − ${toNumber(metaTaxSettings.metaTaxRatePercent).toFixed(2)}%) a partir de
-              ${metaTaxSettings.metaTaxEffectiveDate || "2026-01-01"}.
-              ${metaTaxSettings.metaTaxMode === "included" ? "O spend da API está configurado como já tributado." : "O spend da API está configurado como líquido."}
-            </div>`
-          : null}
+        <div className="message-search-row">
+          <label className="field message-search-field">
+            <span>Buscar campanha ou src_</span>
+            <input
+              type="search"
+              value=${messageSearch}
+              placeholder="Ex.: Mexico ou src_04h0h2f0c0"
+              onInput=${(event) => setMessageSearch(event.target.value)}
+            />
+          </label>
+          ${messageSearch
+            ? html`<button className="ghost" onClick=${() => setMessageSearch("")}>Limpar busca</button>`
+            : null}
+        </div>
         <div className="table-wrapper scroll-x">
           <table>
             <thead>
@@ -2901,9 +2920,9 @@ function MetricasMensagensView({
               </tr>
             </thead>
             <tbody>
-              ${campaignRows.length === 0
-                ? html`<tr><td colSpan=${showUserCommission ? 11 : allowBidControl ? 24 : 20} className="muted">Sem campanhas de mensagem para o periodo.</td></tr>`
-                : campaignRows.map((row) => {
+              ${visibleCampaignRows.length === 0
+                ? html`<tr><td colSpan=${showUserCommission ? 11 : allowBidControl ? 24 : 20} className="muted">${normalizedMessageSearch ? "Nenhuma campanha ou src_ corresponde a busca." : "Sem campanhas de mensagem para o periodo."}</td></tr>`
+                : visibleCampaignRows.map((row) => {
                   const previousRow = comparisonMetrics?.campaigns?.[
                     String(row.campaign_id || row.campaign_name)
                   ] || (explicitComparisonDate && comparisonMetrics
@@ -3132,7 +3151,7 @@ function MetricasMensagensView({
                     </tr>
                   `;
                 })}
-              ${campaignRows.length
+              ${visibleCampaignRows.length && !normalizedMessageSearch
                 ? html`
                     <tr className="summary-row">
                       <td><strong>Total</strong></td>
