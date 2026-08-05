@@ -3630,6 +3630,10 @@ tbody tr:last-child td {
   gap: 8px;
 }
 
+.persistent-campaign-builder[hidden] {
+  display: none !important;
+}
+
 .campaign-media-picker-wrap > .ghost {
   justify-self: start;
 }

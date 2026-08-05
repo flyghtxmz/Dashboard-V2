@@ -18,7 +18,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 153;
+const APP_VERSION_BUILD = 154;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -8530,6 +8530,29 @@ function PaisSelect({ value, onChange, placeholder, inputStyle, onEnter }) {
   `;
 }
 
+function PersistentCampaignBuilder({ visible, accountId, pages, pagesLoading, pagesMeta, pagesError, onLoadPages, pixels, pixelsLoading, onLoadPixels, nichos, savedUrls }) {
+  return html`
+    <div className="persistent-campaign-builder" hidden=${!visible} aria-hidden=${visible ? "false" : "true"}>
+      <main className="grid">
+        <${CriarCampanhaView}
+          key=${accountId || "sem-conta"}
+          accountId=${accountId}
+          pages=${pages}
+          pagesLoading=${pagesLoading}
+          pagesMeta=${pagesMeta}
+          pagesError=${pagesError}
+          onLoadPages=${onLoadPages}
+          pixels=${pixels}
+          pixelsLoading=${pixelsLoading}
+          onLoadPixels=${onLoadPixels}
+          nichos=${nichos}
+          savedUrls=${savedUrls}
+        />
+      </main>
+    </div>
+  `;
+}
+
 function ConfiguracoesView({ settings, onSave, saving }) {
   const [domains, setDomains] = useState(settings.domains?.length ? settings.domains : [...DEFAULT_DOMAINS]);
   const [metaAccountId, setMetaAccountId] = useState(settings.metaAccountId || "");
@@ -13666,6 +13689,21 @@ function App() {
           />
         ` : null}
 
+        <${PersistentCampaignBuilder}
+          visible=${activeTab === "criar"}
+          accountId=${filters.metaAccountId.trim()}
+          pages=${pagesList}
+          pagesLoading=${pagesLoading}
+          pagesMeta=${pagesMeta}
+          pagesError=${pagesError}
+          onLoadPages=${handleLoadPages}
+          pixels=${pixelsList}
+          pixelsLoading=${pixelsLoading}
+          onLoadPixels=${handleLoadPixels}
+          nichos=${settingsData.nichos}
+          savedUrls=${settingsData.urls || []}
+        />
+
         ${activeTab === "dashboard"
           ? html`
               <main className="grid">
@@ -13678,23 +13716,7 @@ function App() {
               </main>
             `
           : activeTab === "criar"
-          ? html`
-              <main className="grid">
-                <${CriarCampanhaView}
-                  accountId=${filters.metaAccountId.trim()}
-                  pages=${pagesList}
-                  pagesLoading=${pagesLoading}
-                  pagesMeta=${pagesMeta}
-                  pagesError=${pagesError}
-                  onLoadPages=${handleLoadPages}
-                  pixels=${pixelsList}
-                  pixelsLoading=${pixelsLoading}
-                  onLoadPixels=${handleLoadPixels}
-                  nichos=${settingsData.nichos}
-                  savedUrls=${settingsData.urls || []}
-                />
-              </main>
-            `
+          ? null
           : html`
               <${MetricasMensagensView}
                 rows=${metaMessageFiltered}
@@ -13873,6 +13895,21 @@ function App() {
           showPageFilter=${activeTab === "metricas_mensagens"}
         />
       ` : null}
+
+      <${PersistentCampaignBuilder}
+        visible=${activeTab === "criar"}
+        accountId=${filters.metaAccountId.trim()}
+        pages=${pagesList}
+        pagesLoading=${pagesLoading}
+        pagesMeta=${pagesMeta}
+        pagesError=${pagesError}
+        onLoadPages=${handleLoadPages}
+        pixels=${pixelsList}
+        pixelsLoading=${pixelsLoading}
+        onLoadPixels=${handleLoadPixels}
+        nichos=${settingsData.nichos}
+        savedUrls=${settingsData.urls || []}
+      />
 
       ${activeTab === "dashboard"
         ? html`
@@ -14100,23 +14137,7 @@ function App() {
             />
           `
         : activeTab === "criar"
-        ? html`
-            <main className="grid">
-              <${CriarCampanhaView}
-                accountId=${filters.metaAccountId.trim()}
-                pages=${pagesList}
-                pagesLoading=${pagesLoading}
-                pagesMeta=${pagesMeta}
-                pagesError=${pagesError}
-                onLoadPages=${handleLoadPages}
-                pixels=${pixelsList}
-                pixelsLoading=${pixelsLoading}
-                onLoadPixels=${handleLoadPixels}
-                nichos=${settingsData.nichos}
-                savedUrls=${settingsData.urls || []}
-              />
-            </main>
-          `
+        ? null
         : html`
             <main className="grid">
               ${html`
