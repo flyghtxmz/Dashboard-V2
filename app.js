@@ -7185,6 +7185,9 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState(null);
   const [formError, setFormError] = useState("");
+  const [activatingCreatedCampaign, setActivatingCreatedCampaign] = useState(false);
+  const [activationError, setActivationError] = useState("");
+  const [createdCampaignActive, setCreatedCampaignActive] = useState(false);
 
   // Campanha
   const [campName, setCampName] = useState("");
@@ -7580,6 +7583,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
 
   const resetForm = () => {
     setStep(1); setResult(null); setFormError("");
+    setActivatingCreatedCampaign(false); setActivationError(""); setCreatedCampaignActive(false);
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE"); setDestinationType("WEBSITE");
     setCampStatus("PAUSED"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
     setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCampNum("01"); setCjNum("01"); setAnNum("01");
@@ -7598,6 +7602,39 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setSkipAd(false); setAdName(""); setPageId(""); setPageSearch(""); setManualPageEntry(false); setAdFormat("image");
     setImageUrl(""); setImageHash(""); setVideoId(""); setThumbUrl(""); setIgActorId("");
     setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl(""); setUrlTags(DEFAULT_UTM_TAGS);
+  };
+
+  const handleActivateCreatedCampaign = async () => {
+    if (!result?.campaign_id || activatingCreatedCampaign) return;
+    setActivatingCreatedCampaign(true);
+    setActivationError("");
+    try {
+      const successfulResults = Array.isArray(result.results)
+        ? result.results.filter((item) => !item?.error)
+        : [];
+      const adIds = successfulResults.flatMap((item) =>
+        Array.isArray(item.ads) ? item.ads.filter((ad) => !ad?.error && ad?.ad_id).map((ad) => ad.ad_id) : []
+      );
+      const adsetIds = successfulResults.map((item) => item.adset_id).filter(Boolean);
+
+      await Promise.all(adIds.map((adId) => fetchJson("/api/meta-ad-status", {
+        method: "POST",
+        body: JSON.stringify({ ad_id: adId, status: "ACTIVE" }),
+      })));
+      await Promise.all(adsetIds.map((adsetId) => fetchJson("/api/meta-adset-status", {
+        method: "POST",
+        body: JSON.stringify({ adset_id: adsetId, status: "ACTIVE" }),
+      })));
+      await fetchJson("/api/meta-campaign-status", {
+        method: "POST",
+        body: JSON.stringify({ campaign_id: result.campaign_id, status: "ACTIVE" }),
+      });
+      setCreatedCampaignActive(true);
+    } catch (err) {
+      setActivationError(formatError(err));
+    } finally {
+      setActivatingCreatedCampaign(false);
+    }
   };
 
   const handlePublish = async () => {
@@ -7738,12 +7775,29 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
           `}
         </div>
         <p className="muted small">
-          Os itens criados ficaram com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
-          ${campStatus === "PAUSED" ? " Revise e ative no Gerenciador de Anúncios quando estiver pronto." : " A veiculação poderá começar após a aprovação da Meta."}
+          Os itens criados ficaram com status <strong>${createdCampaignActive || campStatus === "ACTIVE" ? "Ativo" : "Pausado"}</strong>.
+          ${createdCampaignActive || campStatus === "ACTIVE" ? " A veiculação poderá começar após a aprovação da Meta." : " Revise os dados e ative quando estiver pronto."}
         </p>
-        <button className="primary result-action" onClick=${resetForm}>
-          + Criar outra campanha
-        </button>
+        ${activationError ? html`
+          <div className="status error" style=${{ margin: "12px auto 0", maxWidth: "680px" }}>
+            Não foi possível ativar todos os itens: ${activationError}. Tente novamente.
+          </div>
+        ` : null}
+        ${createdCampaignActive ? html`
+          <div className="status ok" style=${{ margin: "12px auto 0", maxWidth: "680px" }}>
+            Campanha, conjuntos e anúncios ativados com sucesso.
+          </div>
+        ` : null}
+        <div className="result-actions">
+          ${ok && campStatus === "PAUSED" && result?.campaign_id && !createdCampaignActive ? html`
+            <button className="primary" onClick=${handleActivateCreatedCampaign} disabled=${activatingCreatedCampaign}>
+              ${activatingCreatedCampaign ? "Ativando campanha..." : "Ligar campanha"}
+            </button>
+          ` : null}
+          <button className=${ok && campStatus === "PAUSED" && !createdCampaignActive ? "ghost" : "primary"} onClick=${resetForm} disabled=${activatingCreatedCampaign}>
+            + Criar outra campanha
+          </button>
+        </div>
       </section>
     `;
   }
