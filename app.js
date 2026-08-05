@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 142;
+const APP_VERSION_BUILD = 143;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -6577,7 +6577,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [campName, setCampName] = useState("");
   const [objective, setObjective] = useState("OUTCOME_TRAFFIC");
   const [specialCat, setSpecialCat] = useState("NONE");
-  const [campStatus, setCampStatus] = useState("ACTIVE");
+  const [campStatus, setCampStatus] = useState("PAUSED");
   const [nicho, setNicho] = useState(null);
   const [campNameManual, setCampNameManual] = useState(false);
   const [adsetNameManual, setAdsetNameManual] = useState(false);
@@ -6634,6 +6634,56 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [locLanguages, setLocLanguages] = useState([]);
 
   const availableGoals = OPTIMIZATION_GOALS_MAP[objective] || OPTIMIZATION_GOALS_MAP["OUTCOME_TRAFFIC"];
+  const isPositiveMoney = (value) => {
+    const amount = Number(value);
+    return Number.isFinite(amount) && amount > 0;
+  };
+  const isHttpUrl = (value) => {
+    try {
+      const parsed = new URL(String(value || "").trim());
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  };
+  const manualPlacementSelected = Object.values(manualPlacements || {}).some(Boolean);
+  const cappedBid = bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP";
+  const currentAdHasInput = [adName, pageId, imageUrl, videoId, thumbUrl, igActorId, headline, adBody, adDescription, destUrl]
+    .some((value) => String(value || "").trim());
+  const currentAdIssues = skipAd || (!currentAdHasInput && savedAds.length > 0) ? [] : [
+    !adName.trim() ? "Informe o nome do anuncio." : "",
+    !pageId ? "Selecione a Pagina do Facebook." : "",
+    !headline.trim() ? "Informe o titulo do anuncio." : "",
+    !isHttpUrl(destUrl) ? "Informe uma URL de destino http(s) valida." : "",
+    adFormat === "image" && !isHttpUrl(imageUrl) ? "Informe uma URL http(s) valida para a imagem." : "",
+    adFormat === "video" && !videoId.trim() ? "Informe o ID do video." : "",
+  ].filter(Boolean);
+  const step1Issues = [
+    !accountId ? "A conta Meta nao esta configurada." : "",
+    !campName.trim() ? "Informe o nome da campanha." : "",
+    cbo && !isPositiveMoney(campBudget) ? "Informe um orcamento CBO maior que zero." : "",
+    spendingLimit && !isPositiveMoney(spendingLimit) ? "O limite de gastos deve ser maior que zero." : "",
+  ].filter(Boolean);
+  const minAge = Number(ageMin);
+  const maxAge = Number(ageMax);
+  const step2Issues = [
+    !adsetName.trim() ? "Informe o nome do conjunto." : "",
+    !Array.isArray(countries) || countries.length === 0 ? "Selecione pelo menos um pais." : "",
+    !Number.isFinite(minAge) || minAge < 18 || minAge > 65 ? "A idade minima deve ficar entre 18 e 65." : "",
+    !Number.isFinite(maxAge) || maxAge < 18 || maxAge > 65 ? "A idade maxima deve ficar entre 18 e 65." : "",
+    Number.isFinite(minAge) && Number.isFinite(maxAge) && minAge > maxAge ? "A idade minima nao pode superar a maxima." : "",
+    !cbo && !isPositiveMoney(adsetBudget) ? "Informe um orcamento do conjunto maior que zero." : "",
+    cappedBid && !isPositiveMoney(bidAmount) ? "Informe o valor do limite de lance/CPA." : "",
+    placementMode === "manual" && !manualPlacementSelected ? "Selecione pelo menos um posicionamento manual." : "",
+    startTime && endTime && new Date(startTime).getTime() >= new Date(endTime).getTime()
+      ? "O termino deve ser posterior ao inicio."
+      : "",
+  ].filter(Boolean);
+  const step3Issues = skipAd
+    ? []
+    : savedAds.length === 0 && !currentAdHasInput
+    ? ["Preencha um anuncio ou selecione Pular anuncio agora."]
+    : currentAdIssues;
 
   const handleObjectiveChange = (val) => {
     setObjective(val);
@@ -6708,6 +6758,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     description: adDescription.trim(),
     cta_type: ctaType,
     destination_url: destUrl.trim(),
+    status: campStatus,
     _anNum: anNum,
   });
 
@@ -6723,7 +6774,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
       .then((d) => { if (d.code === "success") { setCampNum(d.nextFormatted); setCampNameManual(false); } })
       .catch(() => {})
       .finally(() => setCampNumLoading(false));
-  }, [nicho, objective]);
+  }, [nicho, objective, accountId]);
 
   useEffect(() => {
     if (!adsetNameManual) { const v = buildAdsetName(nicho, objective, countries, cjNum); if (v) setAdsetName(v); }
@@ -6736,7 +6787,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const resetForm = () => {
     setStep(1); setResult(null); setFormError("");
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
-    setCampStatus("ACTIVE"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
+    setCampStatus("PAUSED"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
     setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCampNum("01"); setCjNum("01"); setAnNum("01");
     setSavedAdsets([]); setSavedAds([]);
     setSpendingLimit("");
@@ -6753,6 +6804,11 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   };
 
   const handlePublish = async () => {
+    const validationIssues = [...step1Issues, ...step2Issues, ...step3Issues];
+    if (validationIssues.length) {
+      setFormError(validationIssues[0]);
+      return;
+    }
     setPublishing(true);
     setFormError("");
     try {
@@ -6770,9 +6826,11 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
         adsets: (() => {
           const allAdsets = [...savedAdsets, snapshotCurrentAdset()];
           const currentAd = snapshotCurrentAd();
-          const hasCurrentAd = Boolean(currentAd.page_id && currentAd.destination_url);
-          const allAds = skipAd ? [] : [...savedAds, ...(hasCurrentAd ? [currentAd] : [])];
-          return allAdsets.map((adsetSnap) => ({ ...adsetSnap, ads: allAds }));
+          const hasCurrentAd = !skipAd && currentAdHasInput && currentAdIssues.length === 0;
+          const allAds = skipAd
+            ? []
+            : [...savedAds, ...(hasCurrentAd ? [currentAd] : [])].map((adSnap) => ({ ...adSnap, status: campStatus }));
+          return allAdsets.map((adsetSnap) => ({ ...adsetSnap, status: campStatus, ads: allAds }));
         })(),
       };
 
@@ -6799,12 +6857,9 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     }
   };
 
-  const step1Valid = campName.trim() && (!cbo || campBudget);
-  const step2Valid = cbo || adsetBudget;
-  const step3Valid = skipAd || savedAds.length > 0 || (
-    pageId && destUrl.trim() && headline.trim() &&
-    (adFormat === "image" ? imageUrl.trim() : videoId.trim())
-  );
+  const step1Valid = step1Issues.length === 0;
+  const step2Valid = step2Issues.length === 0;
+  const step3Valid = step3Issues.length === 0;
 
   const StepDot = ({ n }) => {
     const current = n === step;
@@ -6859,7 +6914,10 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             ${result?.ad_id ? html`<div>📣 Anúncio: <code className="result-code">${result.ad_id}</code></div>` : null}
           `}
         </div>
-        <p className="muted small">Tudo criado com status <strong>Pausado</strong>. Revise e ative no Gerenciador de Anúncios quando pronto.</p>
+        <p className="muted small">
+          Os itens criados ficaram com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
+          ${campStatus === "PAUSED" ? " Revise e ative no Gerenciador de Anúncios quando estiver pronto." : " A veiculação poderá começar após a aprovação da Meta."}
+        </p>
         <button className="primary result-action" onClick=${resetForm}>
           + Criar outra campanha
         </button>
@@ -6980,6 +7038,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             ` : null}
           </div>
           <div className="action-row-end">
+            ${step1Issues.length ? html`<span className="form-validation-hint">${step1Issues[0]}</span>` : null}
             <button className="primary" disabled=${!step1Valid} onClick=${() => setStep(2)}>
               Próximo: Conjunto →
             </button>
@@ -7222,6 +7281,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           <div className="action-row-between">
             <button onClick=${() => setStep(1)}>â† Voltar</button>
             <div className="action-group">
+              ${step2Issues.length ? html`<span className="form-validation-hint">${step2Issues[0]}</span>` : null}
               <button className="ghost" disabled=${!step2Valid} onClick=${() => {
                 setSavedAdsets((prev) => [...prev, snapshotCurrentAdset()]);
                 const nextCj = String(savedAdsets.length + 2).padStart(2, "0");
@@ -7439,6 +7499,7 @@ ${(() => {
           <div className="action-row-between">
             <button onClick=${() => setStep(2)}>â† Voltar</button>
             <div className="action-group">
+              ${step3Issues.length ? html`<span className="form-validation-hint">${step3Issues[0]}</span>` : null}
               ${!skipAd ? html`
                 <button className="ghost" disabled=${!step3Valid} onClick=${() => {
                   setSavedAds((prev) => [...prev, snapshotCurrentAd()]);

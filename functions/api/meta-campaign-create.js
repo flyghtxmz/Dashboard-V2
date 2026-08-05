@@ -1,7 +1,82 @@
 import { jsonResponse, readJson, getMetaToken, safeJson } from "../_utils.js";
 import { canAccessDomain, getSession } from "../_auth.js";
+import { loadSettings } from "../_settings.js";
 
 const API_BASE = "https://graph.facebook.com/v24.0";
+
+function normalizeAccountId(value) {
+  return String(value || "").trim().replace(/^act_/i, "");
+}
+
+function isPositiveAmount(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0;
+}
+
+function isHttpUrl(value) {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function validateMetaCampaignCreationPayload(campaign, adsets) {
+  const errors = [];
+  const campaignHasDaily = campaign?.daily_budget !== undefined;
+  const campaignHasLifetime = campaign?.lifetime_budget !== undefined;
+  if (campaignHasDaily && campaignHasLifetime) errors.push("A campanha nao pode ter orcamento diario e vitalicio ao mesmo tempo.");
+  if (campaignHasDaily && !isPositiveAmount(campaign.daily_budget)) errors.push("O orcamento diario da campanha deve ser maior que zero.");
+  if (campaignHasLifetime && !isPositiveAmount(campaign.lifetime_budget)) errors.push("O orcamento vitalicio da campanha deve ser maior que zero.");
+  if (campaign?.spending_limit !== undefined && !isPositiveAmount(campaign.spending_limit)) errors.push("O limite de gastos da campanha deve ser maior que zero.");
+  if (!new Set(["PAUSED", "ACTIVE"]).has(String(campaign?.status || "PAUSED"))) errors.push("Status da campanha invalido.");
+
+  const isCbo = campaignHasDaily || campaignHasLifetime;
+  (Array.isArray(adsets) ? adsets : []).forEach((adset, adsetIndex) => {
+    const label = `Conjunto ${adsetIndex + 1}`;
+    if (!String(adset?.name || "").trim()) errors.push(`${label}: informe o nome.`);
+    const countries = Array.isArray(adset?.countries) ? adset.countries.filter(Boolean) : [];
+    if (!countries.length) errors.push(`${label}: selecione pelo menos um pais.`);
+    const ageMin = Number(adset?.age_min);
+    const ageMax = Number(adset?.age_max);
+    if (!Number.isFinite(ageMin) || ageMin < 18 || ageMin > 65) errors.push(`${label}: idade minima invalida.`);
+    if (!Number.isFinite(ageMax) || ageMax < 18 || ageMax > 65) errors.push(`${label}: idade maxima invalida.`);
+    if (Number.isFinite(ageMin) && Number.isFinite(ageMax) && ageMin > ageMax) errors.push(`${label}: idade minima maior que a maxima.`);
+    const hasDaily = adset?.daily_budget !== undefined;
+    const hasLifetime = adset?.lifetime_budget !== undefined;
+    if (!isCbo && !hasDaily && !hasLifetime) errors.push(`${label}: informe o orcamento.`);
+    if (hasDaily && hasLifetime) errors.push(`${label}: use apenas um tipo de orcamento.`);
+    if (hasDaily && !isPositiveAmount(adset.daily_budget)) errors.push(`${label}: orcamento diario deve ser maior que zero.`);
+    if (hasLifetime && !isPositiveAmount(adset.lifetime_budget)) errors.push(`${label}: orcamento vitalicio deve ser maior que zero.`);
+    if (["LOWEST_COST_WITH_BID_CAP", "COST_CAP"].includes(adset?.bid_strategy) && !isPositiveAmount(adset?.bid_amount)) {
+      errors.push(`${label}: informe um limite de lance/CPA maior que zero.`);
+    }
+    if (adset?.manual_placements && !Object.values(adset.manual_placements).some(Boolean)) {
+      errors.push(`${label}: selecione pelo menos um posicionamento manual.`);
+    }
+    if (adset?.start_time && adset?.end_time && new Date(adset.start_time).getTime() >= new Date(adset.end_time).getTime()) {
+      errors.push(`${label}: o termino deve ser posterior ao inicio.`);
+    }
+
+    (Array.isArray(adset?.ads) ? adset.ads : []).forEach((ad, adIndex) => {
+      const adLabel = `${label}, anuncio ${adIndex + 1}`;
+      if (!String(ad?.name || "").trim()) errors.push(`${adLabel}: informe o nome.`);
+      if (!String(ad?.page_id || "").trim()) errors.push(`${adLabel}: informe a Pagina do Facebook.`);
+      if (!String(ad?.headline || "").trim()) errors.push(`${adLabel}: informe o titulo.`);
+      if (!isHttpUrl(ad?.destination_url)) errors.push(`${adLabel}: URL de destino invalida.`);
+      if (ad?.ad_format === "video") {
+        if (!String(ad?.video_id || "").trim()) errors.push(`${adLabel}: informe o ID do video.`);
+      } else if (!isHttpUrl(ad?.image_url)) {
+        errors.push(`${adLabel}: URL da imagem invalida.`);
+      }
+      if (!new Set(["PAUSED", "ACTIVE"]).has(String(ad?.status || campaign?.status || "PAUSED"))) {
+        errors.push(`${adLabel}: status invalido.`);
+      }
+    });
+  });
+  return errors;
+}
 
 async function createAdset(adset, campaignId, isCBO, account_id, token) {
   const ap = new URLSearchParams();
@@ -111,7 +186,7 @@ async function createAd(ad, adsetId, account_id, token) {
   ap2.set("name", ad.name || "Anúncio");
   ap2.set("adset_id", adsetId);
   ap2.set("creative", JSON.stringify({ creative_id: creativeData.id }));
-  ap2.set("status", "PAUSED");
+  ap2.set("status", ad.status === "ACTIVE" ? "ACTIVE" : "PAUSED");
   ap2.set("access_token", token);
   const adRes = await fetch(`${API_BASE}/${encodeURIComponent(account_id)}/ads`, { method: "POST", body: ap2 });
   const adData = await safeJson(adRes);
@@ -140,6 +215,13 @@ export async function onRequest({ request, env }) {
     : adset ? [{ ...adset, ads: ad && ad.page_id ? [ad] : [] }] : [];
 
   if (session.role !== "admin") {
+    const settings = await loadSettings(env);
+    if (!settings.metaAccountId || normalizeAccountId(settings.metaAccountId) !== normalizeAccountId(account_id)) {
+      return jsonResponse(403, {
+        code: "error",
+        message: "Conta Meta fora do escopo autorizado.",
+      });
+    }
     for (const adsetDef of adsetsToCreate) {
       const adsToValidate = Array.isArray(adsetDef?.ads) ? adsetDef.ads : [];
       for (const adDef of adsToValidate) {
@@ -151,6 +233,15 @@ export async function onRequest({ request, env }) {
         }
       }
     }
+  }
+
+  const validationErrors = validateMetaCampaignCreationPayload(campaign, adsetsToCreate);
+  if (validationErrors.length) {
+    return jsonResponse(400, {
+      code: "error",
+      error: `Revise os dados antes de criar a campanha: ${validationErrors[0]}`,
+      details: validationErrors,
+    });
   }
 
   let campaignId = null;
