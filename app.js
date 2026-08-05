@@ -8,7 +8,7 @@ import {
   nextBuilderNumber,
   normalizeCountryLabel,
   resolveNicheCountryCodes,
-} from "./campaign-builder.mjs?v=150";
+} from "./campaign-builder.mjs?v=151";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -18,7 +18,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 150;
+const APP_VERSION_BUILD = 151;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -7154,6 +7154,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const [adName, setAdName] = useState("");
   const [pageId, setPageId] = useState("");
   const [pageSearch, setPageSearch] = useState("");
+  const [manualPageEntry, setManualPageEntry] = useState(false);
   const [adFormat, setAdFormat] = useState("image"); // "image" | "video"
   const [imageUrl, setImageUrl] = useState("");
   const [videoId, setVideoId] = useState("");
@@ -7184,6 +7185,10 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const visiblePageOptions = selectedPage && !filteredPageOptions.some((page) => String(page.id) === String(pageId))
     ? [selectedPage, ...filteredPageOptions]
     : filteredPageOptions;
+  const pagePermissions = pagesMeta?.permissions || {};
+  const missingPagePermissions = pagesMeta?.permissions_checked
+    ? ["pages_show_list", "business_management"].filter((permission) => pagePermissions[permission] !== "granted")
+    : [];
 
   const availableGoals = OPTIMIZATION_GOALS_MAP[objective] || OPTIMIZATION_GOALS_MAP["OUTCOME_TRAFFIC"];
   const isPositiveMoney = (value) => {
@@ -7429,7 +7434,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setBidAmount(""); setStartTime(""); setEndTime("");
     setPixelId(""); setConversionEvent("PURCHASE"); setDevicePlatforms(["mobile", "desktop"]);
     setLocLanguages([]);
-    setSkipAd(false); setAdName(""); setPageId(""); setPageSearch(""); setAdFormat("image");
+    setSkipAd(false); setAdName(""); setPageId(""); setPageSearch(""); setManualPageEntry(false); setAdFormat("image");
     setImageUrl(""); setVideoId(""); setThumbUrl(""); setIgActorId("");
     setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl(""); setUrlTags(DEFAULT_UTM_TAGS);
   };
@@ -8054,32 +8059,58 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
                     ? html`<span className="muted small"> carregando...</span>`
                     : html`<span className="muted small"> — ${(pages || []).length} disponível(is)</span>`}
                 </label>
-                ${(pages || []).length > 8 ? html`
-                  <input
-                    type="search"
-                    value=${pageSearch}
-                    onInput=${(event) => setPageSearch(event.target.value)}
-                    placeholder="Buscar página por nome ou ID"
-                    style=${{ marginBottom: "6px" }}
-                  />
-                ` : null}
-                <select value=${pageId} onChange=${(e) => setPageId(e.target.value)}>
-                  <option value="">${normalizedPageSearch && visiblePageOptions.length === 0 ? "Nenhuma página encontrada" : "Selecione uma página"}</option>
-                  ${visiblePageOptions.map((p) => html`<option key=${p.id} value=${p.id}>${p.name} (${p.id})</option>`)}
-                </select>
+                ${manualPageEntry
+                  ? html`
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value=${pageId}
+                        onInput=${(event) => setPageId(event.target.value.trim())}
+                        placeholder="Cole o ID numérico da Página do Facebook"
+                      />
+                    `
+                  : html`
+                      ${(pages || []).length > 8 ? html`
+                        <input
+                          type="search"
+                          value=${pageSearch}
+                          onInput=${(event) => setPageSearch(event.target.value)}
+                          placeholder="Buscar página por nome ou ID"
+                          style=${{ marginBottom: "6px" }}
+                        />
+                      ` : null}
+                      <select value=${pageId} onChange=${(e) => setPageId(e.target.value)}>
+                        <option value="">${normalizedPageSearch && visiblePageOptions.length === 0 ? "Nenhuma página encontrada" : "Selecione uma página"}</option>
+                        ${visiblePageOptions.map((p) => html`<option key=${p.id} value=${p.id}>${p.name} (${p.id})</option>`)}
+                      </select>
+                    `}
                 <div className="action-row-between" style=${{ marginTop: "6px" }}>
                   <span className="muted small">
                     ${pagesMeta?.sources?.length
-                      ? pagesMeta.sources.map((source) => `${source.name}: ${source.rows}`).join(" · ")
-                      : "Inclui páginas gerenciadas e promovíveis pela conta."}
+                      ? pagesMeta.sources.map((source) => `${source.label || source.name}: ${source.rows}`).join(" · ")
+                      : "Inclui páginas gerenciadas, promovíveis e dos portfólios empresariais."}
                   </span>
-                  <button className="ghost small" onClick=${onLoadPages} disabled=${pagesLoading}>
-                    ${pagesLoading ? "Carregando..." : (pages || []).length ? "Atualizar lista" : "Carregar páginas"}
-                  </button>
+                  <div className="action-group">
+                    <button className="ghost small" onClick=${() => {
+                      const next = !manualPageEntry;
+                      if (!next && !(pages || []).some((page) => String(page.id) === String(pageId))) setPageId("");
+                      setManualPageEntry(next);
+                    }}>
+                      ${manualPageEntry ? "Usar lista" : "Inserir ID manualmente"}
+                    </button>
+                    <button className="ghost small" onClick=${onLoadPages} disabled=${pagesLoading}>
+                      ${pagesLoading ? "Carregando..." : (pages || []).length ? "Atualizar lista" : "Carregar páginas"}
+                    </button>
+                  </div>
                 </div>
                 ${pagesError ? html`<span className="form-validation-hint">${pagesError}</span>` : null}
                 ${pagesMeta?.warnings?.length ? html`
-                  <span className="form-validation-hint">Uma fonte da Meta não pôde ser consultada: ${pagesMeta.warnings.map((warning) => warning.source).join(", ")}.</span>
+                  <span className="form-validation-hint">Consulta parcial: ${pagesMeta.warnings.map((warning) => `${warning.source}: ${warning.message}`).join(" · ")}</span>
+                ` : null}
+                ${missingPagePermissions.length ? html`
+                  <span className="form-validation-hint">
+                    O token não concedeu ${missingPagePermissions.join(" e ")}. Páginas novas ou restritas ao portfólio empresarial podem não aparecer até o token ser gerado novamente com essas permissões.
+                  </span>
                 ` : null}
               </div>
               <div className="field">
@@ -13774,6 +13805,9 @@ function App() {
                       ${pagesLoading ? "Carregando..." : "Carregar páginas"}
                     </button>
                     <span className="chip neutral">${pagesList.length} páginas</span>
+                    ${pagesMeta?.businesses
+                      ? html`<span className="chip neutral">${pagesMeta.businesses.total || 0} portfólio(s)</span>`
+                      : null}
                   </div>
                 </div>
                 ${pagesError
@@ -13781,6 +13815,9 @@ function App() {
                   : null}
                 ${pagesMeta?.warnings?.length
                   ? html`<div className="status warn"><strong>Consulta parcial:</strong> ${pagesMeta.warnings.map((warning) => `${warning.source}: ${warning.message}`).join(" · ")}</div>`
+                  : null}
+                ${pagesMeta?.permissions_checked && ["pages_show_list", "business_management"].some((permission) => pagesMeta.permissions?.[permission] !== "granted")
+                  ? html`<div className="status warn"><strong>Permissões incompletas:</strong> confirme <code>pages_show_list</code> e <code>business_management</code> ao gerar o token da Meta.</div>`
                   : null}
                 <div className="table-wrapper scroll-x">
                   <table>
