@@ -88,3 +88,24 @@ Essa separação é importante: armazenamento diário consolidado não é o mesm
 ## Pergunta recomendada para a JoinAds
 
 > Podem confirmar formalmente se `revenue_client`/`earnings_client` representam o valor líquido pertencente ao cliente, já após a aplicação integral do revshare, e se esse é o valor que será considerado no pagamento? Podem também explicar a fórmula entre `revenue`, `revenue_client` e `revshare`, além de informar se `AD_EXCHANGE_LINE_ITEM_LEVEL_REVENUE` é bruto ou líquido?
+
+## Padrão UTM oficial para tráfego Meta direto ao site
+
+O Dashboard usa IDs nas três dimensões principais porque eles continuam estáveis quando uma campanha, conjunto ou anúncio é renomeado:
+
+```text
+utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_term={{adset.id}}&utm_content={{ad.id}}&placement={{placement}}
+```
+
+Mapeamento:
+
+- `utm_source`: origem dinâmica informada pela Meta, como Facebook ou Instagram.
+- `utm_medium=paid_social`: separa mídia social paga de tráfego orgânico e Messenger.
+- `utm_campaign`: ID da campanha.
+- `utm_term`: ID do conjunto de anúncios.
+- `utm_content`: ID do anúncio.
+- `placement`: posicionamento; serve para diagnóstico e não é usado como chave financeira principal.
+
+Para links do fluxo Messenger/Evo, a atribuição persistida por `src_` continua tendo precedência. O padrão acima é destinado principalmente aos anúncios que abrem o site diretamente.
+
+UTMs antigas baseadas em nomes continuam sendo aceitas como fallback quando não são ambíguas. Se dois conjuntos tiverem o mesmo nome, o Dashboard não aplica receita por nome: exige o ID para evitar cruzamento incorreto.

@@ -5,13 +5,31 @@ import htm from "https://esm.sh/htm@3.1.1";
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
 const DEFAULT_UTM_TAGS =
-  "utm_source=fb&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_term={{adset.name}}&utm_content={{ad.name}}&ad_id={{ad.id}}";
+  "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_term={{adset.id}}&utm_content={{ad.id}}&placement={{placement}}";
+function withDefaultMetaUtm(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return raw;
+  const hashIndex = raw.indexOf("#");
+  const hash = hashIndex >= 0 ? raw.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? raw.slice(0, hashIndex) : raw;
+  const queryIndex = withoutHash.indexOf("?");
+  const base = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
+  const current = queryIndex >= 0 ? withoutHash.slice(queryIndex + 1) : "";
+  const tracked = new Set([
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "placement", "ad_id",
+  ]);
+  const preserved = current
+    .split("&")
+    .filter(Boolean)
+    .filter((part) => !tracked.has(String(part.split("=")[0] || "").toLowerCase()));
+  return `${base}?${[...preserved, DEFAULT_UTM_TAGS].join("&")}${hash}`;
+}
 const DUPLICATE_STATUS = "ACTIVE";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 143;
+const APP_VERSION_BUILD = 144;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -987,6 +1005,55 @@ function getActionMetric(actions, matcher) {
 
 function getMessagingConversationStarts(row) {
   return getActionMetric(row?.actions_count || row?.actions, isMessagingConversationAction);
+}
+
+function getFirstActionMetric(actions, actionTypes) {
+  const rows = Array.isArray(actions) ? actions : [];
+  for (const actionType of actionTypes) {
+    const match = rows.find((action) => String(action?.action_type || "").toLowerCase() === actionType);
+    if (match) return toNumber(match?.value ?? match?.values?.[0]?.value);
+  }
+  return null;
+}
+
+function getPrimaryMetaResults(row) {
+  if (Array.isArray(row?.results)) {
+    const official = row.results.reduce(
+      (sum, item) => sum + toNumber(item?.value ?? item?.values?.[0]?.value),
+      0
+    );
+    if (official > 0) return official;
+  } else if (row?.results != null && Number.isFinite(Number(row.results))) {
+    return toNumber(row.results);
+  }
+
+  const actions = row?.actions_count || row?.actions;
+  const objective = String(row?.objective || "").toUpperCase();
+  const optimization = String(row?.adset_optimization_goal || row?.optimization_goal || "").toUpperCase();
+  if (objective.includes("SALES") || optimization.includes("CONVERSION") || optimization.includes("VALUE")) {
+    return getFirstActionMetric(actions, [
+      "offsite_conversion.fb_pixel_purchase",
+      "omni_purchase",
+      "purchase",
+    ]);
+  }
+  if (objective.includes("LEADS") || optimization.includes("LEAD")) {
+    return getFirstActionMetric(actions, [
+      "offsite_conversion.fb_pixel_lead",
+      "onsite_conversion.lead_grouped",
+      "lead",
+    ]);
+  }
+  if (isEngagementObjective(objective)) {
+    return getMessagingConversationStarts(row) ?? getFirstActionMetric(actions, ["post_engagement"]);
+  }
+  if (objective.includes("APP") || optimization.includes("INSTALL")) {
+    return getFirstActionMetric(actions, ["mobile_app_install", "app_install"]);
+  }
+  if (objective.includes("AWARENESS") || optimization.includes("REACH")) {
+    return getFirstActionMetric(actions, ["estimated_ad_recallers"]) ?? toNumber(row?.reach);
+  }
+  return getFirstActionMetric(actions, ["landing_page_view", "link_click"]);
 }
 
 function getMessagingConversationCost(row) {
@@ -5348,7 +5415,309 @@ function EditarView({
   `;
 }
 
+function getMetaJoinAttributionMeta(row) {
+  const level = String(row?.data_level || "");
+  if (level === "messenlead_source_key") {
+    return { label: "src_ confirmado", tone: "good", detail: row.joinads_source_value || "Messenlead" };
+  }
+  if (level === "utm_content_ad_id") {
+    return { label: "Anuncio por ID", tone: "good", detail: "utm_content = ad_id" };
+  }
+  if (level === "utm_content") {
+    return { label: "Anuncio por nome", tone: "warn", detail: "UTM legada; renomear pode quebrar o match" };
+  }
+  if (level === "utm_term_summary") {
+    return { label: "Somente no conjunto", tone: "warn", detail: "Receita em utm_term, sem divisao segura por anuncio" };
+  }
+  if (level === "utm_campaign") {
+    return { label: "Campanha (1 anuncio)", tone: "warn", detail: "Receita agregada em utm_campaign" };
+  }
+  const hasUtm = /(?:[?&])utm_(?:source|medium|campaign|term|content)=/i.test(
+    String(row?.destination_url || "")
+  );
+  return hasUtm
+    ? { label: "UTM sem receita", tone: "warn", detail: "Aguardando dados ou correspondencia na JoinAds" }
+    : { label: "Sem atribuicao", tone: "danger", detail: "Link sem UTM reconhecida pela JoinAds" };
+}
+
+function consolidateMetaJoinRows(rows) {
+  const map = new Map();
+  const ranks = {
+    messenlead_source_key: 5,
+    utm_content_ad_id: 4,
+    utm_content: 3,
+    utm_term_summary: 2,
+    utm_campaign: 1,
+  };
+  (rows || []).forEach((row, index) => {
+    const fallbackKey = [
+      row.campaign_id || row.campaign_name,
+      row.adset_id || row.adset_name,
+      row.ad_name,
+    ].map(normalizeKey).filter(Boolean).join("|");
+    const key = normalizeKey(row.ad_id) || fallbackKey || `row:${index}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        ...row,
+        spend_value: 0,
+        spend_media_value: 0,
+        meta_tax_value: 0,
+        meta_impressions_value: 0,
+        meta_clicks_value: 0,
+        results_meta: 0,
+        results_observed: false,
+        joinads_matched: false,
+        _dates: new Set(),
+        _metaKeys: new Set(),
+        _joinRank: -1,
+        _joinScore: -1,
+      });
+    }
+    const item = map.get(key);
+    const date = row.date || row.date_start || "";
+    if (date) item._dates.add(date);
+    const metaKey = `${date}|${row.ad_id || row.ad_name || index}`;
+    if (!item._metaKeys.has(metaKey)) {
+      item._metaKeys.add(metaKey);
+      item.spend_value += toNumber(row.spend_value ?? row.spend);
+      item.spend_media_value += toNumber(row.spend_media_value ?? row.spend);
+      item.meta_tax_value += toNumber(row.meta_tax_value);
+      item.meta_impressions_value += toNumber(row.meta_impressions_value ?? row.impressions);
+      item.meta_clicks_value += toNumber(row.meta_clicks_value ?? row.clicks);
+      if (row.results_meta != null) {
+        item.results_meta += toNumber(row.results_meta);
+        item.results_observed = true;
+      }
+    }
+    const rank = ranks[row.data_level] || 0;
+    const score = toNumber(row.revenue_client_value) * 1000000 + toNumber(row.impressions_joinads);
+    if (
+      row.joinads_matched &&
+      row.data_level !== "utm_term_summary" &&
+      (rank > item._joinRank || (rank === item._joinRank && score > item._joinScore))
+    ) {
+      item._joinRank = rank;
+      item._joinScore = score;
+      item.joinads_matched = true;
+      item.data_level = row.data_level;
+      item.joinads_source_value = row.joinads_source_value;
+      item.revenue_client_value = toNumber(row.revenue_client_value);
+      item.revenue_client_brl_value = row.revenue_client_brl_value != null
+        ? toNumber(row.revenue_client_brl_value)
+        : null;
+      item.impressions_joinads = toNumber(row.impressions_joinads);
+      item.clicks_joinads = toNumber(row.clicks_joinads);
+      item.ecpm_client_value = row.ecpm_client_value != null
+        ? toNumber(row.ecpm_client_value)
+        : null;
+    } else if (!item.joinads_matched && rank > item._joinRank) {
+      item._joinRank = rank;
+      item.data_level = row.data_level;
+    }
+    [
+      "ad_status", "effective_status", "adset_daily_budget_brl",
+      "adset_lifetime_budget_brl", "adset_bid_amount_brl", "adset_bid_strategy",
+      "asset_url", "permalink_url", "destination_url",
+    ].forEach((field) => {
+      if (row[field] != null && row[field] !== "") item[field] = row[field];
+    });
+  });
+  return Array.from(map.values()).map((item) => {
+    const dates = Array.from(item._dates).sort();
+    const revenueBrl = item.joinads_matched ? item.revenue_client_brl_value : null;
+    return {
+      ...item,
+      date_label: dates.length > 1
+        ? `${dates[0]} a ${dates[dates.length - 1]}`
+        : dates[0] || item.date || "-",
+      cost_per_result_value: item.results_observed && item.results_meta > 0
+        ? item.spend_value / item.results_meta
+        : null,
+      roas_joinads_value: revenueBrl != null && item.spend_value > 0
+        ? revenueBrl / item.spend_value
+        : null,
+      lucro_op_brl_value: revenueBrl != null ? revenueBrl - item.spend_value : null,
+    };
+  });
+}
+
 function MetaJoinTable({
+  rows,
+  adsetFilter,
+  onFilterChange,
+  onToggleAd,
+  statusLoading,
+  onBudgetUpdate,
+  budgetLoading,
+  onBidUpdate,
+  bidLoading,
+  isMultiDay,
+  allowCampaignOps = true,
+  usePmLabels = false,
+}) {
+  const unitLabel = performanceUnitLabel(usePmLabels);
+  const [sort, setSort] = useState({ key: "spend_value", direction: "desc" });
+  const [budgetInputs, setBudgetInputs] = useState({});
+  const [bidInputs, setBidInputs] = useState({});
+  const [bidModes, setBidModes] = useState({});
+  const consolidated = useMemo(() => consolidateMetaJoinRows(rows), [rows]);
+  const sortedRows = useMemo(() => {
+    const direction = sort.direction === "asc" ? 1 : -1;
+    return [...consolidated].sort((a, b) => {
+      const av = a[sort.key];
+      const bv = b[sort.key];
+      if (typeof av === "string" || typeof bv === "string") {
+        return String(av || "").localeCompare(String(bv || ""), "pt-BR") * direction;
+      }
+      return (toNumber(av) - toNumber(bv)) * direction;
+    });
+  }, [consolidated, sort]);
+  const setSorting = (key) => setSort((prev) => ({
+    key,
+    direction: prev.key === key && prev.direction === "desc" ? "asc" : "desc",
+  }));
+  const mark = (key) => sort.key === key ? (sort.direction === "desc" ? " ↓" : " ↑") : "";
+  const totals = consolidated.reduce((acc, row) => {
+    acc.spend += toNumber(row.spend_value);
+    acc.results += toNumber(row.results_meta);
+    acc.metaImpressions += toNumber(row.meta_impressions_value);
+    if (row.joinads_matched) {
+      acc.revenueUsd += toNumber(row.revenue_client_value);
+      acc.revenueBrl += toNumber(row.revenue_client_brl_value);
+      acc.joinImpressions += toNumber(row.impressions_joinads);
+    }
+    return acc;
+  }, { spend: 0, results: 0, metaImpressions: 0, revenueUsd: 0, revenueBrl: 0, joinImpressions: 0 });
+  const totalRoas = totals.spend > 0 ? totals.revenueBrl / totals.spend : null;
+  const totalProfit = totals.revenueBrl - totals.spend;
+  const campaignCount = new Set(consolidated.map((row) => row.campaign_id || row.campaign_name)).size;
+  const adsetCount = new Set(consolidated.map((row) => row.adset_id || row.adset_name)).size;
+  const attributedCount = consolidated.filter((row) => row.joinads_matched).length;
+  const getBudgetInput = (row) => budgetInputs[row.adset_id] ?? (
+    row.adset_daily_budget_brl != null ? row.adset_daily_budget_brl.toFixed(2) : ""
+  );
+  const getBidMode = (row) => bidModes[row.adset_id] || strategyToMode(row.adset_bid_strategy);
+  const getBidInput = (row) => bidInputs[row.adset_id] ?? (
+    row.adset_bid_amount_brl != null ? row.adset_bid_amount_brl.toFixed(2) : ""
+  );
+
+  const controls = (row) => {
+    if (!row.adset_id) return html`<span className="muted small">Sem ID do conjunto</span>`;
+    const mode = getBidMode(row);
+    const requiresBid = mode !== "without_bid";
+    const budgetLabel = row.adset_daily_budget_brl != null
+      ? `${currencyBRL.format(row.adset_daily_budget_brl)} / dia`
+      : row.adset_lifetime_budget_brl != null
+      ? `${currencyBRL.format(row.adset_lifetime_budget_brl)} total`
+      : "Nao informado";
+    if (!allowCampaignOps) return html`<span className="muted small">${budgetLabel}</span>`;
+    return html`<details className="campaign-control-panel">
+      <summary>Editar Meta</summary>
+      <div className="campaign-control-body">
+        <label><span>Orcamento atual: ${budgetLabel}</span>
+          <div className="budget-actions">
+            <input type="number" min="0" step="0.01" placeholder="R$" value=${getBudgetInput(row)}
+              onChange=${(e) => setBudgetInputs((prev) => ({ ...prev, [row.adset_id]: e.target.value }))} />
+            <button className="ghost small" disabled=${budgetLoading?.[row.adset_id]}
+              onClick=${() => onBudgetUpdate?.(row.adset_id, getBudgetInput(row))}>
+              ${budgetLoading?.[row.adset_id] ? "..." : "Salvar"}
+            </button>
+          </div>
+        </label>
+        <label><span>Limite de custo</span>
+          <select value=${mode} onChange=${(e) => setBidModes((prev) => ({ ...prev, [row.adset_id]: e.target.value }))}>
+            <option value="with_bid">Com limite</option><option value="without_bid">Sem limite</option>
+          </select>
+          <div className="budget-actions">
+            <input type="number" min="0" step="0.01" placeholder="R$" disabled=${!requiresBid}
+              value=${getBidInput(row)}
+              onChange=${(e) => setBidInputs((prev) => ({ ...prev, [row.adset_id]: e.target.value }))} />
+            <button className="ghost small" disabled=${bidLoading?.[row.adset_id]}
+              onClick=${() => onBidUpdate?.(row.adset_id, requiresBid ? getBidInput(row) : "", mode)}>
+              ${bidLoading?.[row.adset_id] ? "..." : "Salvar"}
+            </button>
+          </div>
+        </label>
+      </div>
+    </details>`;
+  };
+
+  return html`<section className="card wide meta-join-card">
+    <div className="card-head">
+      <div>
+        <span className="eyebrow">Meta x JoinAds</span>
+        <h2 className="section-title">Campanhas</h2>
+        <p className="section-subtitle">Uma linha por anuncio, com Meta e JoinAds consolidados sem duplicar o periodo.</p>
+      </div>
+      <div className="chip-group">
+        <span className="chip neutral">${campaignCount} campanhas</span>
+        <span className="chip neutral">${adsetCount} conjuntos</span>
+        <span className="chip neutral">${consolidated.length} anuncios</span>
+        <span className=${`chip ${attributedCount === consolidated.length ? "good" : "warn"}`}>
+          ${attributedCount}/${consolidated.length} atribuidos
+        </span>
+        ${isMultiDay ? html`<span className="chip neutral">Periodo consolidado</span>` : null}
+      </div>
+    </div>
+    <div className="filters meta-join-filter">
+      <label className="field"><span>Buscar campanha, conjunto, anuncio ou ID</span>
+        <input type="text" placeholder="Buscar..." value=${adsetFilter}
+          onChange=${(e) => onFilterChange(e.target.value)} />
+      </label>
+    </div>
+    <div className="meta-join-kpis">
+      <div><span>Investimento Meta</span><strong>${currencyBRL.format(totals.spend)}</strong></div>
+      <div><span>Receita atribuida</span><strong>${currencyBRL.format(totals.revenueBrl)}</strong><small>${currencyUSD.format(totals.revenueUsd)}</small></div>
+      <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></div>
+      <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></div>
+    </div>
+    <div className="table-wrapper scroll-x meta-join-table-wrap">
+      <table className="meta-join-table">
+        <thead><tr>
+          <th><button className="table-sort" onClick=${() => setSorting("campaign_name")}>Campanha${mark("campaign_name")}</button></th>
+          <th>Conjunto / anuncio</th><th>Periodo / entrega</th>
+          <th><button className="table-sort" onClick=${() => setSorting("spend_value")}>Meta${mark("spend_value")}</button></th>
+          <th><button className="table-sort" onClick=${() => setSorting("revenue_client_brl_value")}>JoinAds${mark("revenue_client_brl_value")}</button></th>
+          <th><button className="table-sort" onClick=${() => setSorting("roas_joinads_value")}>Resultado${mark("roas_joinads_value")}</button></th>
+          <th>Atribuicao</th><th>Controles</th>
+        </tr></thead>
+        <tbody>
+          ${sortedRows.length === 0
+            ? html`<tr><td colSpan="8" className="muted empty-table">Sem dados para o periodo ou para a busca.</td></tr>`
+            : sortedRows.map((row) => {
+                const statusRaw = row.ad_status || "";
+                const status = statusRaw || row.effective_status || "";
+                const active = status === "ACTIVE";
+                const canToggle = statusRaw === "ACTIVE" || statusRaw === "PAUSED";
+                const attribution = getMetaJoinAttributionMeta(row);
+                const joinCtr = row.impressions_joinads > 0
+                  ? toNumber(row.clicks_joinads) / row.impressions_joinads * 100
+                  : null;
+                const ecpm = row.ecpm_client_value != null
+                  ? row.ecpm_client_value
+                  : row.impressions_joinads > 0
+                  ? toNumber(row.revenue_client_value) / row.impressions_joinads * 1000
+                  : null;
+                return html`<tr key=${row.ad_id || `${row.adset_name}-${row.ad_name}`}>
+                  <td className="identity-cell campaign-identity"><strong>${row.campaign_name || "Campanha sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)}</span></td>
+                  <td className="identity-cell ad-identity"><span className="identity-level">Conjunto</span><strong>${row.adset_name || "Sem nome"}</strong><span className="metric-id">${row.adset_id || "Sem ID"}</span><span className="identity-level">Anuncio</span>${row.asset_url ? html`<a href=${row.asset_url} target="_blank" rel="noopener noreferrer">${row.ad_name || "Sem nome"}</a>` : html`<span>${row.ad_name || "Sem nome"}</span>`}<span className="metric-id">${row.ad_id || "Sem ID"}</span></td>
+                  <td><div className="metric-stack compact-stack"><span>${row.date_label}</span><span className=${`status-badge ${statusToneMap[status] || "neutral"}`}>${formatStatusLabel(status)}</span>${row.ad_id && canToggle && allowCampaignOps ? html`<button className=${`toggle ${active ? "on" : "off"}`} disabled=${statusLoading?.[row.ad_id]} onClick=${() => onToggleAd(row.ad_id, active ? "PAUSED" : "ACTIVE")}>${statusLoading?.[row.ad_id] ? "..." : active ? "Ligado" : "Desligado"}</button>` : null}</div></td>
+                  <td className="numeric-stack-cell"><div className="metric-stack"><strong>${currencyBRL.format(row.spend_value)}</strong><span><b>${row.results_observed ? number.format(row.results_meta) : "-"}</b> resultados</span><span>CPA ${row.cost_per_result_value != null ? currencyBRL.format(row.cost_per_result_value) : "-"}</span><span>${number.format(row.meta_impressions_value)} imp. · ${number.format(row.meta_clicks_value)} cliques</span></div></td>
+                  <td className="numeric-stack-cell"><div className="metric-stack"><strong>${row.joinads_matched ? currencyUSD.format(row.revenue_client_value) : "-"}</strong><span>${row.joinads_matched && row.revenue_client_brl_value != null ? currencyBRL.format(row.revenue_client_brl_value) : "Sem receita atribuida"}</span><span>${row.joinads_matched ? `${number.format(row.impressions_joinads)} imp. · ${number.format(row.clicks_joinads)} cliques` : "-"}</span><span>${unitLabel} ${ecpm != null ? currencyUSD.format(ecpm) : "-"} · CTR ${joinCtr != null ? `${joinCtr.toFixed(2)}%` : "-"}</span></div></td>
+                  <td className="numeric-stack-cell"><div className="metric-stack result-stack"><strong className=${row.roas_joinads_value != null && row.roas_joinads_value >= 1 ? "positive" : row.roas_joinads_value != null ? "negative" : ""}>${row.roas_joinads_value != null ? `${row.roas_joinads_value.toFixed(2)}x` : "-"}</strong><span>ROAS atribuido</span><b className=${row.lucro_op_brl_value != null && row.lucro_op_brl_value >= 0 ? "positive" : row.lucro_op_brl_value != null ? "negative" : ""}>${row.lucro_op_brl_value != null ? currencyBRL.format(row.lucro_op_brl_value) : "-"}</b><span>Lucro operacional</span></div></td>
+                  <td><div className="attribution-cell" title=${attribution.detail}><span className=${`chip ${attribution.tone}`}>${attribution.label}</span><span className="muted small">${attribution.detail}</span></div></td>
+                  <td>${controls(row)}</td>
+                </tr>`;
+              })}
+        </tbody>
+        ${sortedRows.length ? html`<tfoot><tr><td colSpan="3"><strong>Total exibido</strong><span>${consolidated.length} anuncios</span></td><td><strong>${currencyBRL.format(totals.spend)}</strong><span>${number.format(totals.results)} resultados · ${number.format(totals.metaImpressions)} imp.</span></td><td><strong>${currencyUSD.format(totals.revenueUsd)}</strong><span>${currencyBRL.format(totals.revenueBrl)} · ${number.format(totals.joinImpressions)} imp.</span></td><td><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong><span>${currencyBRL.format(totalProfit)}</span></td><td colSpan="2"><span>${attributedCount} anuncios com receita atribuida</span></td></tr></tfoot>` : null}
+      </table>
+    </div>
+    <p className="muted small table-note">Campanhas diretas ao site permanecem visiveis mesmo antes de a JoinAds devolver receita para a UTM.</p>
+  </section>`;
+}
+
+function LegacyMetaJoinTable({
   rows,
   adsetFilter,
   onFilterChange,
@@ -6085,6 +6454,187 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLab
 
 function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false }) {
   const unitLabel = performanceUnitLabel(usePmLabels);
+  const [sort, setSort] = useState({ key: "spend", direction: "desc" });
+  const grouped = useMemo(() => {
+    const ads = consolidateMetaJoinRows(rows);
+    const groups = new Map();
+    ads.forEach((row, index) => {
+      const fallbackKey = [
+        row.campaign_id || row.campaign_name,
+        row.adset_name,
+      ].map(normalizeKey).filter(Boolean).join("|");
+      const key = normalizeKey(row.adset_id) || fallbackKey || `row:${index}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          campaign_id: row.campaign_id,
+          campaign_name: row.campaign_name,
+          adset_id: row.adset_id,
+          adset_name: row.adset_name,
+          objective: row.objective,
+          ads: 0,
+          spend: 0,
+          results: 0,
+          resultsObserved: false,
+          metaImpressions: 0,
+          metaClicks: 0,
+          exactRevenueUsd: 0,
+          exactRevenueBrl: 0,
+          exactImpressions: 0,
+          exactClicks: 0,
+          exactMatched: false,
+        });
+      }
+      const item = groups.get(key);
+      item.ads += 1;
+      item.spend += toNumber(row.spend_value);
+      item.metaImpressions += toNumber(row.meta_impressions_value);
+      item.metaClicks += toNumber(row.meta_clicks_value);
+      if (row.results_observed) {
+        item.results += toNumber(row.results_meta);
+        item.resultsObserved = true;
+      }
+      if (row.joinads_matched && row.data_level !== "utm_term_summary") {
+        item.exactMatched = true;
+        item.exactRevenueUsd += toNumber(row.revenue_client_value);
+        item.exactRevenueBrl += toNumber(row.revenue_client_brl_value);
+        item.exactImpressions += toNumber(row.impressions_joinads);
+        item.exactClicks += toNumber(row.clicks_joinads);
+      }
+    });
+
+    const nameCounts = new Map();
+    groups.forEach((item) => {
+      const key = normalizeKey(item.adset_name);
+      if (key) nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
+    });
+    const termMap = new Map();
+    (Array.isArray(joinadsRows) ? joinadsRows : []).forEach((row) => {
+      const key = normalizeKey(row.custom_value);
+      if (!key) return;
+      const entry = termMap.get(key) || { impressions: 0, clicks: 0, revenueUsd: 0 };
+      entry.impressions += toNumber(row.impressions);
+      entry.clicks += toNumber(row.clicks);
+      entry.revenueUsd += toNumber(
+        row.revenue_client ?? row.earnings_client ?? row.revenue ?? row.earnings
+      );
+      termMap.set(key, entry);
+    });
+
+    return Array.from(groups.values()).map((item) => {
+      const idKey = normalizeKey(item.adset_id);
+      const nameKey = normalizeKey(item.adset_name);
+      const termById = idKey ? termMap.get(idKey) : null;
+      const termByUniqueName = !termById && nameKey && nameCounts.get(nameKey) === 1
+        ? termMap.get(nameKey)
+        : null;
+      const term = termById || termByUniqueName;
+      const revenueUsd = term ? term.revenueUsd : item.exactMatched ? item.exactRevenueUsd : null;
+      const revenueBrl = revenueUsd != null && brlRate ? revenueUsd * brlRate : null;
+      const impressions = term ? term.impressions : item.exactMatched ? item.exactImpressions : null;
+      const clicks = term ? term.clicks : item.exactMatched ? item.exactClicks : null;
+      return {
+        ...item,
+        revenueUsd,
+        revenueBrl,
+        impressions,
+        clicks,
+        attribution: termById
+          ? "utm_term_id"
+          : termByUniqueName
+          ? "utm_term_name"
+          : item.exactMatched
+          ? "sum_ads"
+          : nameKey && nameCounts.get(nameKey) > 1
+          ? "duplicate_name"
+          : "unmatched",
+        cpa: item.resultsObserved && item.results > 0 ? item.spend / item.results : null,
+        metaCtr: item.metaImpressions > 0 ? item.metaClicks / item.metaImpressions * 100 : null,
+        ecpm: impressions > 0 && revenueUsd != null ? revenueUsd / impressions * 1000 : null,
+        joinCtr: impressions > 0 ? clicks / impressions * 100 : null,
+        roas: revenueBrl != null && item.spend > 0 ? revenueBrl / item.spend : null,
+        profit: revenueBrl != null ? revenueBrl - item.spend : null,
+      };
+    });
+  }, [rows, joinadsRows, brlRate]);
+
+  const sorted = useMemo(() => {
+    const direction = sort.direction === "asc" ? 1 : -1;
+    return [...grouped].sort((a, b) => {
+      const av = a[sort.key];
+      const bv = b[sort.key];
+      if (typeof av === "string" || typeof bv === "string") {
+        return String(av || "").localeCompare(String(bv || ""), "pt-BR") * direction;
+      }
+      return (toNumber(av) - toNumber(bv)) * direction;
+    });
+  }, [grouped, sort]);
+  const setSorting = (key) => setSort((prev) => ({
+    key,
+    direction: prev.key === key && prev.direction === "desc" ? "asc" : "desc",
+  }));
+  const mark = (key) => sort.key === key ? (sort.direction === "desc" ? " ↓" : " ↑") : "";
+  const totals = grouped.reduce((acc, item) => {
+    acc.spend += item.spend;
+    acc.results += item.results;
+    acc.metaImpressions += item.metaImpressions;
+    if (item.revenueUsd != null) {
+      acc.revenueUsd += item.revenueUsd;
+      acc.revenueBrl += toNumber(item.revenueBrl);
+      acc.joinImpressions += toNumber(item.impressions);
+    }
+    return acc;
+  }, { spend: 0, results: 0, metaImpressions: 0, revenueUsd: 0, revenueBrl: 0, joinImpressions: 0 });
+  const totalRoas = totals.spend > 0 ? totals.revenueBrl / totals.spend : null;
+  const totalProfit = totals.revenueBrl - totals.spend;
+  const attributionView = (value) => {
+    if (value === "utm_term_id") return { label: "Conjunto por ID", tone: "good", detail: "utm_term = adset_id" };
+    if (value === "utm_term_name") return { label: "Conjunto por nome", tone: "warn", detail: "UTM legada, aceita porque o nome e unico" };
+    if (value === "sum_ads") return { label: "Soma dos anuncios", tone: "good", detail: "Total dos anuncios atribuidos individualmente" };
+    if (value === "duplicate_name") return { label: "Nome duplicado", tone: "danger", detail: "Use adset_id na utm_term para eliminar ambiguidade" };
+    return { label: "Sem atribuicao", tone: "danger", detail: "Nenhuma receita JoinAds correspondeu ao conjunto" };
+  };
+
+  return html`<section className="card wide meta-join-card adset-summary-card">
+    <div className="card-head">
+      <div><span className="eyebrow">Meta x JoinAds</span><h2 className="section-title">Resumo agrupado (por conjunto)</h2><p className="section-subtitle">Consolidacao por ID do conjunto, pronta para Messenger e trafego direto ao site.</p></div>
+      <div className="chip-group"><span className="chip neutral">${grouped.length} conjuntos</span><span className=${`chip ${grouped.every((row) => row.revenueUsd != null) ? "good" : "warn"}`}>${grouped.filter((row) => row.revenueUsd != null).length}/${grouped.length} atribuidos</span></div>
+    </div>
+    <div className="meta-join-kpis compact-kpis">
+      <div><span>Investimento Meta</span><strong>${currencyBRL.format(totals.spend)}</strong></div>
+      <div><span>Receita atribuida</span><strong>${currencyBRL.format(totals.revenueBrl)}</strong><small>${currencyUSD.format(totals.revenueUsd)}</small></div>
+      <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></div>
+      <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></div>
+    </div>
+    <div className="table-wrapper scroll-x meta-join-table-wrap"><table className="meta-join-table adset-summary-table">
+      <thead><tr>
+        <th><button className="table-sort" onClick=${() => setSorting("campaign_name")}>Campanha / conjunto${mark("campaign_name")}</button></th>
+        <th><button className="table-sort" onClick=${() => setSorting("spend")}>Meta${mark("spend")}</button></th>
+        <th><button className="table-sort" onClick=${() => setSorting("revenueBrl")}>JoinAds${mark("revenueBrl")}</button></th>
+        <th>Eficiencia</th>
+        <th><button className="table-sort" onClick=${() => setSorting("roas")}>Resultado${mark("roas")}</button></th>
+        <th>Atribuicao</th>
+      </tr></thead>
+      <tbody>${sorted.length === 0
+        ? html`<tr><td colSpan="6" className="muted empty-table">Sem conjuntos para o periodo.</td></tr>`
+        : sorted.map((row) => {
+            const attribution = attributionView(row.attribution);
+            return html`<tr key=${row.adset_id || `${row.campaign_name}-${row.adset_name}`}>
+              <td className="identity-cell"><span className="identity-level">Campanha</span><strong>${row.campaign_name || "Sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="identity-level">Conjunto</span><b>${row.adset_name || "Sem nome"}</b><span className="metric-id">${row.adset_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)} · ${row.ads} anuncios</span></td>
+              <td className="numeric-stack-cell"><div className="metric-stack"><strong>${currencyBRL.format(row.spend)}</strong><span><b>${row.resultsObserved ? number.format(row.results) : "-"}</b> resultados · CPA ${row.cpa != null ? currencyBRL.format(row.cpa) : "-"}</span><span>${number.format(row.metaImpressions)} imp. · ${number.format(row.metaClicks)} cliques</span><span>CTR ${row.metaCtr != null ? `${row.metaCtr.toFixed(2)}%` : "-"}</span></div></td>
+              <td className="numeric-stack-cell"><div className="metric-stack"><strong>${row.revenueUsd != null ? currencyUSD.format(row.revenueUsd) : "-"}</strong><span>${row.revenueBrl != null ? currencyBRL.format(row.revenueBrl) : "Sem receita atribuida"}</span><span>${row.impressions != null ? `${number.format(row.impressions)} imp. · ${number.format(row.clicks)} cliques` : "-"}</span></div></td>
+              <td className="numeric-stack-cell"><div className="metric-stack"><strong>${unitLabel} ${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</strong><span>CTR JoinAds ${row.joinCtr != null ? `${row.joinCtr.toFixed(2)}%` : "-"}</span><span>CPA Meta ${row.cpa != null ? currencyBRL.format(row.cpa) : "-"}</span></div></td>
+              <td className="numeric-stack-cell"><div className="metric-stack result-stack"><strong className=${row.roas != null && row.roas >= 1 ? "positive" : row.roas != null ? "negative" : ""}>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</strong><span>ROAS atribuido</span><b className=${row.profit != null && row.profit >= 0 ? "positive" : row.profit != null ? "negative" : ""}>${row.profit != null ? currencyBRL.format(row.profit) : "-"}</b><span>Lucro operacional</span></div></td>
+              <td><div className="attribution-cell" title=${attribution.detail}><span className=${`chip ${attribution.tone}`}>${attribution.label}</span><span className="muted small">${attribution.detail}</span></div></td>
+            </tr>`;
+          })}</tbody>
+      ${sorted.length ? html`<tfoot><tr><td><strong>Total geral</strong><span>${grouped.length} conjuntos</span></td><td><strong>${currencyBRL.format(totals.spend)}</strong><span>${number.format(totals.results)} resultados · ${number.format(totals.metaImpressions)} imp.</span></td><td><strong>${currencyUSD.format(totals.revenueUsd)}</strong><span>${currencyBRL.format(totals.revenueBrl)} · ${number.format(totals.joinImpressions)} imp.</span></td><td><span>${unitLabel} ${totals.joinImpressions > 0 ? currencyUSD.format(totals.revenueUsd / totals.joinImpressions * 1000) : "-"}</span></td><td><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong><span>${currencyBRL.format(totalProfit)}</span></td><td><span>${grouped.filter((row) => row.revenueUsd != null).length} atribuidos</span></td></tr></tfoot>` : null}
+    </table></div>
+    <p className="muted small table-note">Quando dois conjuntos antigos tem o mesmo nome, a receita por nome nao e aplicada. A UTM por ID elimina esse risco.</p>
+  </section>`;
+}
+
+function LegacyMetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false }) {
+  const unitLabel = performanceUnitLabel(usePmLabels);
   const safeJoinadsRows = Array.isArray(joinadsRows) ? joinadsRows : [];
   const asText = (value) => {
     if (value === null || value === undefined) return "-";
@@ -6284,6 +6834,9 @@ const CONVERSION_EVENTS = [
 ];
 
 const UTM_MACROS = [
+  { label: "{{ad.id}}", tip: "ID estavel do anuncio" },
+  { label: "{{adset.id}}", tip: "ID estavel do conjunto" },
+  { label: "{{campaign.id}}", tip: "ID estavel da campanha" },
   { label: "{{ad.name}}", tip: "Nome do anúncio" },
   { label: "{{adset.name}}", tip: "Nome do conjunto" },
   { label: "{{campaign.name}}", tip: "Nome da campanha" },
@@ -7454,15 +8007,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               <div className="field full-span">
                 <label>URL de destino * (inclua UTMs!)</label>
 ${(() => {
-                  const UTM_SUFFIX = `utm_source=fb&utm_medium=cpc&utm_campaign=${encodeURIComponent(campName)}&utm_term=${encodeURIComponent(adsetName)}&utm_content=${encodeURIComponent(adName)}&ad_id={{ad.id}}`;
                   const filtered = _savedUrls.filter((u) => !u.nicho || !nicho || u.nicho === nicho.slug);
                   return filtered.length > 0 ? html`
                     <select style=${{ marginBottom: "6px", fontSize: "0.85rem" }}
                       onChange=${(e) => {
                         if (!e.target.value) return;
-                        const base = e.target.value;
-                        const sep = base.includes("?") ? "&" : "?";
-                        setDestUrl(base + sep + UTM_SUFFIX);
+                        setDestUrl(withDefaultMetaUtm(e.target.value));
                         e.target.value = "";
                       }}>
                       <option value="">⚡ Usar URL salva...</option>
@@ -7470,8 +8020,11 @@ ${(() => {
                     </select>
                   ` : null;
                 })()}
-                <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo?utm_source=fb&utm_medium=cpc&utm_content={{ad.name}}" />
+                <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo?utm_source={{site_source_name}}&utm_medium=paid_social" />
                 <div className="action-row" style=${{ marginTop: "6px" }}>
+                  <button className="ghost small" onClick=${(e) => { e.preventDefault(); setDestUrl((prev) => withDefaultMetaUtm(prev)); }}>
+                    Aplicar UTM padrao
+                  </button>
                   <span className="muted small">Macros:</span>
                   ${UTM_MACROS.map((m) => html`
                     <button key=${m.label} className="ghost small" title=${m.tip}
@@ -10676,15 +11229,15 @@ function App() {
       .trim();
 
   const buildUtmTags = (row) => {
-    const campaignRaw = row.campaign_name || row.campaign_id || "";
-    const adsetRaw = row.adset_name || row.adset_id || "";
-    const adRaw = row.name || row.ad_id || "";
-    const adIdRaw = row.ad_id || row.id || "";
-    const campaign = encodeURIComponent(cleanUtmValue(campaignRaw));
-    const adset = encodeURIComponent(cleanUtmValue(adsetRaw));
-    const ad = encodeURIComponent(cleanUtmValue(adRaw));
-    const adId = encodeURIComponent(cleanUtmValue(adIdRaw));
-    return `utm_source=fb&utm_medium=cpc&utm_campaign=${campaign}&utm_term=${adset}&utm_content=${ad}&ad_id=${adId}`;
+    const campaign = row.campaign_id
+      ? encodeURIComponent(cleanUtmValue(row.campaign_id))
+      : "{{campaign.id}}";
+    const adset = row.adset_id
+      ? encodeURIComponent(cleanUtmValue(row.adset_id))
+      : "{{adset.id}}";
+    const adRaw = row.ad_id || row.id;
+    const ad = adRaw ? encodeURIComponent(cleanUtmValue(adRaw)) : "{{ad.id}}";
+    return `utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign=${campaign}&utm_term=${adset}&utm_content=${ad}&placement={{placement}}`;
   };
 
   const stripQuery = (url) => {
@@ -11688,6 +12241,14 @@ function App() {
     const metaAdIds = new Set(
       (metaRows || []).map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
     );
+    const metaAdsByCampaign = new Map();
+    (metaRows || []).forEach((row) => {
+      const campaignKey = normalizeKey(row.campaign_id || row.campaign_name || "");
+      const adKey = normalizeKey(row.ad_id || row.ad_name || "");
+      if (!campaignKey || !adKey) return;
+      if (!metaAdsByCampaign.has(campaignKey)) metaAdsByCampaign.set(campaignKey, new Set());
+      metaAdsByCampaign.get(campaignKey).add(adKey);
+    });
     const domainFilteredContentRows = (joinadsContentRows || []).filter((row) => {
       const d = normalizeKey(row.domain || row.name || "");
       return domainKey ? d === domainKey : true;
@@ -11810,24 +12371,32 @@ function App() {
       const nameKey = normalizeKey(row.ad_name);
       const adIdKey = normalizeKey(row.ad_id || "");
       const adsetKey = normalizeKey(row.adset_name || "");
+      const adsetIdKey = normalizeKey(row.adset_id || "");
+      const campaignKey = normalizeKey(row.campaign_name || "");
+      const campaignIdKey = normalizeKey(row.campaign_id || "");
       const resolvedJoin = joinadsByAdId.get(adIdKey) || {};
+      const campaignAdCount =
+        metaAdsByCampaign.get(campaignIdKey || campaignKey)?.size || 0;
 
       const fromCustom =
         Object.keys(resolvedJoin).length
           ? resolvedJoin
-          :
-        superByCustom.get(nameKey) ||
-        superByCustom.get(adIdKey) ||
-        {};
+          : superKey === "utm_campaign"
+          ? campaignAdCount === 1
+            ? superByCustom.get(campaignIdKey) || superByCustom.get(campaignKey) || {}
+            : {}
+          : superByCustom.get(adIdKey) || superByCustom.get(nameKey) || {};
 
-      const fromKv =
-        kvByCustom.get(nameKey) ||
-        kvByCustom.get(adIdKey) ||
-        {};
+      // O endpoint key-value-country abaixo esta agrupado por utm_campaign.
+      // Receita de campanha so pode descer para o anuncio quando existe um unico
+      // anuncio na campanha; do contrario duplicaria a receita em cada linha.
+      const campaignKv =
+        kvByCustom.get(campaignIdKey) || kvByCustom.get(campaignKey) || {};
+      const fromKv = campaignAdCount === 1 ? campaignKv : {};
 
       const matchedByResolvedAdId = Object.keys(resolvedJoin).length > 0;
       const matchedByContent = contentSet.has(nameKey) || contentSet.has(adIdKey);
-      const matchedByTerm = termSet.has(adsetKey);
+      const matchedByTerm = termSet.has(adsetIdKey) || termSet.has(adsetKey);
       const hasJoinads = hasContentData
         ? matchedByResolvedAdId ||
           matchedByContent ||
@@ -11885,18 +12454,7 @@ function App() {
           : messagingConversations > 0
           ? spend / messagingConversations
           : null;
-      let resultsCount = null;
-      const actionsCandidates = row.actions_count || row.actions;
-      if (Array.isArray(actionsCandidates)) {
-        resultsCount = actionsCandidates.reduce((acc, act) => {
-          const v =
-            toNumber(act?.value) ||
-            toNumber(act?.values && act.values[0]?.value);
-          return acc + (v || 0);
-        }, 0);
-      } else if (row.results != null) {
-        resultsCount = toNumber(row.results);
-      }
+      const resultsCount = getPrimaryMetaResults(row);
 
       const roas =
         revenueClientBrl != null && spend > 0
@@ -11946,7 +12504,9 @@ function App() {
         messaging_conversations_started: messagingConversations,
         messaging_cost_per_conversation: messagingCost,
         revenue_client_brl_value: revenueClientBrl ?? null,
+        lucro_op_brl_value: lucroOpBrl,
         lucro_op_brl: lucroOpBrl != null ? currencyBRL.format(lucroOpBrl) : "-",
+        ecpm_client_value: ecpmClient != null ? Number(ecpmClient) : null,
         ecpm_client:
           ecpmClient != null ? currencyUSD.format(Number(ecpmClient)) : "-",
         revenue_client_joinads:
@@ -11954,10 +12514,19 @@ function App() {
             ? currencyUSD.format(Number(revenueClientRaw))
             : "-",
         revenue_client_value: revenueClientRaw ?? 0,
+        roas_joinads_value: roas,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
         clicks_joinads: clicksJoinads || null,
-        data_level: resolvedJoin.data_level || (Object.keys(fromKv).length ? "utm_content" : superKey),
+        data_level:
+          resolvedJoin.data_level ||
+          (Object.keys(fromKv).length
+            ? "utm_campaign"
+            : Object.keys(fromCustom).length
+            ? superKey
+            : matchedByTerm
+            ? "utm_term_summary"
+            : null),
         joinads_source_value: resolvedJoin.source_value || "",
         results_meta: resultsCount,
         adset_daily_budget_brl: dailyBudgetBrl,
@@ -12012,12 +12581,6 @@ function App() {
     ]
   );
 
-  const isTodaySelected = useMemo(() => {
-    const endRaw = appliedFilters?.endDate || filters.endDate;
-    if (!endRaw) return false;
-    return endRaw === formatDate(new Date());
-  }, [appliedFilters, filters.endDate]);
-
   const metaDomainFiltered = useMemo(() => {
     const term = filters.adsetFilter.trim().toLowerCase();
     const domainKey = normalizeKey(appliedFilters?.domain || filters.domain || "");
@@ -12033,7 +12596,17 @@ function App() {
       : base;
     if (!term) return scopedBase;
     return scopedBase.filter((row) =>
-      (row.adset_name || "").toLowerCase().includes(term)
+      [
+        row.campaign_name,
+        row.campaign_id,
+        row.adset_name,
+        row.adset_id,
+        row.ad_name,
+        row.ad_id,
+        row.destination_url,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
     );
   }, [
     mergedMeta,
@@ -12211,13 +12784,10 @@ function App() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [mergedMeta, session?.role, session?.username]);
 
-  const filteredMeta = useMemo(() => {
-    if (isTodaySelected) {
-      // Hoje: mantém linhas Meta mesmo sem match JoinAds (JoinAds pode atrasar).
-      return metaDomainFiltered;
-    }
-    return metaDomainFiltered.filter((row) => row.joinads_matched);
-  }, [metaDomainFiltered, isTodaySelected]);
+  const filteredMeta = useMemo(
+    () => metaDomainFiltered,
+    [metaDomainFiltered]
+  );
 
   const dupNameMap = useMemo(() => {
     const map = new Map();
@@ -12841,7 +13411,6 @@ function App() {
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} usePmLabels=${usePmLabels} />`}
               ${html`<${SemUtmAttribution} semUtmRow=${semUtmRow} joinadsRows=${superTermRows} metaRows=${filteredMeta} brlRate=${brlRate} usePmLabels=${usePmLabels} />`}
-              ${html`<${MetaJoinGroupedTable} rows=${filteredMeta} usePmLabels=${usePmLabels} />`}
               ${html`<${EarningsTable} rows=${earningsAll.filter((r) => { const d = typeof r.date === "string" ? r.date.slice(0, 10) : ""; return !d || ((!filters.startDate || d >= filters.startDate) && (!filters.endDate || d <= filters.endDate)); })} usePmLabels=${usePmLabels} />`}
             </main>
           `
