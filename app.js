@@ -18,7 +18,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 151;
+const APP_VERSION_BUILD = 153;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -7102,6 +7102,81 @@ function LocationPicker({ selected, onChange }) {
   `;
 }
 
+function CampaignMediaPicker({ accountId, type, selectedKey, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState([]);
+  const [labels, setLabels] = useState({});
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+
+  const load = async (force = false) => {
+    if (!accountId) { setError("Configure a conta Meta antes de abrir a biblioteca."); return; }
+    setLoading(true); setError("");
+    try {
+      const mediaQuery = new URLSearchParams({ account_id: accountId });
+      if (force) mediaQuery.set("force", "1");
+      const [mediaResponse, labelResponse] = await Promise.all([
+        fetch(`/api/meta-media?${mediaQuery.toString()}`),
+        fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`),
+      ]);
+      const [mediaData, labelData] = await Promise.all([mediaResponse.json(), labelResponse.json()]);
+      if (!mediaResponse.ok || mediaData.code !== "success") throw new Error(mediaData.message || mediaData.error || "Não foi possível carregar a biblioteca.");
+      setLabels(labelData.data || {});
+      const collection = type === "video" ? mediaData.data?.videos : mediaData.data?.images;
+      setItems((collection || []).filter((item) => !labelData.data?.[item.key]?.hidden));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openLibrary = () => {
+    setOpen(true);
+    if (!items.length) load(false);
+  };
+  const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
+  const visibleItems = normalizedSearch
+    ? items.filter((item) => `${labels[item.key]?.label || item.name || ""} ${item.key}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch))
+    : items;
+
+  return html`
+    <div className="campaign-media-picker-wrap">
+      <button type="button" className="ghost" onClick=${openLibrary}>Escolher da Biblioteca de Mídia</button>
+      ${selectedKey ? html`<span className="campaign-media-selected">Selecionado na Meta: <code>${selectedKey}</code></span>` : null}
+      ${open ? html`
+        <div className="campaign-media-picker">
+          <div className="campaign-media-picker-head">
+            <div><strong>${type === "video" ? "Vídeos da Meta" : "Imagens da Meta"}</strong><span>O anúncio usará o identificador armazenado pela própria Meta.</span></div>
+            <div className="action-group">
+              <button type="button" className="ghost small" onClick=${() => load(true)} disabled=${loading}>${loading ? "Atualizando..." : "Atualizar"}</button>
+              <button type="button" className="ghost small" onClick=${() => setOpen(false)}>Fechar</button>
+            </div>
+          </div>
+          <input type="search" value=${search} onInput=${(event) => setSearch(event.target.value)} placeholder="Buscar por nome, hash ou ID" />
+          ${error ? html`<div className="status error">${error}</div>` : null}
+          ${!loading && visibleItems.length === 0 ? html`<p className="muted small campaign-media-empty">Nenhum criativo encontrado. Envie arquivos em Configurações → Biblioteca de Mídia.</p>` : null}
+          <div className="campaign-media-grid">
+            ${visibleItems.map((item) => {
+              const status = String(item.upload_status || "").toLowerCase();
+              const processing = type === "video" && status && !["ready", "complete", "processed", "unknown"].includes(status);
+              return html`
+                <button type="button" key=${item.key} className=${`campaign-media-option${selectedKey === item.key ? " is-selected" : ""}`}
+                  onClick=${() => { if (!processing) { onSelect(item); setOpen(false); } }} disabled=${processing}>
+                  <span className="campaign-media-option-thumb">
+                    ${item.url ? html`<img src=${item.url} alt="" loading="lazy" />` : html`<span>${type === "video" ? "VIDEO" : "IMG"}</span>`}
+                  </span>
+                  <strong>${labels[item.key]?.label || item.name || item.key}</strong>
+                  <small>${processing ? "Processando na Meta" : item.key}</small>
+                </button>`;
+            })}
+          </div>
+        </div>` : null}
+    </div>
+  `;
+}
+
 function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesError, onLoadPages, pixels, pixelsLoading, onLoadPixels, nichos, savedUrls }) {
   const _savedUrls = Array.isArray(savedUrls) ? savedUrls : [];
   const [step, setStep] = useState(1);
@@ -7157,6 +7232,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const [manualPageEntry, setManualPageEntry] = useState(false);
   const [adFormat, setAdFormat] = useState("image"); // "image" | "video"
   const [imageUrl, setImageUrl] = useState("");
+  const [imageHash, setImageHash] = useState("");
   const [videoId, setVideoId] = useState("");
   const [thumbUrl, setThumbUrl] = useState("");
   const [igActorId, setIgActorId] = useState("");
@@ -7205,7 +7281,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   };
   const manualPlacementSelected = Object.values(manualPlacements || {}).some(Boolean);
   const cappedBid = bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP";
-  const currentAdHasInput = [imageUrl, videoId, thumbUrl, headline, adBody, adDescription]
+  const currentAdHasInput = [imageUrl, imageHash, videoId, thumbUrl, headline, adBody, adDescription]
     .some((value) => String(value || "").trim());
   const currentAdIssues = skipAd || (!currentAdHasInput && savedAds.length > 0) ? [] : [
     !adName.trim() ? "Informe o nome do anuncio." : "",
@@ -7213,7 +7289,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     !headline.trim() ? "Informe o titulo do anuncio." : "",
     !isHttpUrl(destUrl) ? "Informe uma URL de destino http(s) valida." : "",
     adTargetIds.length === 0 ? "Selecione ao menos um conjunto para este anuncio." : "",
-    adFormat === "image" && !isHttpUrl(imageUrl) ? "Informe uma URL http(s) valida para a imagem." : "",
+    adFormat === "image" && !imageHash.trim() && !isHttpUrl(imageUrl) ? "Selecione uma imagem da Meta ou informe uma URL http(s) válida." : "",
     adFormat === "video" && !videoId.trim() ? "Informe o ID do video." : "",
   ].filter(Boolean);
   const step1Issues = [
@@ -7264,6 +7340,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setAdNameManual(false);
     setAdName("");
     setImageUrl("");
+    setImageHash("");
     setVideoId("");
     setThumbUrl("");
     setHeadline("");
@@ -7359,6 +7436,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     page_id: pageId,
     ad_format: adFormat,
     image_url: adFormat === "image" ? imageUrl.trim() : undefined,
+    image_hash: adFormat === "image" ? imageHash.trim() || undefined : undefined,
     video_id: adFormat === "video" ? videoId.trim() : undefined,
     thumb_url: adFormat === "video" ? thumbUrl.trim() : undefined,
     ig_actor_id: igActorId.trim() || undefined,
@@ -7435,7 +7513,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setPixelId(""); setConversionEvent("PURCHASE"); setDevicePlatforms(["mobile", "desktop"]);
     setLocLanguages([]);
     setSkipAd(false); setAdName(""); setPageId(""); setPageSearch(""); setManualPageEntry(false); setAdFormat("image");
-    setImageUrl(""); setVideoId(""); setThumbUrl(""); setIgActorId("");
+    setImageUrl(""); setImageHash(""); setVideoId(""); setThumbUrl(""); setIgActorId("");
     setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl(""); setUrlTags(DEFAULT_UTM_TAGS);
   };
 
@@ -8156,8 +8234,15 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
               </div>
               ${adFormat === "image" ? html`
                 <div className="field full-span">
-                  <label>URL da imagem * (.jpg, .png — mín. 1080×1080 recomendado)</label>
-                  <input type="url" value=${imageUrl} onInput=${(e) => setImageUrl(e.target.value)} placeholder="https://seusite.com/imagem.jpg" />
+                  <label>Imagem do anúncio * (.jpg, .png — mín. 1080×1080 recomendado)</label>
+                  <${CampaignMediaPicker}
+                    accountId=${accountId}
+                    type="image"
+                    selectedKey=${imageHash}
+                    onSelect=${(item) => { setImageHash(item.key); setImageUrl(item.url || ""); }}
+                  />
+                  <div className="campaign-media-or"><span>ou use uma URL externa</span></div>
+                  <input type="url" value=${imageUrl} onInput=${(e) => { setImageUrl(e.target.value); setImageHash(""); }} placeholder="https://seusite.com/imagem.jpg" />
                 </div>
                 ${imageUrl ? html`
                   <div className="soft-panel preview-panel full-span">
@@ -8168,8 +8253,15 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
                 ` : null}
               ` : html`
                 <div className="field full-span">
-                  <label>ID do vídeo no Facebook *</label>
-                  <input type="text" value=${videoId} onInput=${(e) => setVideoId(e.target.value)} placeholder="ID do vídeo (ex: 123456789) — já deve estar na biblioteca de mídia da página" />
+                  <label>Vídeo do anúncio *</label>
+                  <${CampaignMediaPicker}
+                    accountId=${accountId}
+                    type="video"
+                    selectedKey=${videoId}
+                    onSelect=${(item) => { setVideoId(item.key); if (item.url) setThumbUrl(item.url); }}
+                  />
+                  <div className="campaign-media-or"><span>ou informe o ID manualmente</span></div>
+                  <input type="text" value=${videoId} onInput=${(e) => setVideoId(e.target.value)} placeholder="ID do vídeo na Meta" />
                 </div>
                 <div className="field full-span">
                   <label>URL da thumbnail <span className="muted small">— opcional</span></label>
@@ -8288,7 +8380,7 @@ ${(() => {
                   const nextAn = nextBuilderNumber([...savedAds.map((item) => item._anNum), anNum]);
                   setAnNum(nextAn);
                   setAdNameManual(false);
-                  setImageUrl(""); setVideoId(""); setThumbUrl("");
+                  setImageUrl(""); setImageHash(""); setVideoId(""); setThumbUrl("");
                   setHeadline(""); setAdBody(""); setAdDescription("");
                 }}>
                   ➕ Salvar e adicionar outro anúncio
@@ -9142,11 +9234,25 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   `;
 }
 
+
+function normalizeMediaFolder(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
 function MediaLibrarySection({ accountId }) {
   const [media, setMedia] = useState([]);
   const [labels, setLabels] = useState({});
+  const [savedFolders, setSavedFolders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [currentFolder, setCurrentFolder] = useState(null);
   const [editingKey, setEditingKey] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -9154,249 +9260,386 @@ function MediaLibrarySection({ accountId }) {
   const [moveValue, setMoveValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [hidingFolder, setHidingFolder] = useState(null);
+  const [editingFolder, setEditingFolder] = useState(null);
+  const [folderRenameValue, setFolderRenameValue] = useState("");
+  const [folderBusy, setFolderBusy] = useState("");
+  const [newFolder, setNewFolder] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploadFolder, setUploadFolder] = useState("geral");
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef(null);
 
   const extractPrefix = (name) => {
-    const m = String(name || "").match(/^([a-zA-Z0-9]+)[-_]/);
-    return m ? m[1].toLowerCase() : "geral";
+    const match = String(name || "").match(/^([a-zA-Z0-9]+)[-_]/);
+    return match ? match[1].toLowerCase() : "geral";
   };
-
-  const getFolder = (item, lbs) => (lbs || labels)[item.key]?.folder || extractPrefix(item.name);
+  const getFolder = (item, sourceLabels = labels) => sourceLabels[item.key]?.folder || extractPrefix(item.name);
   const getDisplayName = (item) => labels[item.key]?.label || item.name;
 
-  const fetchLabels = async (acct) => {
+  const fetchOrganization = async () => {
     try {
-      const r = await fetch(`/api/media-labels?account_id=${encodeURIComponent(acct)}`);
-      const d = await r.json();
-      if (d.code === "success") return d.data || {};
+      const response = await fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`);
+      const data = await response.json();
+      if (response.ok && data.code === "success") {
+        return { labels: data.data || {}, folders: Array.isArray(data.folders) ? data.folders : [] };
+      }
     } catch { }
-    return {};
+    return { labels: {}, folders: [] };
   };
 
-  const loadMedia = async () => {
+  const loadMedia = async ({ force = false, keepFolder = false } = {}) => {
     if (!accountId) { setError("Configure o ID da conta Meta primeiro."); return; }
-    setLoading(true); setError(""); setCurrentFolder(null); setEditingKey(null); setMovingKey(null);
+    setLoading(true); setError(""); setNotice(""); setEditingKey(null); setMovingKey(null);
+    if (!keepFolder) setCurrentFolder(null);
     try {
-      const [lbs, r] = await Promise.all([
-        fetchLabels(accountId),
-        fetch(`/api/meta-media?account_id=${encodeURIComponent(accountId)}`),
+      const query = new URLSearchParams({ account_id: accountId });
+      if (force) query.set("force", "1");
+      const [organization, response] = await Promise.all([
+        fetchOrganization(),
+        fetch(`/api/meta-media?${query.toString()}`),
       ]);
-      setLabels(lbs);
-      const d = await r.json();
-      if (d.code === "success") {
-        setMedia([...d.data.images, ...d.data.videos]);
-      } else {
-        setError(d.error || "Erro ao carregar mídias");
-      }
+      const data = await response.json();
+      setLabels(organization.labels);
+      setSavedFolders(organization.folders);
+      if (!response.ok || data.code !== "success") throw new Error(data.message || data.error || "Erro ao carregar mídias.");
+      setMedia([...(data.data?.images || []), ...(data.data?.videos || [])]);
+      setNotice(data.cached ? "Biblioteca carregada. Use Atualizar da Meta para consultar novos arquivos." : "Biblioteca sincronizada com a Meta.");
     } catch (err) {
       setError("Erro: " + (err.message || "verifique o token Meta"));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const saveLabel = async (key, patch) => {
-    setSaving(true);
+    setSaving(true); setError("");
     const updated = { ...labels, [key]: { ...(labels[key] || {}), ...patch } };
     setLabels(updated);
     try {
-      await fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`, {
+      const response = await fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ labels: { [key]: updated[key] } }),
       });
-    } catch { }
-    setSaving(false);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível salvar a organização.");
+      if (Array.isArray(data.folders)) setSavedFolders(data.folders);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createFolder = async () => {
+    const folder = normalizeMediaFolder(newFolder);
+    if (!folder || !accountId) return;
+    setCreatingFolder(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ create_folder: folder }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível criar a pasta.");
+      setSavedFolders(Array.isArray(data.folders) ? data.folders : [...savedFolders, folder]);
+      setUploadFolder(folder); setCurrentFolder(folder); setNewFolder("");
+      setNotice(`Pasta "${folder}" criada.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const chooseFiles = (fileList) => {
+    const files = Array.from(fileList || []).slice(0, 10);
+    const accepted = files.filter((file) =>
+      ["image/jpeg", "image/png", "video/mp4", "video/quicktime"].includes(String(file.type || "").toLowerCase())
+    );
+    setSelectedFiles(accepted); setNotice("");
+    setError(accepted.length === files.length ? "" : "Alguns arquivos foram ignorados. Use JPG, PNG, MP4 ou MOV.");
+    if (currentFolder && currentFolder !== "__hidden__") setUploadFolder(currentFolder);
+  };
+
+  const uploadFiles = async () => {
+    if (!accountId || !selectedFiles.length || uploading) return;
+    const folder = normalizeMediaFolder(uploadFolder) || "geral";
+    setUploading(true); setError(""); setNotice("");
+    const uploadedItems = [];
+    const failures = [];
+    for (let index = 0; index < selectedFiles.length; index += 1) {
+      const file = selectedFiles[index];
+      setUploadProgress(`Enviando ${index + 1} de ${selectedFiles.length}: ${file.name}`);
+      const form = new FormData();
+      form.append("account_id", accountId);
+      form.append("folder", folder);
+      form.append("file", file, file.name);
+      try {
+        const response = await fetch("/api/meta-media", { method: "POST", body: form });
+        const data = await response.json();
+        const item = data.data?.uploaded?.[0];
+        if (!response.ok || !item) throw new Error(data.data?.failures?.[0]?.error || data.error || "Falha no upload.");
+        uploadedItems.push(item);
+        (data.data?.failures || []).forEach((failure) => failures.push(`${failure.name || file.name}: ${failure.error}`));
+        setMedia((current) => [item, ...current.filter((existing) => existing.key !== item.key)]);
+        setLabels((current) => ({
+          ...current,
+          [item.key]: { ...(current[item.key] || {}), label: item.name, folder, hidden: false, uploadedByDashboard: true },
+        }));
+      } catch (err) {
+        failures.push(`${file.name}: ${err.message}`);
+      }
+    }
+    setSavedFolders((current) => [...new Set([...current, folder])].sort());
+    setSelectedFiles([]); setUploadProgress(""); setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (failures.length) setError(failures.join(" · "));
+    if (uploadedItems.length) {
+      setCurrentFolder(folder);
+      setNotice(`${uploadedItems.length} arquivo${uploadedItems.length === 1 ? "" : "s"} enviado${uploadedItems.length === 1 ? "" : "s"} à Meta. Vídeos podem levar alguns minutos para ficar prontos.`);
+    }
   };
 
   const commitRename = (key) => {
-    if (!editValue.trim()) { setEditingKey(null); return; }
-    saveLabel(key, { label: editValue.trim() });
+    if (editValue.trim()) saveLabel(key, { label: editValue.trim() });
     setEditingKey(null);
   };
-
   const commitMove = (key) => {
-    const folder = moveValue.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || "geral";
-    saveLabel(key, { folder });
-    setMovingKey(null);
-    setCurrentFolder(folder);
+    const folder = normalizeMediaFolder(moveValue) || "geral";
+    saveLabel(key, { folder }); setMovingKey(null); setCurrentFolder(folder);
   };
-
-  const hideItem = (key) => {
-    saveLabel(key, { hidden: true });
-    setEditingKey(null); setMovingKey(null);
-  };
-
-  const unhideItem = (key) => {
-    saveLabel(key, { hidden: false });
-  };
-
-  const hideFolderItems = (folder) => {
-    const items = folderMap[folder] || [];
-    setSaving(true);
-    const patch = {};
-    items.forEach((item) => { patch[item.key] = { ...(labels[item.key] || {}), hidden: true }; });
-    const updated = { ...labels, ...patch };
-    setLabels(updated);
-    fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ labels: patch }),
-    }).finally(() => setSaving(false));
-    setHidingFolder(null);
-  };
+  const hideItem = (key) => { saveLabel(key, { hidden: true }); setEditingKey(null); setMovingKey(null); };
+  const unhideItem = (key) => saveLabel(key, { hidden: false });
 
   const folderMap = {};
+  savedFolders.forEach((folder) => { folderMap[folder] = []; });
   media.filter((item) => !labels[item.key]?.hidden).forEach((item) => {
-    const f = getFolder(item, labels);
-    if (!folderMap[f]) folderMap[f] = [];
-    folderMap[f].push(item);
+    const folder = getFolder(item, labels);
+    if (!folderMap[folder]) folderMap[folder] = [];
+    folderMap[folder].push(item);
   });
   const folderNames = Object.keys(folderMap).sort();
   const hiddenItems = media.filter((item) => labels[item.key]?.hidden);
   const hiddenCount = hiddenItems.length;
 
+  const renameFolder = async (folder) => {
+    const nextFolder = normalizeMediaFolder(folderRenameValue);
+    if (!nextFolder || nextFolder === folder || folderBusy) return;
+    setFolderBusy(folder); setError(""); setNotice("");
+    try {
+      const itemKeys = (folderMap[folder] || []).map((item) => item.key);
+      const response = await fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rename_folder: { from: folder, to: nextFolder }, item_keys: itemKeys }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível renomear a pasta.");
+      setLabels(data.data || {});
+      setSavedFolders(Array.isArray(data.folders) ? data.folders : []);
+      setEditingFolder(null); setFolderRenameValue("");
+      setUploadFolder((current) => current === folder ? nextFolder : current);
+      setCurrentFolder((current) => current === folder ? nextFolder : current);
+      setNotice(`Pasta "${folder}" renomeada para "${nextFolder}".`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setFolderBusy("");
+    }
+  };
+
+  const deleteFolder = async (folder) => {
+    if (folder === "geral" || folderBusy) return;
+    const items = folderMap[folder] || [];
+    const confirmed = window.confirm(
+      `Excluir a pasta "${folder}"? Os ${items.length} criativo${items.length === 1 ? "" : "s"} continuarão na Meta e serão movidos para "geral".`
+    );
+    if (!confirmed) return;
+    setFolderBusy(folder); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}&folder=${encodeURIComponent(folder)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_keys: items.map((item) => item.key) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível excluir a pasta.");
+      setLabels(data.data || {});
+      setSavedFolders(Array.isArray(data.folders) ? data.folders : []);
+      setEditingFolder(null); setHidingFolder(null);
+      setUploadFolder((current) => current === folder ? "geral" : current);
+      setCurrentFolder((current) => current === folder ? null : current);
+      setNotice(`Pasta "${folder}" excluída. ${data.moved || 0} criativo${data.moved === 1 ? "" : "s"} movido${data.moved === 1 ? "" : "s"} para "geral".`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setFolderBusy("");
+    }
+  };
+
+  const hideFolderItems = (folder) => {
+    const items = folderMap[folder] || [];
+    if (!items.length) { setHidingFolder(null); return; }
+    setSaving(true);
+    const patch = {};
+    items.forEach((item) => { patch[item.key] = { ...(labels[item.key] || {}), hidden: true }; });
+    setLabels({ ...labels, ...patch });
+    fetch(`/api/media-labels?account_id=${encodeURIComponent(accountId)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ labels: patch }),
+    }).catch((err) => setError(err.message)).finally(() => setSaving(false));
+    setHidingFolder(null);
+  };
+
   const FolderIcon = () => html`
-    <svg width="40" height="36" viewBox="0 0 40 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg width="40" height="36" viewBox="0 0 40 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <path d="M2 8C2 5.79 3.79 4 6 4H15.17C15.70 4 16.21 4.21 16.59 4.59L18.41 6.41C18.79 6.79 19.30 7 19.83 7H34C36.21 7 38 8.79 38 11V30C38 32.21 36.21 34 34 34H6C3.79 34 2 32.21 2 30V8Z" fill="#FFC107" stroke="#E6A800" stroke-width="1.5"/>
       <path d="M2 13H38V30C38 32.21 36.21 34 34 34H6C3.79 34 2 32.21 2 30V13Z" fill="#FFD54F"/>
     </svg>
   `;
 
-  const MediaCard = (item, isHidden) => html`
-    <div key=${item.key} className=${`media-card${isHidden ? " is-hidden" : ""}`}>
-      <div className="media-thumb">
-        ${item.url
-          ? html`<img src=${item.url} alt=${item.name} />`
-          : html`<div className="media-thumb-fallback">${item.type === "video" ? "🎬" : "🖼️"}</div>`
-        }
-        <span className=${`media-badge ${item.type === "video" ? "video" : "image"}`}>${item.type === "video" ? "VID" : "IMG"}</span>
-      </div>
-      <div className="media-card-body">
-        ${editingKey === item.key ? html`
-          <input
-            type="text" value=${editValue}
-            onInput=${(e) => setEditValue(e.target.value)}
-            onKeyDown=${(e) => { if (e.key === "Enter") commitRename(item.key); if (e.key === "Escape") setEditingKey(null); }}
-            className="media-input"
-          />
-          <button onClick=${() => commitRename(item.key)} className="media-save-btn">✓ Salvar</button>
-        ` : html`
-          <p className="media-card-title">${getDisplayName(item)}</p>
-          ${isHidden ? html`
-            <button onClick=${() => unhideItem(item.key)} className="media-mini-btn full">👁️ Mostrar</button>
+  const MediaCard = (item, isHidden) => {
+    const status = String(item.upload_status || "").toLowerCase();
+    const processing = item.type === "video" && status && !["ready", "complete", "processed", "unknown"].includes(status);
+    return html`
+      <div key=${item.key} className=${`media-card${isHidden ? " is-hidden" : ""}`}>
+        <div className="media-thumb">
+          ${item.url ? html`<img src=${item.url} alt=${item.name} loading="lazy" />` : html`<div className="media-thumb-fallback">${item.type === "video" ? "VIDEO" : "IMG"}</div>`}
+          <span className=${`media-badge ${item.type === "video" ? "video" : "image"}`}>${item.type === "video" ? "VID" : "IMG"}</span>
+          ${processing ? html`<span className="media-processing-badge">Processando</span>` : null}
+        </div>
+        <div className="media-card-body">
+          ${editingKey === item.key ? html`
+            <input type="text" value=${editValue} onInput=${(event) => setEditValue(event.target.value)}
+              onKeyDown=${(event) => { if (event.key === "Enter") commitRename(item.key); if (event.key === "Escape") setEditingKey(null); }} className="media-input" />
+            <button onClick=${() => commitRename(item.key)} className="media-save-btn">Salvar</button>
           ` : html`
-            <div className="media-card-actions">
-              <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" className="media-mini-btn">✏️</button>
-              <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover para pasta" className="media-mini-btn">📂</button>
-              <button onClick=${() => hideItem(item.key)} title="Ocultar" className="media-mini-btn">🙈</button>
-            </div>
+            <p className="media-card-title" title=${getDisplayName(item)}>${getDisplayName(item)}</p>
+            <p className="media-card-id" title=${item.key}>${item.type === "image" ? "Hash" : "ID"}: ${item.key}</p>
+            ${isHidden ? html`<button onClick=${() => unhideItem(item.key)} className="media-mini-btn full">Mostrar</button>` : html`
+              <div className="media-card-actions">
+                <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" className="media-mini-btn">Nome</button>
+                <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item)); setEditingKey(null); }} title="Mover para pasta" className="media-mini-btn">Mover</button>
+                <button onClick=${() => hideItem(item.key)} title="Ocultar" className="media-mini-btn">Ocultar</button>
+              </div>`}
           `}
-        `}
-        ${movingKey === item.key && editingKey !== item.key ? html`
-          <div className="media-inline-editor">
-            <input
-              type="text" value=${moveValue}
-              onInput=${(e) => setMoveValue(e.target.value)}
-              onKeyDown=${(e) => { if (e.key === "Enter") commitMove(item.key); if (e.key === "Escape") setMovingKey(null); }}
-              placeholder="nome-da-pasta"
-              className="media-input folder"
-            />
-            <button onClick=${() => commitMove(item.key)} className="media-move-btn">Mover</button>
-          </div>
-        ` : null}
+          ${movingKey === item.key && editingKey !== item.key ? html`
+            <div className="media-inline-editor">
+              <select value=${moveValue} onChange=${(event) => setMoveValue(event.target.value)} className="media-input folder">
+                ${[...new Set([...folderNames, moveValue || "geral"])].sort().map((folder) => html`<option key=${folder} value=${folder}>${folder}</option>`)}
+              </select>
+              <button onClick=${() => commitMove(item.key)} className="media-move-btn">Mover</button>
+            </div>` : null}
+        </div>
       </div>
-    </div>
-  `;
+    `;
+  };
 
   return html`
     <div className="media-section">
       <div className="media-toolbar">
         <div>
           <h3 className="settings-title" style=${{ marginBottom: "2px" }}>Biblioteca de Mídia</h3>
-          <p className="muted small" style=${{ margin: 0 }}>Imagens e vídeos da conta Meta. Organize por pastas e renomeie os criativos localmente.</p>
+          <p className="muted small" style=${{ margin: 0 }}>Envie criativos para a conta Meta e organize-os em pastas no Dashboard.</p>
         </div>
         <div className="media-toolbar-actions">
-          ${hiddenCount > 0 ? html`
-            <button className="ghost" onClick=${() => { setCurrentFolder("__hidden__"); setEditingKey(null); setMovingKey(null); }} style=${{ whiteSpace: "nowrap", fontSize: "0.82rem" }}>
-              🙈 Ocultos (${hiddenCount})
-            </button>
-          ` : null}
-          <button className="ghost" onClick=${loadMedia} disabled=${loading} style=${{ whiteSpace: "nowrap" }}>
-            ${loading ? "Carregando..." : "↺ Carregar mídias"}
+          ${hiddenCount > 0 ? html`<button className="ghost" onClick=${() => setCurrentFolder("__hidden__")}>Ocultos (${hiddenCount})</button>` : null}
+          <button className="ghost" onClick=${() => loadMedia({ force: true, keepFolder: true })} disabled=${loading || uploading}>
+            ${loading ? "Atualizando..." : "Atualizar da Meta"}
           </button>
         </div>
       </div>
 
-      ${error ? html`<div className="status error" style=${{ marginBottom: "12px" }}>${error}</div>` : null}
+      <div className="media-manager-panel">
+        <div className="media-folder-create">
+          <div><strong>Nova pasta</strong><span>Organização interna do Dashboard.</span></div>
+          <div className="media-folder-create-form">
+            <input type="text" value=${newFolder} onInput=${(event) => setNewFolder(event.target.value)}
+              onKeyDown=${(event) => { if (event.key === "Enter") { event.preventDefault(); createFolder(); } }} placeholder="Nome da pasta" maxLength="60" />
+            <button className="ghost" onClick=${createFolder} disabled=${creatingFolder || !normalizeMediaFolder(newFolder)}>${creatingFolder ? "Criando..." : "Criar pasta"}</button>
+          </div>
+        </div>
+        <div className=${`media-upload-zone${dragActive ? " is-dragging" : ""}`}
+          onDragOver=${(event) => { event.preventDefault(); setDragActive(true); }} onDragLeave=${() => setDragActive(false)}
+          onDrop=${(event) => { event.preventDefault(); setDragActive(false); chooseFiles(event.dataTransfer.files); }}>
+          <input ref=${fileInputRef} type="file" multiple accept="image/jpeg,image/png,video/mp4,video/quicktime"
+            onChange=${(event) => chooseFiles(event.target.files)} className="media-file-input" />
+          <div className="media-upload-copy">
+            <strong>${selectedFiles.length ? `${selectedFiles.length} arquivo${selectedFiles.length === 1 ? " selecionado" : "s selecionados"}` : "Arraste imagens ou vídeos aqui"}</strong>
+            <span>JPG/PNG até 30 MB; MP4/MOV até 95 MB por arquivo.</span>
+          </div>
+          <button className="ghost" onClick=${() => fileInputRef.current?.click()} disabled=${uploading}>Selecionar arquivos</button>
+          <label className="media-upload-folder"><span>Pasta</span>
+            <select value=${uploadFolder} onChange=${(event) => setUploadFolder(event.target.value)} disabled=${uploading}>
+              ${[...new Set(["geral", ...folderNames, uploadFolder])].sort().map((folder) => html`<option key=${folder} value=${folder}>${folder}</option>`)}
+            </select>
+          </label>
+          <button className="primary" onClick=${uploadFiles} disabled=${uploading || !selectedFiles.length || !accountId}>${uploading ? "Enviando..." : "Enviar para a Meta"}</button>
+        </div>
+        ${uploadProgress ? html`<div className="media-upload-progress"><span></span><p>${uploadProgress}</p></div>` : null}
+      </div>
 
-      ${media.length > 0 ? html`
+      ${error ? html`<div className="status error" style=${{ marginBottom: "12px" }}>${error}</div>` : null}
+      ${notice ? html`<div className="status ok" style=${{ marginBottom: "12px" }}>${notice}</div>` : null}
+
+      ${(media.length > 0 || folderNames.length > 0) ? html`
         <div className="media-statusbar">
           ${currentFolder !== null ? html`
-            <button
-              onClick=${() => { setCurrentFolder(null); setEditingKey(null); setMovingKey(null); setHidingFolder(null); }}
-              className="media-back-btn"
-            >← Pastas</button>
-            <span className="media-statustext">/</span>
-            <span className="media-statustext" style=${{ fontWeight: 700, color: "var(--ink)" }}>
-              ${currentFolder === "__hidden__" ? "🙈 Arquivos Ocultos" : html`📁 ${currentFolder}`}
-            </span>
+            <button onClick=${() => { setCurrentFolder(null); setEditingKey(null); setMovingKey(null); setHidingFolder(null); }} className="media-back-btn">Voltar às pastas</button>
+            <span className="media-statustext">/</span><span className="media-statustext strong">${currentFolder === "__hidden__" ? "Arquivos ocultos" : currentFolder}</span>
           ` : html`<span className="media-statustext">${media.length} mídias em ${folderNames.length} pasta${folderNames.length !== 1 ? "s" : ""}${saving ? " — salvando..." : ""}</span>`}
-        </div>
-      ` : null}
+        </div>` : null}
 
       ${currentFolder === "__hidden__" ? html`
-        ${hiddenItems.length === 0 ? html`
-          <p className="muted small media-empty">Nenhum arquivo oculto.</p>
-        ` : html`
-          <div className="media-grid">
-            ${hiddenItems.map((item) => MediaCard(item, true))}
-          </div>
-        `}
+        ${hiddenItems.length === 0 ? html`<p className="muted small media-empty">Nenhum arquivo oculto.</p>` : html`<div className="media-grid">${hiddenItems.map((item) => MediaCard(item, true))}</div>`}
       ` : currentFolder !== null ? html`
-        <div className="media-grid">
-          ${(folderMap[currentFolder] || []).map((item) => MediaCard(item, false))}
-        </div>
-        ${(folderMap[currentFolder] || []).length === 0 ? html`
-          <p className="muted small media-empty">Pasta vazia.</p>
-        ` : null}
+        <div className="media-grid">${(folderMap[currentFolder] || []).map((item) => MediaCard(item, false))}</div>
+        ${(folderMap[currentFolder] || []).length === 0 ? html`<p className="muted small media-empty">Pasta vazia. Envie um criativo para esta pasta.</p>` : null}
       ` : html`
         <div className="folder-grid">
           ${folderNames.map((folder) => {
-            const items = folderMap[folder];
+            const items = folderMap[folder] || [];
             const isConfirming = hidingFolder === folder;
+            const isEditing = editingFolder === folder;
+            const isBusy = folderBusy === folder;
             return html`
-              <div key=${folder} className="folder-card-wrap">
-                <div
-                  onClick=${() => { if (!isConfirming) { setCurrentFolder(folder); setEditingKey(null); setMovingKey(null); } }}
-                  className=${`folder-card${isConfirming ? " confirming" : ""}`}
-                >
-                  <div className="folder-thumb">
-                    <${FolderIcon} />
-                  </div>
-                  <div className="folder-body">
-                    ${isConfirming ? html`
-                      <p className="folder-confirm-text">Ocultar todos os ${items.length} itens?</p>
+              <div key=${folder} className="folder-card-wrap"><div
+                onClick=${() => { if (!isConfirming && !isEditing && !isBusy) { setCurrentFolder(folder); setUploadFolder(folder); setEditingKey(null); setMovingKey(null); } }}
+                className=${`folder-card${isConfirming || isEditing ? " confirming" : ""}${isBusy ? " is-busy" : ""}`}>
+                <div className="folder-thumb"><${FolderIcon} /></div><div className="folder-body">
+                  ${isConfirming ? html`
+                    <p className="folder-confirm-text">Ocultar todos os ${items.length} itens?</p><div className="folder-confirm-actions">
+                      <button onClick=${(event) => { event.stopPropagation(); hideFolderItems(folder); }} className="folder-confirm-primary">Sim</button>
+                      <button onClick=${(event) => { event.stopPropagation(); setHidingFolder(null); }} className="folder-confirm-secondary">Não</button>
+                    </div>` : isEditing ? html`
+                    <div className="folder-rename-form" onClick=${(event) => event.stopPropagation()}>
+                      <label>Novo nome</label>
+                      <input type="text" value=${folderRenameValue} onInput=${(event) => setFolderRenameValue(event.target.value)}
+                        onKeyDown=${(event) => { if (event.key === "Enter") renameFolder(folder); if (event.key === "Escape") setEditingFolder(null); }} autoFocus />
                       <div className="folder-confirm-actions">
-                        <button onClick=${(e) => { e.stopPropagation(); hideFolderItems(folder); }} className="folder-confirm-primary">Sim</button>
-                        <button onClick=${(e) => { e.stopPropagation(); setHidingFolder(null); }} className="folder-confirm-secondary">Não</button>
+                        <button onClick=${() => renameFolder(folder)} className="folder-confirm-primary" disabled=${!normalizeMediaFolder(folderRenameValue) || normalizeMediaFolder(folderRenameValue) === folder}>Salvar</button>
+                        <button onClick=${() => setEditingFolder(null)} className="folder-confirm-secondary">Cancelar</button>
                       </div>
-                    ` : html`
-                      <p className="folder-name">${folder}</p>
-                      <div className="folder-meta">
-                        <p className="folder-count">${items.length} item${items.length !== 1 ? "s" : ""}</p>
-                        <button onClick=${(e) => { e.stopPropagation(); setHidingFolder(folder); }} title="Ocultar pasta" className="folder-hide-btn">🙈</button>
-                      </div>
+                    </div>` : html`
+                    <p className="folder-name">${folder}</p><div className="folder-meta"><p className="folder-count">${items.length} item${items.length !== 1 ? "s" : ""}</p>
+                      ${isBusy ? html`<span className="folder-busy-label">Salvando...</span>` : null}
+                    </div>
+                    ${folder !== "geral" ? html`
+                      <div className="folder-actions">
+                        <button onClick=${(event) => { event.stopPropagation(); setEditingFolder(folder); setFolderRenameValue(folder); setHidingFolder(null); }} className="folder-action-btn">Renomear</button>
+                        <button onClick=${(event) => { event.stopPropagation(); deleteFolder(folder); }} className="folder-action-btn danger">Excluir</button>
+                      </div>` : null}
+                    ${items.length ? html`<button onClick=${(event) => { event.stopPropagation(); setHidingFolder(folder); setEditingFolder(null); }} title="Ocultar os itens desta pasta" className="folder-hide-all-btn">Ocultar itens</button>` : null}
                     `}
-                  </div>
                 </div>
-              </div>
-            `;
+              </div></div>`;
           })}
-        </div>
-      `}
-
-      ${media.length === 0 && !loading ? html`
-        <p className="muted small media-empty">Clique em "↺ Carregar mídias" para visualizar imagens e vídeos da conta Meta.</p>
-      ` : null}
+        </div>`}
+      ${media.length === 0 && folderNames.length === 0 && !loading ? html`<p className="muted small media-empty">Envie o primeiro criativo ou clique em “Atualizar da Meta” para importar a biblioteca existente.</p>` : null}
     </div>
   `;
 }

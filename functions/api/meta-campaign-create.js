@@ -96,8 +96,8 @@ export function validateMetaCampaignCreationPayload(campaign, adsets) {
       if (String(ad?.url_tags || "").length > 2000) errors.push(`${adLabel}: parametros de URL muito longos.`);
       if (ad?.ad_format === "video") {
         if (!String(ad?.video_id || "").trim()) errors.push(`${adLabel}: informe o ID do video.`);
-      } else if (!isHttpUrl(ad?.image_url)) {
-        errors.push(`${adLabel}: URL da imagem invalida.`);
+      } else if (!String(ad?.image_hash || "").trim() && !isHttpUrl(ad?.image_url)) {
+        errors.push(`${adLabel}: selecione uma imagem da biblioteca Meta ou informe uma URL valida.`);
       }
       if (!new Set(["PAUSED", "ACTIVE"]).has(String(ad?.status || campaign?.status || "PAUSED"))) {
         errors.push(`${adLabel}: status invalido.`);
@@ -199,7 +199,8 @@ async function createAd(ad, adsetId, account_id, token) {
       call_to_action: { type: ad.cta_type || "LEARN_MORE", value: { link: ad.destination_url } },
     };
     if (ad.body) linkData.message = ad.body;
-    if (ad.image_url) linkData.picture = ad.image_url;
+    if (ad.image_hash) linkData.image_hash = String(ad.image_hash).trim();
+    else if (ad.image_url) linkData.picture = ad.image_url;
     objectStorySpec = { page_id: ad.page_id, link_data: linkData };
   }
   if (ad.ig_actor_id) objectStorySpec.instagram_actor_id = ad.ig_actor_id;

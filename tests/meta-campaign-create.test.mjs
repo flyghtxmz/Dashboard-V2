@@ -34,6 +34,14 @@ test("aceita payload de site completo e pausado", () => {
   assert.deepEqual(validateMetaCampaignCreationPayload(validCampaign, [validAdset]), []);
 });
 
+test("aceita imagem armazenada na Meta pelo hash sem depender de URL externa", () => {
+  const adset = {
+    ...validAdset,
+    ads: [{ ...validAdset.ads[0], image_url: undefined, image_hash: "abc123def456" }],
+  };
+  assert.deepEqual(validateMetaCampaignCreationPayload(validCampaign, [adset]), []);
+});
+
 test("bloqueia destino ainda sem adaptador", () => {
   const errors = validateMetaCampaignCreationPayload(validCampaign, [{
     ...validAdset,
