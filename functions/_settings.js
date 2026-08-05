@@ -62,6 +62,7 @@ function normalizeNichos(values) {
     ? values
         .filter((item) => item && typeof item.nome === "string" && item.nome.trim())
         .map((item) => ({
+          id: String(item.id || `niche:${String(item.slug || "").trim()}`).trim(),
           nome: item.nome.trim(),
           slug: String(item.slug || "").trim(),
           paises: uniqueStrings(

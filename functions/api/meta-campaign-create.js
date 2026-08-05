@@ -24,20 +24,40 @@ function isHttpUrl(value) {
 
 export function validateMetaCampaignCreationPayload(campaign, adsets) {
   const errors = [];
+  const adsetList = Array.isArray(adsets) ? adsets : [];
+  const supportedObjectives = new Set([
+    "OUTCOME_TRAFFIC",
+    "OUTCOME_SALES",
+    "OUTCOME_LEADS",
+    "OUTCOME_ENGAGEMENT",
+    "OUTCOME_AWARENESS",
+    "OUTCOME_APP_PROMOTION",
+  ]);
+  if (!supportedObjectives.has(String(campaign?.objective || ""))) errors.push("Objetivo da campanha invalido.");
+  if (adsetList.length > 50) errors.push("Uma publicacao pode conter no maximo 50 conjuntos.");
+  const totalAds = adsetList.reduce((sum, item) => sum + (Array.isArray(item?.ads) ? item.ads.length : 0), 0);
+  if (totalAds > 200) errors.push("Uma publicacao pode conter no maximo 200 anuncios materializados.");
   const campaignHasDaily = campaign?.daily_budget !== undefined;
   const campaignHasLifetime = campaign?.lifetime_budget !== undefined;
   if (campaignHasDaily && campaignHasLifetime) errors.push("A campanha nao pode ter orcamento diario e vitalicio ao mesmo tempo.");
   if (campaignHasDaily && !isPositiveAmount(campaign.daily_budget)) errors.push("O orcamento diario da campanha deve ser maior que zero.");
   if (campaignHasLifetime && !isPositiveAmount(campaign.lifetime_budget)) errors.push("O orcamento vitalicio da campanha deve ser maior que zero.");
-  if (campaign?.spending_limit !== undefined && !isPositiveAmount(campaign.spending_limit)) errors.push("O limite de gastos da campanha deve ser maior que zero.");
+  if (campaign?.spend_cap !== undefined && !isPositiveAmount(campaign.spend_cap)) errors.push("O limite de gastos da campanha deve ser maior que zero.");
   if (!new Set(["PAUSED", "ACTIVE"]).has(String(campaign?.status || "PAUSED"))) errors.push("Status da campanha invalido.");
 
   const isCbo = campaignHasDaily || campaignHasLifetime;
-  (Array.isArray(adsets) ? adsets : []).forEach((adset, adsetIndex) => {
+  adsetList.forEach((adset, adsetIndex) => {
     const label = `Conjunto ${adsetIndex + 1}`;
     if (!String(adset?.name || "").trim()) errors.push(`${label}: informe o nome.`);
     const countries = Array.isArray(adset?.countries) ? adset.countries.filter(Boolean) : [];
     if (!countries.length) errors.push(`${label}: selecione pelo menos um pais.`);
+    if (countries.some((code) => !/^[A-Z]{2}$/.test(String(code || "").trim().toUpperCase()))) {
+      errors.push(`${label}: use codigos ISO de dois caracteres para os paises.`);
+    }
+    const destinationType = String(adset?.destination_type || "WEBSITE").toUpperCase();
+    if (destinationType !== "WEBSITE") {
+      errors.push(`${label}: o adaptador ${destinationType} ainda nao esta habilitado para publicacao.`);
+    }
     const ageMin = Number(adset?.age_min);
     const ageMax = Number(adset?.age_max);
     if (!Number.isFinite(ageMin) || ageMin < 18 || ageMin > 65) errors.push(`${label}: idade minima invalida.`);
@@ -49,6 +69,10 @@ export function validateMetaCampaignCreationPayload(campaign, adsets) {
     if (hasDaily && hasLifetime) errors.push(`${label}: use apenas um tipo de orcamento.`);
     if (hasDaily && !isPositiveAmount(adset.daily_budget)) errors.push(`${label}: orcamento diario deve ser maior que zero.`);
     if (hasLifetime && !isPositiveAmount(adset.lifetime_budget)) errors.push(`${label}: orcamento vitalicio deve ser maior que zero.`);
+    if (hasLifetime && !adset?.end_time) errors.push(`${label}: informe o termino para usar orcamento vitalicio.`);
+    if (adset?.optimization_goal === "OFFSITE_CONVERSIONS" && !String(adset?.pixel_id || "").trim()) {
+      errors.push(`${label}: selecione um pixel para otimizar conversoes no site.`);
+    }
     if (["LOWEST_COST_WITH_BID_CAP", "COST_CAP"].includes(adset?.bid_strategy) && !isPositiveAmount(adset?.bid_amount)) {
       errors.push(`${label}: informe um limite de lance/CPA maior que zero.`);
     }
@@ -61,10 +85,15 @@ export function validateMetaCampaignCreationPayload(campaign, adsets) {
 
     (Array.isArray(adset?.ads) ? adset.ads : []).forEach((ad, adIndex) => {
       const adLabel = `${label}, anuncio ${adIndex + 1}`;
+      if (String(ad?.destination_type || destinationType).toUpperCase() !== destinationType) {
+        errors.push(`${adLabel}: o destino diverge do conjunto.`);
+      }
       if (!String(ad?.name || "").trim()) errors.push(`${adLabel}: informe o nome.`);
       if (!String(ad?.page_id || "").trim()) errors.push(`${adLabel}: informe a Pagina do Facebook.`);
       if (!String(ad?.headline || "").trim()) errors.push(`${adLabel}: informe o titulo.`);
       if (!isHttpUrl(ad?.destination_url)) errors.push(`${adLabel}: URL de destino invalida.`);
+      if (String(ad?.url_tags || "").startsWith("?")) errors.push(`${adLabel}: remova o ? inicial dos parametros de URL.`);
+      if (String(ad?.url_tags || "").length > 2000) errors.push(`${adLabel}: parametros de URL muito longos.`);
       if (ad?.ad_format === "video") {
         if (!String(ad?.video_id || "").trim()) errors.push(`${adLabel}: informe o ID do video.`);
       } else if (!isHttpUrl(ad?.image_url)) {
@@ -86,6 +115,7 @@ async function createAdset(adset, campaignId, isCBO, account_id, token) {
   ap.set("optimization_goal", adset.optimization_goal || "LINK_CLICKS");
   ap.set("bid_strategy", adset.bid_strategy || "LOWEST_COST_WITHOUT_CAP");
   ap.set("status", adset.status || "PAUSED");
+  ap.set("destination_type", adset.destination_type || "WEBSITE");
 
   if (!isCBO) {
     if (adset.daily_budget) ap.set("daily_budget", String(adset.daily_budget));
@@ -177,6 +207,7 @@ async function createAd(ad, adsetId, account_id, token) {
   const cp2 = new URLSearchParams();
   cp2.set("name", `${ad.name || "Criativo"} — criativo`);
   cp2.set("object_story_spec", JSON.stringify(objectStorySpec));
+  if (ad.url_tags) cp2.set("url_tags", String(ad.url_tags).replace(/^\?/, ""));
   cp2.set("access_token", token);
   const creativeRes = await fetch(`${API_BASE}/${encodeURIComponent(account_id)}/adcreatives`, { method: "POST", body: cp2 });
   const creativeData = await safeJson(creativeRes);
@@ -194,17 +225,139 @@ async function createAd(ad, adsetId, account_id, token) {
   return adData.id;
 }
 
+async function verifyCreatedObjects(ids, token) {
+  const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean).map(String))];
+  if (!uniqueIds.length) return { ok: true, checked: 0, found: 0, missing_ids: [] };
+  const found = new Set();
+  const errors = [];
+  for (let index = 0; index < uniqueIds.length; index += 50) {
+    const chunk = uniqueIds.slice(index, index + 50);
+    const params = new URLSearchParams({
+      ids: chunk.join(","),
+      fields: "id,name,status,effective_status",
+      access_token: token,
+    });
+    try {
+      const response = await fetch(`${API_BASE}/?${params.toString()}`);
+      const data = await safeJson(response);
+      if (!response.ok) {
+        errors.push(data);
+        continue;
+      }
+      Object.keys(data || {}).forEach((id) => found.add(String(id)));
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+  const missing = uniqueIds.filter((id) => !found.has(id));
+  return {
+    ok: errors.length === 0 && missing.length === 0,
+    checked: uniqueIds.length,
+    found: found.size,
+    missing_ids: missing,
+    errors,
+  };
+}
+
+async function ensureCreationRunsTable(db) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS campaign_creation_runs (
+    request_id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    actor TEXT,
+    campaign_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    request_payload TEXT NOT NULL,
+    response_payload TEXT,
+    campaign_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_campaign_creation_runs_account
+    ON campaign_creation_runs(account_id, created_at DESC)`).run();
+}
+
+async function beginCreationRun(db, { requestId, accountId, actor, campaignName, payload }) {
+  if (!db || !requestId) return { owned: true, tracked: false };
+  await ensureCreationRunsTable(db);
+  const now = new Date().toISOString();
+  const insert = await db.prepare(`INSERT OR IGNORE INTO campaign_creation_runs
+    (request_id, account_id, actor, campaign_name, status, request_payload, created_at, updated_at)
+    VALUES (?1, ?2, ?3, ?4, 'PUBLISHING', ?5, ?6, ?6)`)
+    .bind(requestId, accountId, actor || null, campaignName, JSON.stringify(payload), now)
+    .run();
+  if (Number(insert?.meta?.changes || 0) > 0) return { owned: true, tracked: true };
+
+  const existing = await db.prepare(`SELECT status, response_payload, campaign_id, updated_at
+    FROM campaign_creation_runs WHERE request_id = ?1`).bind(requestId).first();
+  if (existing?.response_payload) {
+    try {
+      return { owned: false, tracked: true, response: JSON.parse(existing.response_payload) };
+    } catch {
+      return { owned: false, tracked: true, conflict: true, existing };
+    }
+  }
+  return { owned: false, tracked: true, conflict: true, existing };
+}
+
+async function finishCreationRun(db, requestId, status, payload, campaignId = null) {
+  if (!db || !requestId) return;
+  await db.prepare(`UPDATE campaign_creation_runs
+    SET status = ?2, response_payload = ?3, campaign_id = ?4, updated_at = ?5
+    WHERE request_id = ?1`)
+    .bind(requestId, status, JSON.stringify(payload), campaignId || null, new Date().toISOString())
+    .run();
+}
+
+async function updateCreationRunStage(db, requestId, status, campaignId = null) {
+  if (!db || !requestId) return;
+  await db.prepare(`UPDATE campaign_creation_runs
+    SET status = ?2, campaign_id = COALESCE(?3, campaign_id), updated_at = ?4
+    WHERE request_id = ?1`)
+    .bind(requestId, status, campaignId || null, new Date().toISOString())
+    .run();
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const source = Array.isArray(items) ? items : [];
+  const results = new Array(source.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < source.length) {
+      const index = cursor++;
+      results[index] = await mapper(source[index], index);
+    }
+  };
+  const workerCount = Math.min(Math.max(1, Number(limit) || 1), source.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
+}
+
 export async function onRequest({ request, env }) {
   const session = await getSession(request, env);
   if (!session) {
     return jsonResponse(401, { code: "error", message: "Sessao invalida ou expirada." });
+  }
+  if (request.method === "GET") {
+    const requestId = new URL(request.url).searchParams.get("request_id") || "";
+    const db = env.DASHBOARD_DB || null;
+    if (!db || !requestId) {
+      return jsonResponse(400, { code: "error", error: "request_id e banco sao obrigatorios." });
+    }
+    await ensureCreationRunsTable(db);
+    const row = await db.prepare(`SELECT request_id, account_id, campaign_name, status,
+      response_payload, campaign_id, created_at, updated_at
+      FROM campaign_creation_runs WHERE request_id = ?1`).bind(requestId).first();
+    if (!row) return jsonResponse(404, { code: "error", error: "Publicacao nao encontrada." });
+    let response = null;
+    try { response = row.response_payload ? JSON.parse(row.response_payload) : null; } catch { response = null; }
+    return jsonResponse(200, { code: "success", data: { ...row, response_payload: undefined, response } });
   }
   const token = getMetaToken(env);
   if (!token) return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
   if (request.method !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
   const body = await readJson(request);
-  const { account_id, campaign, adset, ad, adsets } = body || {};
+  const { request_id, account_id, campaign, adset, ad, adsets } = body || {};
 
   if (!account_id) return jsonResponse(400, { error: "Parametros obrigatorios: account_id" });
   if (!campaign?.name) return jsonResponse(400, { error: "Parametros obrigatorios: campaign.name" });
@@ -244,6 +397,67 @@ export async function onRequest({ request, env }) {
     });
   }
 
+  const db = env.DASHBOARD_DB || null;
+  const requestId = String(request_id || "").trim();
+  if (!db) {
+    return jsonResponse(503, { code: "error", error: "DASHBOARD_DB nao configurado para publicar com seguranca." });
+  }
+  if (!requestId) {
+    return jsonResponse(400, { code: "error", error: "request_id e obrigatorio para evitar publicacao duplicada." });
+  }
+  if (requestId.length > 160) {
+    return jsonResponse(400, { code: "error", error: "Identificador de publicacao invalido." });
+  }
+  let run;
+  try {
+    run = await beginCreationRun(db, {
+      requestId,
+      accountId: normalizeAccountId(account_id),
+      actor: session.username || session.email || session.role,
+      campaignName: campaign.name,
+      payload: body,
+    });
+  } catch (error) {
+    return jsonResponse(503, {
+      code: "error",
+      error: "Nao foi possivel registrar a publicacao com seguranca.",
+      details: error.message,
+    });
+  }
+  if (run?.response) {
+    return jsonResponse(200, { ...run.response, replayed: true });
+  }
+  if (run?.conflict) {
+    return jsonResponse(409, {
+      code: "publishing",
+      error: "Esta publicacao ja foi iniciada. Aguarde ou consulte o historico antes de tentar novamente.",
+      existing: run.existing,
+    });
+  }
+
+  const persistenceWarnings = [];
+  const recordStage = async (status, id = null) => {
+    try {
+      await updateCreationRunStage(db, requestId, status, id);
+    } catch (error) {
+      persistenceWarnings.push(`Nao foi possivel registrar a etapa ${status}: ${error.message}`);
+    }
+  };
+  const finish = async (httpStatus, status, payload, id = null) => {
+    const responsePayload = persistenceWarnings.length
+      ? { ...payload, persistence_warnings: [...persistenceWarnings] }
+      : payload;
+    try {
+      await finishCreationRun(db, requestId, status, responsePayload, id);
+    } catch (error) {
+      responsePayload.persistence_warnings = [
+        ...(responsePayload.persistence_warnings || []),
+        `Nao foi possivel finalizar o historico: ${error.message}`,
+      ];
+    }
+    return jsonResponse(httpStatus, responsePayload);
+  };
+
   let campaignId = null;
   try {
     const cp = new URLSearchParams();
@@ -258,7 +472,7 @@ export async function onRequest({ request, env }) {
     ));
     if (campaign.daily_budget) cp.set("daily_budget", String(campaign.daily_budget));
     if (campaign.lifetime_budget) cp.set("lifetime_budget", String(campaign.lifetime_budget));
-    if (campaign.spending_limit) cp.set("spending_limit", String(campaign.spending_limit));
+    if (campaign.spend_cap) cp.set("spend_cap", String(campaign.spend_cap));
     if (campaign.bid_strategy) cp.set("bid_strategy", campaign.bid_strategy);
     // Obrigatorio quando nao usa orcamento de campanha (CBO)
     if (!campaign.daily_budget && !campaign.lifetime_budget) {
@@ -267,52 +481,81 @@ export async function onRequest({ request, env }) {
     cp.set("access_token", token);
     const campRes = await fetch(`${API_BASE}/${encodeURIComponent(account_id)}/campaigns`, { method: "POST", body: cp });
     const campData = await safeJson(campRes);
-    if (!campRes.ok) return jsonResponse(campRes.status, { error: "Erro ao criar campanha", details: campData });
+    if (!campRes.ok) return finish(campRes.status, "FAILED", { error: "Erro ao criar campanha", details: campData });
     campaignId = campData.id;
+    await recordStage("CAMPAIGN_CREATED", campaignId);
   } catch (err) {
-    return jsonResponse(500, { error: "Erro ao criar campanha", details: err.message });
+    const payload = campaignId
+      ? { error: "A campanha foi criada, mas o registro da publicacao falhou.", campaign_id: campaignId, details: err.message }
+      : { error: "Erro ao criar campanha", details: err.message };
+    return finish(500, campaignId ? "CREATED_UNVERIFIED" : "FAILED", payload, campaignId);
   }
 
   if (adsetsToCreate.length === 0) {
-    return jsonResponse(200, { code: "success", campaign_id: campaignId });
+    const verification = await verifyCreatedObjects([campaignId], token);
+    const payload = { code: "success", campaign_id: campaignId, verification };
+    return finish(200, verification.ok ? "VERIFIED" : "CREATED_UNVERIFIED", payload, campaignId);
   }
 
   const isCBO = Boolean(campaign.daily_budget || campaign.lifetime_budget);
-  const results = [];
+  let results = [];
   let anyError = false;
 
-  for (const adsetDef of adsetsToCreate) {
+  results = await mapWithConcurrency(adsetsToCreate, 3, async (adsetDef) => {
     const adsetResult = { name: adsetDef.name, adset_id: null, ads: [], error: null };
     try {
       adsetResult.adset_id = await createAdset(adsetDef, campaignId, isCBO, account_id, token);
     } catch (err) {
       adsetResult.error = err.details || err.message;
       anyError = true;
-      results.push(adsetResult);
-      continue;
     }
+    return adsetResult;
+  });
 
-    const adsToCreate = Array.isArray(adsetDef.ads) ? adsetDef.ads : [];
-    for (const adDef of adsToCreate) {
-      if (!adDef.page_id) continue;
-      try {
-        const adId = await createAd(adDef, adsetResult.adset_id, account_id, token);
-        adsetResult.ads.push({ name: adDef.name, ad_id: adId });
-      } catch (err) {
-        adsetResult.ads.push({ name: adDef.name, ad_id: null, error: err.details || err.message });
-        anyError = true;
-      }
+  await recordStage(anyError ? "ADSETS_PARTIAL" : "ADSETS_CREATED", campaignId);
+
+  const adTasks = results.flatMap((adsetResult, adsetIndex) => {
+    if (!adsetResult.adset_id) return [];
+    const adsToCreate = Array.isArray(adsetsToCreate[adsetIndex]?.ads)
+      ? adsetsToCreate[adsetIndex].ads
+      : [];
+    adsetResult.ads = new Array(adsToCreate.length);
+    return adsToCreate.map((adDef, adIndex) => ({ adDef, adIndex, adsetResult }));
+  });
+
+  await mapWithConcurrency(adTasks, 4, async ({ adDef, adIndex, adsetResult }) => {
+    try {
+      const adId = await createAd(adDef, adsetResult.adset_id, account_id, token);
+      adsetResult.ads[adIndex] = { name: adDef.name, ad_id: adId };
+    } catch (err) {
+      adsetResult.ads[adIndex] = { name: adDef.name, ad_id: null, error: err.details || err.message };
+      anyError = true;
     }
-    results.push(adsetResult);
-  }
+  });
+  results.forEach((item) => { item.ads = (item.ads || []).filter(Boolean); });
 
   const first = results[0] || {};
   const firstAd = first.ads?.[0] || {};
-  return jsonResponse(200, {
+  const createdIds = [
+    campaignId,
+    ...results.flatMap((item) => [
+      item.adset_id,
+      ...(item.ads || []).map((adItem) => adItem.ad_id),
+    ]),
+  ].filter(Boolean);
+  const verification = await verifyCreatedObjects(createdIds, token);
+  const responsePayload = {
     code: anyError ? "partial" : "success",
     campaign_id: campaignId,
     adset_id: first.adset_id || null,
     ad_id: firstAd.ad_id || null,
     results,
-  });
+    verification,
+  };
+  return finish(
+    200,
+    anyError ? "PARTIAL" : verification.ok ? "VERIFIED" : "CREATED_UNVERIFIED",
+    responsePayload,
+    campaignId
+  );
 }

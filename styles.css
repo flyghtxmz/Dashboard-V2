@@ -298,6 +298,12 @@ button.small {
   background: var(--neg-wash);
   border-color: var(--neg);
 }
+.status.warn {
+  border-left: 3px solid var(--warn);
+  color: var(--warn);
+  background: var(--warn-wash);
+  border-color: var(--warn);
+}
 .status.neutral {
   border-left: 3px solid var(--border);
   color: var(--muted);
@@ -3409,5 +3415,113 @@ tbody tr:last-child td {
   .media-grid,
   .folder-grid {
     gap: 8px;
+  }
+}
+.builder-target-panel {
+  margin: 14px 0;
+}
+
+.builder-target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.builder-target-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 9px;
+  align-items: center;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.builder-target-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface, #fff));
+}
+
+.builder-target-option input {
+  grid-row: 1 / span 2;
+}
+
+.builder-target-option span,
+.builder-target-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder-target-option small {
+  color: var(--muted);
+}
+
+.builder-structure-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.builder-structure-item {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface, #fff) 94%, transparent);
+}
+
+.builder-structure-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.builder-structure-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.builder-structure-head span,
+.builder-structure-item li span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.builder-structure-item ul {
+  margin: 10px 0 0 22px;
+  padding: 0;
+}
+
+.builder-structure-item li {
+  padding: 3px 0;
+}
+
+.builder-saved-ad {
+  padding: 9px 0;
+}
+
+.builder-saved-ad-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 7px;
+}
+
+@media (max-width: 680px) {
+  .builder-target-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .builder-structure-head {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

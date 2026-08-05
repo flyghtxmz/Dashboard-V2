@@ -1,35 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from "https://esm.sh/react@18.2.0";
 import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
+import {
+  SITE_URL_TAGS,
+  createBuilderId,
+  materializeCampaignAdsets,
+  nextBuilderNumber,
+  normalizeCountryLabel,
+  resolveNicheCountryCodes,
+} from "./campaign-builder.mjs?v=147";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
-const DEFAULT_UTM_TAGS =
-  "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_term={{adset.id}}&utm_content={{ad.id}}&placement={{placement}}";
-function withDefaultMetaUtm(url) {
-  const raw = String(url || "").trim();
-  if (!raw) return raw;
-  const hashIndex = raw.indexOf("#");
-  const hash = hashIndex >= 0 ? raw.slice(hashIndex) : "";
-  const withoutHash = hashIndex >= 0 ? raw.slice(0, hashIndex) : raw;
-  const queryIndex = withoutHash.indexOf("?");
-  const base = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
-  const current = queryIndex >= 0 ? withoutHash.slice(queryIndex + 1) : "";
-  const tracked = new Set([
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "placement", "ad_id",
-  ]);
-  const preserved = current
-    .split("&")
-    .filter(Boolean)
-    .filter((part) => !tracked.has(String(part.split("=")[0] || "").toLowerCase()));
-  return `${base}?${[...preserved, DEFAULT_UTM_TAGS].join("&")}${hash}`;
-}
-const DUPLICATE_STATUS = "ACTIVE";
+const DEFAULT_UTM_TAGS = SITE_URL_TAGS;
+const DUPLICATE_STATUS = "PAUSED";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 146;
+const APP_VERSION_BUILD = 147;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -6788,13 +6777,13 @@ const OPTIMIZATION_GOALS_MAP = {
     { value: "REACH", label: "Alcance" },
   ],
   OUTCOME_LEADS: [
-    { value: "LEAD_GENERATION", label: "Geração de leads" },
+    { value: "OFFSITE_CONVERSIONS", label: "Conversões no site" },
     { value: "LINK_CLICKS", label: "Cliques no link" },
   ],
   OUTCOME_ENGAGEMENT: [
+    { value: "LINK_CLICKS", label: "Cliques no link" },
     { value: "POST_ENGAGEMENT", label: "Engajamento com publicação" },
     { value: "PAGE_LIKES", label: "Curtidas na página" },
-    { value: "LINK_CLICKS", label: "Cliques no link" },
   ],
   OUTCOME_AWARENESS: [
     { value: "REACH", label: "Alcance" },
@@ -6844,10 +6833,6 @@ const UTM_MACROS = [
   { label: "{{site_source_name}}", tip: "Fonte (fb/ig/etc)" },
 ];
 
-const PIXEL_CONVERSION_OBJECTIVES = new Set([
-  "OUTCOME_SALES", "OUTCOME_LEADS",
-]);
-
 const PLACEMENT_LABELS = {
   facebook_feed: "Facebook Feed",
   instagram_feed: "Instagram Feed",
@@ -6884,6 +6869,9 @@ const COUNTRY_LIST = [
   { code: "PY", name: "Paraguai",         region: "latam",         lat: -23.44,  lng: -58.44 },
   { code: "BO", name: "Bolívia",          region: "latam",         lat: -16.29,  lng: -63.59 },
   { code: "VE", name: "Venezuela",        region: "latam",         lat:   6.42,  lng: -66.59 },
+  { code: "GY", name: "Guiana",           region: "latam",         lat:   4.86,  lng: -58.93 },
+  { code: "GF", name: "Guiana Francesa",  region: "latam",         lat:   3.93,  lng: -53.13 },
+  { code: "SR", name: "Suriname",         region: "latam",         lat:   3.92,  lng: -56.03 },
   { code: "CU", name: "Cuba",             region: "latam",         lat:  21.52,  lng: -77.78 },
   { code: "DO", name: "Rep. Dominicana",  region: "latam",         lat:  18.74,  lng: -70.16 },
   { code: "GT", name: "Guatemala",        region: "latam",         lat:  15.78,  lng: -90.23 },
@@ -6906,23 +6894,30 @@ const COUNTRY_LIST = [
   { code: "PL", name: "Polônia",          region: "europe",        lat:  51.92,  lng:  19.15 },
   { code: "RO", name: "Romênia",          region: "europe",        lat:  45.94,  lng:  24.97 },
   { code: "GR", name: "Grécia",           region: "europe",        lat:  39.07,  lng:  21.82 },
-  { code: "AT", name: "Ãustria",          region: "europe",        lat:  47.52,  lng:  14.55 },
+  { code: "AT", name: "Áustria",          region: "europe",        lat:  47.52,  lng:  14.55 },
+  { code: "DK", name: "Dinamarca",        region: "europe",        lat:  56.26,  lng:   9.50 },
+  { code: "FI", name: "Finlândia",        region: "europe",        lat:  61.92,  lng:  25.75 },
+  { code: "CZ", name: "República Tcheca", region: "europe",        lat:  49.82,  lng:  15.47 },
+  { code: "HU", name: "Hungria",          region: "europe",        lat:  47.16,  lng:  19.50 },
+  { code: "HR", name: "Croácia",          region: "europe",        lat:  45.10,  lng:  15.20 },
+  { code: "IE", name: "Irlanda",          region: "europe",        lat:  53.14,  lng:  -7.69 },
+  { code: "UA", name: "Ucrânia",          region: "europe",        lat:  48.38,  lng:  31.17 },
   { code: "US", name: "Estados Unidos",   region: "north-america", lat:  37.09,  lng: -95.71 },
   { code: "CA", name: "Canadá",           region: "north-america", lat:  56.13,  lng: -106.35 },
   { code: "AU", name: "Austrália",        region: "asia-oceania",  lat: -25.27,  lng: 133.78 },
   { code: "NZ", name: "Nova Zelândia",    region: "asia-oceania",  lat: -40.90,  lng: 174.89 },
   { code: "JP", name: "Japão",            region: "asia-oceania",  lat:  36.20,  lng: 138.25 },
-  { code: "IN", name: "Ãndia",            region: "asia-oceania",  lat:  20.59,  lng:  78.96 },
+  { code: "IN", name: "Índia",            region: "asia-oceania",  lat:  20.59,  lng:  78.96 },
   { code: "PH", name: "Filipinas",        region: "asia-oceania",  lat:  12.88,  lng: 121.77 },
   { code: "ID", name: "Indonésia",        region: "asia-oceania",  lat:  -0.79,  lng: 113.92 },
   { code: "TH", name: "Tailândia",        region: "asia-oceania",  lat:  15.87,  lng: 100.99 },
   { code: "SG", name: "Singapura",        region: "asia-oceania",  lat:   1.35,  lng: 103.82 },
   { code: "MY", name: "Malásia",          region: "asia-oceania",  lat:   4.21,  lng: 101.98 },
   { code: "NG", name: "Nigéria",          region: "africa-me",     lat:   9.08,  lng:   8.68 },
-  { code: "ZA", name: "Ãfrica do Sul",    region: "africa-me",     lat: -30.56,  lng:  22.94 },
+  { code: "ZA", name: "África do Sul",     region: "africa-me",     lat: -30.56,  lng:  22.94 },
   { code: "EG", name: "Egito",            region: "africa-me",     lat:  26.82,  lng:  30.80 },
   { code: "MA", name: "Marrocos",         region: "africa-me",     lat:  31.79,  lng:  -7.09 },
-  { code: "AE", name: "Emirados Ãrabes",  region: "africa-me",     lat:  23.42,  lng:  53.85 },
+  { code: "AE", name: "Emirados Árabes",   region: "africa-me",     lat:  23.42,  lng:  53.85 },
   { code: "SA", name: "Arábia Saudita",   region: "africa-me",     lat:  23.89,  lng:  45.08 },
   { code: "IL", name: "Israel",           region: "africa-me",     lat:  31.05,  lng:  34.85 },
 ];
@@ -6931,8 +6926,8 @@ const COUNTRY_REGIONS = {
   latam: "América Latina",
   europe: "Europa",
   "north-america": "América do Norte",
-  "asia-oceania": "Ãsia / Oceania",
-  "africa-me": "Ãfrica / Oriente Médio",
+  "asia-oceania": "Ásia / Oceania",
+  "africa-me": "África / Oriente Médio",
 };
 
 const COUNTRY_MAP = Object.fromEntries(COUNTRY_LIST.map((c) => [c.code, c]));
@@ -6953,14 +6948,14 @@ const LANGUAGE_LIST = [
   { id: 23,  label: "Coreano" },
   { id: 27,  label: "Chinês (Simplificado)" },
   { id: 28,  label: "Chinês (Tradicional)" },
-  { id: 4,   label: "Ãrabe" },
+  { id: 4,   label: "Árabe" },
   { id: 16,  label: "Hindi" },
   { id: 39,  label: "Indonésio" },
   { id: 34,  label: "Tailandês" },
 ];
 
 function flagEmoji(code) {
-  if (!code || code.length !== 2) return "ðŸŒ";
+  if (!code || code.length !== 2) return "🌐";
   return [...code.toUpperCase()].map((c) =>
     String.fromCodePoint(c.charCodeAt(0) + 127397)
   ).join("");
@@ -7119,6 +7114,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [objective, setObjective] = useState("OUTCOME_TRAFFIC");
   const [specialCat, setSpecialCat] = useState("NONE");
   const [campStatus, setCampStatus] = useState("PAUSED");
+  const [destinationType, setDestinationType] = useState("WEBSITE");
   const [nicho, setNicho] = useState(null);
   const [campNameManual, setCampNameManual] = useState(false);
   const [adsetNameManual, setAdsetNameManual] = useState(false);
@@ -7129,6 +7125,9 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [anNum, setAnNum] = useState("01");
   const [savedAdsets, setSavedAdsets] = useState([]);
   const [savedAds, setSavedAds] = useState([]);
+  const [currentAdsetClientId, setCurrentAdsetClientId] = useState(() => createBuilderId("adset"));
+  const [adTargetIds, setAdTargetIds] = useState([]);
+  const publishRequestIdRef = useRef("");
   const [cbo, setCbo] = useState(false);
   const [campBudgetType, setCampBudgetType] = useState("daily");
   const [campBudget, setCampBudget] = useState("");
@@ -7164,9 +7163,10 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [adDescription, setAdDescription] = useState("");
   const [ctaType, setCtaType] = useState("LEARN_MORE");
   const [destUrl, setDestUrl] = useState("");
+  const [urlTags, setUrlTags] = useState(DEFAULT_UTM_TAGS);
 
   // Campanha avançado
-  const [spendingLimit, setSpendingLimit] = useState("");
+  const [spendCap, setSpendCap] = useState("");
 
   // Conjunto avançado
   const [pixelId, setPixelId] = useState("");
@@ -7189,13 +7189,14 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   };
   const manualPlacementSelected = Object.values(manualPlacements || {}).some(Boolean);
   const cappedBid = bidStrategy === "LOWEST_COST_WITH_BID_CAP" || bidStrategy === "COST_CAP";
-  const currentAdHasInput = [adName, pageId, imageUrl, videoId, thumbUrl, igActorId, headline, adBody, adDescription, destUrl]
+  const currentAdHasInput = [imageUrl, videoId, thumbUrl, headline, adBody, adDescription]
     .some((value) => String(value || "").trim());
   const currentAdIssues = skipAd || (!currentAdHasInput && savedAds.length > 0) ? [] : [
     !adName.trim() ? "Informe o nome do anuncio." : "",
     !pageId ? "Selecione a Pagina do Facebook." : "",
     !headline.trim() ? "Informe o titulo do anuncio." : "",
     !isHttpUrl(destUrl) ? "Informe uma URL de destino http(s) valida." : "",
+    adTargetIds.length === 0 ? "Selecione ao menos um conjunto para este anuncio." : "",
     adFormat === "image" && !isHttpUrl(imageUrl) ? "Informe uma URL http(s) valida para a imagem." : "",
     adFormat === "video" && !videoId.trim() ? "Informe o ID do video." : "",
   ].filter(Boolean);
@@ -7203,7 +7204,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     !accountId ? "A conta Meta nao esta configurada." : "",
     !campName.trim() ? "Informe o nome da campanha." : "",
     cbo && !isPositiveMoney(campBudget) ? "Informe um orcamento CBO maior que zero." : "",
-    spendingLimit && !isPositiveMoney(spendingLimit) ? "O limite de gastos deve ser maior que zero." : "",
+    spendCap && !isPositiveMoney(spendCap) ? "O limite de gastos deve ser maior que zero." : "",
   ].filter(Boolean);
   const minAge = Number(ageMin);
   const maxAge = Number(ageMax);
@@ -7214,7 +7215,11 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     !Number.isFinite(maxAge) || maxAge < 18 || maxAge > 65 ? "A idade maxima deve ficar entre 18 e 65." : "",
     Number.isFinite(minAge) && Number.isFinite(maxAge) && minAge > maxAge ? "A idade minima nao pode superar a maxima." : "",
     !cbo && !isPositiveMoney(adsetBudget) ? "Informe um orcamento do conjunto maior que zero." : "",
+    ((!cbo && adsetBudgetType === "lifetime") || (cbo && campBudgetType === "lifetime")) && !endTime
+      ? "Informe a data de termino para usar orcamento vitalicio."
+      : "",
     cappedBid && !isPositiveMoney(bidAmount) ? "Informe o valor do limite de lance/CPA." : "",
+    optGoal === "OFFSITE_CONVERSIONS" && !pixelId ? "Selecione um pixel para otimizar conversoes no site." : "",
     placementMode === "manual" && !manualPlacementSelected ? "Selecione pelo menos um posicionamento manual." : "",
     startTime && endTime && new Date(startTime).getTime() >= new Date(endTime).getTime()
       ? "O termino deve ser posterior ao inicio."
@@ -7224,12 +7229,54 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     ? []
     : savedAds.length === 0 && !currentAdHasInput
     ? ["Preencha um anuncio ou selecione Pular anuncio agora."]
-    : currentAdIssues;
+    : [
+        ...currentAdIssues,
+        savedAds.some((ad) => !(ad._targetAdsetIds || []).some((id) =>
+          [...savedAdsets.map((item) => item._clientId), currentAdsetClientId].includes(id)))
+          ? "Existe um anuncio salvo sem conjunto selecionado."
+          : "",
+      ].filter(Boolean);
+
+  const resetDownstreamStructure = () => {
+    setSavedAdsets([]);
+    setSavedAds([]);
+    setCurrentAdsetClientId(createBuilderId("adset"));
+    setAdTargetIds([]);
+    setCjNum("01");
+    setAnNum("01");
+    setAdsetNameManual(false);
+    setAdNameManual(false);
+    setAdName("");
+    setImageUrl("");
+    setVideoId("");
+    setThumbUrl("");
+    setHeadline("");
+    setAdBody("");
+    setAdDescription("");
+  };
+
+  const confirmStructureReset = () => {
+    if (!savedAdsets.length && !savedAds.length && !currentAdHasInput) return true;
+    const confirmed = window.confirm(
+      "Esta alteracao muda a estrutura da campanha. Os conjuntos e anuncios ja montados serao limpos para evitar uma publicacao inconsistente. Deseja continuar?"
+    );
+    if (confirmed) resetDownstreamStructure();
+    return confirmed;
+  };
 
   const handleObjectiveChange = (val) => {
+    if (val === objective || !confirmStructureReset()) return;
     setObjective(val);
     const goals = OPTIMIZATION_GOALS_MAP[val] || [];
     if (goals.length) setOptGoal(goals[0].value);
+    if (val === "OUTCOME_LEADS") setConversionEvent("LEAD");
+    if (val === "OUTCOME_SALES") setConversionEvent("PURCHASE");
+  };
+
+  const handleDestinationChange = (val) => {
+    if (val === destinationType || !confirmStructureReset()) return;
+    setDestinationType(val);
+    setUrlTags(val === "WEBSITE" ? DEFAULT_UTM_TAGS : "");
   };
 
   const TIPO_MAP = {
@@ -7265,6 +7312,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   };
 
   const snapshotCurrentAdset = () => ({
+    _clientId: currentAdsetClientId,
     name: adsetName.trim(),
     optimization_goal: optGoal,
     bid_strategy: bidStrategy,
@@ -7283,8 +7331,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     ...(endTime ? { end_time: new Date(endTime).toISOString() } : {}),
     ...(pixelId ? { pixel_id: pixelId.trim(), conversion_event: conversionEvent } : {}),
     ...(locLanguages.length > 0 ? { locales: locLanguages } : {}),
+    destination_type: destinationType,
     _cjNum: cjNum,
   });
+
+  const allBuilderAdsets = () => [...savedAdsets, snapshotCurrentAdset()];
+  const allBuilderAdsetIds = () => allBuilderAdsets().map((item) => item._clientId);
 
   const snapshotCurrentAd = () => ({
     name: adName.trim(),
@@ -7299,9 +7351,35 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     description: adDescription.trim(),
     cta_type: ctaType,
     destination_url: destUrl.trim(),
+    url_tags: destinationType === "WEBSITE" ? urlTags.trim() : "",
+    destination_type: destinationType,
     status: campStatus,
     _anNum: anNum,
+    _nameManual: adNameManual,
+    _targetAdsetIds: adTargetIds.length ? [...adTargetIds] : allBuilderAdsetIds(),
   });
+
+  const currentAdIsReady = !skipAd && currentAdHasInput && currentAdIssues.length === 0;
+  const allBuilderAds = () => skipAd
+    ? []
+    : [...savedAds, ...(currentAdIsReady ? [snapshotCurrentAd()] : [])];
+  const buildMaterializedAdsets = (preserveMetadata = false) => materializeCampaignAdsets({
+    adsets: allBuilderAdsets(),
+    ads: allBuilderAds(),
+    niche,
+    status: campStatus,
+    preserveMetadata,
+  });
+  const previewAdsets = buildMaterializedAdsets(true);
+  const previewAdsCount = previewAdsets.reduce((sum, item) => sum + (item.ads?.length || 0), 0);
+
+  const handleGoToAds = () => {
+    const ids = allBuilderAdsetIds();
+    setAdTargetIds((current) => current.filter((id) => ids.includes(id)).length
+      ? current.filter((id) => ids.includes(id))
+      : ids);
+    setStep(3);
+  };
 
   useEffect(() => {
     if (!campNameManual) { const v = buildCampName(nicho, objective, campNum); if (v) setCampName(v); }
@@ -7327,11 +7405,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
 
   const resetForm = () => {
     setStep(1); setResult(null); setFormError("");
-    setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE");
+    setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE"); setDestinationType("WEBSITE");
     setCampStatus("PAUSED"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
     setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCampNum("01"); setCjNum("01"); setAnNum("01");
-    setSavedAdsets([]); setSavedAds([]);
-    setSpendingLimit("");
+    setSavedAdsets([]); setSavedAds([]); setCurrentAdsetClientId(createBuilderId("adset")); setAdTargetIds([]);
+    publishRequestIdRef.current = "";
+    setSpendCap("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
     setCountries(["BR"]); setAgeMin("18"); setAgeMax("65"); setGender("all");
     setPlacementMode("auto"); setManualPlacements({ ...EMPTY_PLACEMENTS }); setAdvantageAudience(0);
@@ -7341,7 +7420,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     setLocLanguages([]);
     setSkipAd(false); setAdName(""); setPageId(""); setAdFormat("image");
     setImageUrl(""); setVideoId(""); setThumbUrl(""); setIgActorId("");
-    setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl("");
+    setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl(""); setUrlTags(DEFAULT_UTM_TAGS);
   };
 
   const handlePublish = async () => {
@@ -7354,6 +7433,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     setFormError("");
     try {
       const payload = {
+        request_id: publishRequestIdRef.current || createBuilderId("campaign-run"),
         account_id: accountId,
         campaign: {
           name: campName.trim(),
@@ -7362,18 +7442,11 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           special_ad_categories: [specialCat],
           ...(cbo && campBudgetType === "daily" ? { daily_budget: Math.round(Number(campBudget) * 100) } : {}),
           ...(cbo && campBudgetType === "lifetime" ? { lifetime_budget: Math.round(Number(campBudget) * 100) } : {}),
-          ...(spendingLimit ? { spending_limit: Math.round(Number(spendingLimit) * 100) } : {}),
+          ...(spendCap ? { spend_cap: Math.round(Number(spendCap) * 100) } : {}),
         },
-        adsets: (() => {
-          const allAdsets = [...savedAdsets, snapshotCurrentAdset()];
-          const currentAd = snapshotCurrentAd();
-          const hasCurrentAd = !skipAd && currentAdHasInput && currentAdIssues.length === 0;
-          const allAds = skipAd
-            ? []
-            : [...savedAds, ...(hasCurrentAd ? [currentAd] : [])].map((adSnap) => ({ ...adSnap, status: campStatus }));
-          return allAdsets.map((adsetSnap) => ({ ...adsetSnap, status: campStatus, ads: allAds }));
-        })(),
+        adsets: buildMaterializedAdsets(),
       };
+      publishRequestIdRef.current = payload.request_id;
 
       const res = await fetchJson("/api/meta-campaign-create", {
         method: "POST",
@@ -7381,6 +7454,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
       });
       setResult(res);
       setStep(5);
+      publishRequestIdRef.current = "";
       if ((res.code === "success" || res.code === "partial") && nicho) {
         const num = parseInt(campNum, 10);
         if (!isNaN(num)) {
@@ -7392,7 +7466,23 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
         }
       }
     } catch (err) {
-      setFormError(formatError(err));
+      const requestId = publishRequestIdRef.current;
+      if (requestId) {
+        try {
+          const run = await fetchJson(`/api/meta-campaign-create?request_id=${encodeURIComponent(requestId)}`, { force: true });
+          if (run?.data?.response) {
+            setResult({ ...run.data.response, recovered: true });
+            setStep(5);
+            publishRequestIdRef.current = "";
+          } else {
+            setFormError(`Publicacao registrada como ${run?.data?.status || "PUBLISHING"}. Aguarde antes de tentar novamente.`);
+          }
+        } catch {
+          setFormError(formatError(err));
+        }
+      } else {
+        setFormError(formatError(err));
+      }
     } finally {
       setPublishing(false);
     }
@@ -7429,11 +7519,26 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     const ok = result?.code === "success";
     return html`
       <section className="card wide result-card">
-        <div className="result-icon">${ok ? "✅" : "âš ï¸"}</div>
+        <div className="result-icon">${ok ? "✅" : "⚠️"}</div>
         <h2 className="section-title" style=${{ marginBottom: "8px" }}>
           ${ok ? "Campanha criada com sucesso!" : "Criação parcial — verifique abaixo"}
         </h2>
         ${result?.error ? html`<p className="muted small" style=${{ margin: "8px 0" }}>${result.error}</p>` : null}
+        ${result?.verification ? html`
+          <p className=${`status ${result.verification.ok ? "ok" : "error"}`} style=${{ margin: "8px 0 14px" }}>
+            ${result.verification.ok
+              ? `Confirmado por leitura na Meta: ${result.verification.found} de ${result.verification.checked} objeto(s).`
+              : `Criado, mas a confirmação encontrou ${result.verification.missing_ids?.length || 0} objeto(s) pendente(s). Revise antes de ativar.`}
+          </p>
+        ` : null}
+        ${Array.isArray(result?.persistence_warnings) && result.persistence_warnings.length ? html`
+          <div className="status warn" style=${{ margin: "8px 0 14px" }}>
+            <strong>Atenção ao histórico:</strong> ${result.persistence_warnings.join(" ")}
+          </div>
+        ` : null}
+        ${result?.recovered || result?.replayed ? html`
+          <p className="status neutral" style=${{ margin: "8px 0 14px" }}>Resultado recuperado pelo identificador seguro da publicação; nenhuma nova cópia foi criada.</p>
+        ` : null}
         <div className="result-stack">
           ${result?.campaign_id ? html`<div>🎯 Campanha: <code className="result-code">${result.campaign_id}</code></div>` : null}
           ${Array.isArray(result?.results) && result.results.length > 0 ? html`
@@ -7445,7 +7550,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                 `}
                 ${r.ads && r.ads.map((a, j) => html`
                   <div key=${j} className="result-subitem">
-                    ${a.error ? html`âŒ ${a.name} — ${typeof a.error === "string" ? a.error : JSON.stringify(a.error)}` : html`✅ ${a.name} <code className="result-code">${a.ad_id}</code>`}
+                    ${a.error ? html`❌ ${a.name} — ${typeof a.error === "string" ? a.error : JSON.stringify(a.error)}` : html`✅ ${a.name} <code className="result-code">${a.ad_id}</code>`}
                   </div>
                 `)}
               </div>
@@ -7485,7 +7590,14 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               ${nichos && nichos.length > 0 ? html`
                 <select value=${nicho ? nicho.slug : ""} onChange=${(e) => {
                   const found = (nichos || []).find((n) => n.slug === e.target.value);
+                  if ((found?.slug || "") === (nicho?.slug || "") || !confirmStructureReset()) return;
                   setNicho(found || null);
+                  const nicheCountries = resolveNicheCountryCodes(found, COUNTRY_LIST);
+                  if (nicheCountries.length) {
+                    setCountries(nicheCountries);
+                    setAdsetNameManual(false);
+                    setAdNameManual(false);
+                  }
                 }}>
                   <option value="">— Selecione um nicho —</option>
                   ${(nichos || []).map((n) => {
@@ -7529,8 +7641,20 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             <div className="field">
               <label>Objetivo *</label>
               <select value=${objective} onChange=${(e) => handleObjectiveChange(e.target.value)}>
-                ${OBJECTIVES.map((o) => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+                ${OBJECTIVES.map((o) => html`<option key=${o.value} value=${o.value} disabled=${o.value === "OUTCOME_APP_PROMOTION"}>${o.label}${o.value === "OUTCOME_APP_PROMOTION" ? " — adaptador em implantação" : ""}</option>`)}
               </select>
+            </div>
+            <div className="field">
+              <label>Destino da campanha *</label>
+              <select value=${destinationType} onChange=${(e) => handleDestinationChange(e.target.value)}>
+                <option value="WEBSITE">Site — disponível</option>
+                <option value="MESSENGER" disabled>Messenger — adaptador em implantação</option>
+                <option value="INSTAGRAM_DIRECT" disabled>Instagram Direct — adaptador em implantação</option>
+                <option value="WHATSAPP" disabled>WhatsApp — adaptador em implantação</option>
+                <option value="ON_AD" disabled>Formulário instantâneo — adaptador em implantação</option>
+                <option value="APP" disabled>Aplicativo — adaptador em implantação</option>
+              </select>
+              <span className="muted small">Cada destino terá payload, validação e rastreamento próprios.</span>
             </div>
             <div className="field">
               <label>Categoria especial de anúncios</label>
@@ -7551,7 +7675,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </div>
             <div className="field">
               <label>Limite de gastos da campanha (R$) <span className="muted small">— opcional</span></label>
-              <input type="number" min="1" step="0.01" value=${spendingLimit} onInput=${(e) => setSpendingLimit(e.target.value)} placeholder="Ex: 500.00 (sem limite = vazio)" />
+              <input type="number" min="1" step="0.01" value=${spendCap} onInput=${(e) => setSpendCap(e.target.value)} placeholder="Ex: 500.00 (sem limite = vazio)" />
             </div>
           </div>
           <div className="soft-panel">
@@ -7709,7 +7833,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
           <div className="soft-panel">
             <div className="soft-panel-header">
               <strong className="soft-panel-title" style=${{ marginBottom: 0 }}>
-                Pixel de conversão <span className="muted small">— opcional</span>
+                Pixel de conversão <span className="muted small">— ${optGoal === "OFFSITE_CONVERSIONS" ? "obrigatório" : "opcional"}</span>
               </strong>
               <button className="ghost small" onClick=${() => onLoadPixels(accountId)} disabled=${pixelsLoading || !accountId}>
                 ${pixelsLoading ? "Carregando..." : pixels.length ? `↺ Recarregar (${pixels.length})` : "Carregar pixels"}
@@ -7813,26 +7937,34 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               ${savedAdsets.map((s, i) => html`
                 <div key=${i} className="action-row-between" style=${{ padding: "4px 0", borderBottom: i < savedAdsets.length - 1 ? "1px solid var(--border)" : "none" }}>
                   <span><strong>CJ${s._cjNum}</strong> — ${s.name || "(sem nome)"} · ${(Array.isArray(s.countries) ? s.countries : [s.countries]).join(", ")}</span>
-                  <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => setSavedAdsets((prev) => prev.filter((_, j) => j !== i))}>✕</button>
+                  <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => {
+                    setSavedAdsets((prev) => prev.filter((_, j) => j !== i));
+                    setSavedAds((prev) => prev.map((ad) => ({
+                      ...ad,
+                      _targetAdsetIds: (ad._targetAdsetIds || []).filter((id) => id !== s._clientId),
+                    })).filter((ad) => (ad._targetAdsetIds || []).length > 0));
+                    setAdTargetIds((prev) => prev.filter((id) => id !== s._clientId));
+                  }}>✕</button>
                 </div>
               `)}
             </div>
           ` : null}
 
           <div className="action-row-between">
-            <button onClick=${() => setStep(1)}>â† Voltar</button>
+            <button onClick=${() => setStep(1)}>← Voltar</button>
             <div className="action-group">
               ${step2Issues.length ? html`<span className="form-validation-hint">${step2Issues[0]}</span>` : null}
               <button className="ghost" disabled=${!step2Valid} onClick=${() => {
                 setSavedAdsets((prev) => [...prev, snapshotCurrentAdset()]);
-                const nextCj = String(savedAdsets.length + 2).padStart(2, "0");
+                const nextCj = nextBuilderNumber([...savedAdsets.map((item) => item._cjNum), cjNum]);
                 setCjNum(nextCj);
+                setCurrentAdsetClientId(createBuilderId("adset"));
                 setAdsetNameManual(false);
                 setAdsetBudget("");
               }}>
                 ➕ Salvar e adicionar outro conjunto
               </button>
-              <button className="primary" disabled=${!step2Valid} onClick=${() => setStep(3)}>
+              <button className="primary" disabled=${!step2Valid} onClick=${handleGoToAds}>
                 Próximo: Anúncio →
               </button>
             </div>
@@ -7855,19 +7987,34 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
             </label>
           </div>
           ${!skipAd ? html`
+            <div className="soft-panel builder-target-panel">
+              <div className="soft-panel-header">
+                <div>
+                  <strong className="soft-panel-title">Aplicar este anúncio em</strong>
+                  <p className="muted small soft-panel-note">Escolha um, vários ou todos os conjuntos. Cada anúncio salvo pode ter destinos diferentes.</p>
+                </div>
+                <button className="ghost small" onClick=${() => setAdTargetIds(allBuilderAdsetIds())}>Selecionar todos</button>
+              </div>
+              <div className="builder-target-grid">
+                ${allBuilderAdsets().map((item) => html`
+                  <label key=${item._clientId} className=${`builder-target-option${adTargetIds.includes(item._clientId) ? " selected" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked=${adTargetIds.includes(item._clientId)}
+                      onChange=${(e) => setAdTargetIds((current) => e.target.checked
+                        ? [...new Set([...current, item._clientId])]
+                        : current.filter((id) => id !== item._clientId))}
+                    />
+                    <span><strong>CJ${item._cjNum}</strong> ${item.name}</span>
+                    <small>${(item.countries || []).map((code) => COUNTRY_MAP[code]?.name || code).join(", ")}</small>
+                  </label>
+                `)}
+              </div>
+            </div>
             <div className="filters">
               <div className="field">
                 <label>Nome do anúncio</label>
                 <div className="form-inline" style=${{ marginBottom: "8px" }}>
-                  <div className="form-inline-tight">
-                    <span className="micro-label">CJ nº</span>
-                    <input
-                      type="text" value=${cjNum}
-                      onInput=${(e) => { setCjNum(e.target.value); setAdNameManual(false); }}
-                      placeholder="01"
-                      className="number-mini"
-                    />
-                  </div>
                   <div className="form-inline-tight">
                     <span className="micro-label">AN nº</span>
                     <input
@@ -7877,7 +8024,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                       className="number-mini"
                     />
                   </div>
-                  <span className="helper-text-inline push">${nicho && countries.length ? buildAdName(nicho, countries, cjNum, anNum) : ""}</span>
+                  <span className="helper-text-inline push">Nome automático ajustado para cada conjunto selecionado.</span>
                 </div>
                 <div className="form-inline-tight">
                   <input
@@ -7940,7 +8087,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                   ${["image", "video"].map((fmt) => html`
                     <label key=${fmt} className="checkbox checkbox-row" style=${{ fontWeight: adFormat === fmt ? 700 : 400 }}>
                       <input type="radio" name="adFormat" checked=${adFormat === fmt} onChange=${() => setAdFormat(fmt)} />
-                      ${fmt === "image" ? "ðŸ–¼ï¸ Imagem" : "🎬 Vídeo"}
+                      ${fmt === "image" ? "🖼️ Imagem" : "🎬 Vídeo"}
                     </label>
                   `)}
                 </div>
@@ -7993,14 +8140,14 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
                 </select>
               </div>
               <div className="field full-span">
-                <label>URL de destino * (inclua UTMs!)</label>
+                <label>URL base de destino *</label>
 ${(() => {
-                  const filtered = _savedUrls.filter((u) => !u.nicho || !nicho || u.nicho === nicho.slug);
+                  const filtered = _savedUrls.filter((u) => nicho ? (!u.nicho || u.nicho === nicho.slug) : !u.nicho);
                   return filtered.length > 0 ? html`
                     <select style=${{ marginBottom: "6px", fontSize: "0.85rem" }}
                       onChange=${(e) => {
                         if (!e.target.value) return;
-                        setDestUrl(withDefaultMetaUtm(e.target.value));
+                        setDestUrl(e.target.value);
                         e.target.value = "";
                       }}>
                       <option value="">⚡ Usar URL salva...</option>
@@ -8008,15 +8155,27 @@ ${(() => {
                     </select>
                   ` : null;
                 })()}
-                <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo?utm_source={{site_source_name}}&utm_medium=paid_social" />
+                <input type="url" value=${destUrl} onInput=${(e) => setDestUrl(e.target.value)} placeholder="https://seusite.com/artigo" />
+                <span className="muted small">A URL fica limpa; os parâmetros são enviados no campo próprio da Meta.</span>
+              </div>
+              <div className="field full-span">
+                <label>Parâmetros de URL da Meta</label>
+                <textarea
+                  value=${urlTags}
+                  onInput=${(e) => setUrlTags(e.target.value.replace(/^\?/, ""))}
+                  rows="3"
+                  className="field-textarea mono"
+                  placeholder=${DEFAULT_UTM_TAGS}
+                ></textarea>
+                <span className="muted small">Padrão exclusivo dos anúncios diretos para o site. As UTMs fixas usadas pelo Evo/Messenger não são alteradas.</span>
                 <div className="action-row" style=${{ marginTop: "6px" }}>
-                  <button className="ghost small" onClick=${(e) => { e.preventDefault(); setDestUrl((prev) => withDefaultMetaUtm(prev)); }}>
-                    Aplicar UTM padrao
+                  <button className="ghost small" onClick=${(e) => { e.preventDefault(); setUrlTags(DEFAULT_UTM_TAGS); }}>
+                    Aplicar padrão para site
                   </button>
                   <span className="muted small">Macros:</span>
                   ${UTM_MACROS.map((m) => html`
                     <button key=${m.label} className="ghost small" title=${m.tip}
-                      onClick=${(e) => { e.preventDefault(); setDestUrl((prev) => prev + m.label); }}
+                      onClick=${(e) => { e.preventDefault(); setUrlTags((prev) => prev + m.label); }}
                       style=${{ fontFamily: "monospace", fontSize: "0.75rem" }}>
                       ${m.label}
                     </button>
@@ -8029,22 +8188,42 @@ ${(() => {
             <div className="soft-panel accent compact" style=${{ marginBottom: "4px" }}>
               <p className="helper-text-inline" style=${{ marginBottom: "8px" }}>Anúncios já salvos (${savedAds.length}):</p>
               ${savedAds.map((a, i) => html`
-                <div key=${i} className="action-row-between" style=${{ padding: "4px 0", borderBottom: i < savedAds.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <span><strong>AN${a._anNum}</strong> — ${a.name || "(sem nome)"} · ${a.ad_format === "video" ? "Vídeo" : "Imagem"}</span>
-                  <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => setSavedAds((prev) => prev.filter((_, j) => j !== i))}>✕</button>
+                <div key=${i} className="builder-saved-ad" style=${{ borderBottom: i < savedAds.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <div className="action-row-between">
+                    <span><strong>AN${a._anNum}</strong> — ${a._nameManual ? a.name : "nome automático por conjunto"} · ${a.ad_format === "video" ? "Vídeo" : "Imagem"} · ${(a._targetAdsetIds || []).length} conjunto(s)</span>
+                    <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => setSavedAds((prev) => prev.filter((_, j) => j !== i))}>✕</button>
+                  </div>
+                  <div className="builder-saved-ad-targets">
+                    ${allBuilderAdsets().map((item) => html`
+                      <label key=${item._clientId} className="checkbox checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked=${(a._targetAdsetIds || []).includes(item._clientId)}
+                          onChange=${(e) => setSavedAds((current) => current.map((ad, index) => {
+                            if (index !== i) return ad;
+                            const targets = new Set(ad._targetAdsetIds || []);
+                            if (e.target.checked) targets.add(item._clientId);
+                            else targets.delete(item._clientId);
+                            return { ...ad, _targetAdsetIds: [...targets] };
+                          }))}
+                        />
+                        <span>CJ${item._cjNum}</span>
+                      </label>
+                    `)}
+                  </div>
                 </div>
               `)}
             </div>
           ` : null}
 
           <div className="action-row-between">
-            <button onClick=${() => setStep(2)}>â† Voltar</button>
+            <button onClick=${() => setStep(2)}>← Voltar</button>
             <div className="action-group">
               ${step3Issues.length ? html`<span className="form-validation-hint">${step3Issues[0]}</span>` : null}
               ${!skipAd ? html`
-                <button className="ghost" disabled=${!step3Valid} onClick=${() => {
+                <button className="ghost" disabled=${!currentAdIsReady} onClick=${() => {
                   setSavedAds((prev) => [...prev, snapshotCurrentAd()]);
-                  const nextAn = String(savedAds.length + 2).padStart(2, "0");
+                  const nextAn = nextBuilderNumber([...savedAds.map((item) => item._anNum), anNum]);
                   setAnNum(nextAn);
                   setAdNameManual(false);
                   setImageUrl(""); setVideoId(""); setThumbUrl("");
@@ -8077,60 +8256,48 @@ ${(() => {
               <p><strong>Status:</strong> ${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</p>
               ${specialCat !== "NONE" ? html`<p><strong>Categoria especial:</strong> ${specialCat}</p>` : null}
               ${cbo ? html`<p><strong>CBO:</strong> R$ ${campBudget} (${campBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
-              ${spendingLimit ? html`<p><strong>Limite de gastos:</strong> R$ ${spendingLimit}</p>` : null}
+              <p><strong>Destino:</strong> ${destinationType === "WEBSITE" ? "Site" : destinationType}</p>
+              ${spendCap ? html`<p><strong>Limite de gastos:</strong> R$ ${spendCap}</p>` : null}
             </div>
             <div className="review-card">
-              <p className="eyebrow" style=${{ marginBottom: "12px" }}>📦 Conjunto</p>
-              <p><strong>Nome:</strong> ${adsetName || `${campName} — Conjunto`}</p>
-              ${!cbo ? html`<p><strong>Orçamento:</strong> R$ ${adsetBudget} (${adsetBudgetType === "daily" ? "diário" : "vitalício"})</p>` : null}
-              <p><strong>Países:</strong> ${(Array.isArray(countries) ? countries : countries.split(",")).map((c) => `${flagEmoji(c.trim())} ${COUNTRY_MAP[c.trim()]?.name || c.trim()}`).join(" · ")}</p>
-              <p><strong>Idiomas:</strong> ${locLanguages.length === 0 ? "Todos" : locLanguages.map((id) => LANGUAGE_LIST.find((l) => l.id === id)?.label || id).join(", ")}</p>
-              <p><strong>Faixa etária:</strong> ${ageMin}–${ageMax} anos</p>
-              <p><strong>Gênero:</strong> ${gender === "all" ? "Todos" : gender === "male" ? "Masculino" : "Feminino"}</p>
-              <p><strong>Dispositivos:</strong> ${devicePlatforms.length ? devicePlatforms.join(", ") : "Todos"}</p>
-              <p><strong>Otimização:</strong> ${availableGoals.find((g) => g.value === optGoal)?.label}</p>
-              <p><strong>Lance:</strong> ${
-                bidStrategy === "LOWEST_COST_WITHOUT_CAP" ? "Custo mais baixo" :
-                bidStrategy === "LOWEST_COST_WITH_BID_CAP" ? `Limite R$ ${bidAmount}` :
-                `Meta CPA R$ ${bidAmount}`}</p>
-              <p><strong>Posicionamentos:</strong> ${placementMode === "auto" ? "Automático" : "Manual"}</p>
-              ${pixelId ? html`<p><strong>Pixel:</strong> ${pixels.find((px) => px.id === pixelId)?.name || pixelId} — ${CONVERSION_EVENTS.find((e) => e.value === conversionEvent)?.label}</p>` : null}
+              <p className="eyebrow" style=${{ marginBottom: "12px" }}>📦 Conjuntos</p>
+              <p><strong>Quantidade:</strong> ${previewAdsets.length}</p>
+              <p><strong>Países:</strong> ${[...new Set(previewAdsets.flatMap((item) => item.countries || []))].map((code) => `${flagEmoji(code)} ${COUNTRY_MAP[code]?.name || code}`).join(" · ")}</p>
+              <p><strong>Distribuição:</strong> cada conjunto mantém orçamento, público e segmentação próprios.</p>
             </div>
             <div className="review-card">
-              <p className="eyebrow" style=${{ marginBottom: "12px" }}>📣 Anúncio</p>
-              ${skipAd ? html`<p className="muted small">Não incluído — adicionar depois.</p>` : html`
-                <p><strong>Nome:</strong> ${adName || `${campName} — Anúncio`}</p>
-                <p><strong>Formato:</strong> ${adFormat === "image" ? "Imagem" : "Vídeo"}</p>
-                ${igActorId ? html`<p><strong>Conta IG:</strong> ${(() => {
-                  const igAccounts = (pages || []).flatMap((p) => p.instagram_business_account ? [{ id: p.instagram_business_account.id, username: p.instagram_business_account.username || p.instagram_business_account.name }] : []);
-                  const found = igAccounts.find((a) => a.id === igActorId);
-                  return found ? `@${found.username}` : igActorId;
-                })()}</p>` : null}
-                <p><strong>Título:</strong> ${headline}</p>
-                <p><strong>CTA:</strong> ${CTA_TYPES.find((c) => c.value === ctaType)?.label}</p>
-                <p className="review-url"><strong>URL:</strong> ${destUrl}</p>
-              `}
+              <p className="eyebrow" style=${{ marginBottom: "12px" }}>📣 Anúncios</p>
+              <p><strong>Total a criar:</strong> ${previewAdsCount}</p>
+              <p><strong>Modelos preenchidos:</strong> ${skipAd ? 0 : savedAds.length + (currentAdIsReady ? 1 : 0)}</p>
+              <p><strong>Rastreamento:</strong> ${destinationType === "WEBSITE" ? "Parâmetros de URL da Meta" : "Específico do destino"}</p>
+              ${skipAd ? html`<p className="muted small">Os anúncios serão adicionados posteriormente.</p>` : null}
             </div>
           </div>
-          ${(savedAdsets.length > 0 || savedAds.length > 0) ? html`
-            <div className="soft-panel accent">
-              <strong>📊 Estrutura a criar:</strong>
-              ${' '}${savedAdsets.length + 1} conjunto(s) × ${skipAd ? 0 : savedAds.length + 1} anúncio(s)
-              ${' '}= <strong>${skipAd ? savedAdsets.length + 1 : (savedAdsets.length + 1) * (savedAds.length + 1)} combinação(ões)</strong>
-              ${savedAdsets.length > 0 ? html`
-                <ul style=${{ margin: "8px 0 0 16px", fontSize: "0.83rem" }}>
-                  ${savedAdsets.map((s, i) => html`<li key=${i}>CJ${s._cjNum} — ${s.name}</li>`)}
-                  <li><strong>CJ${cjNum} — ${adsetName || "(atual)"}</strong></li>
-                </ul>
-              ` : null}
+          <div className="soft-panel accent builder-structure-review">
+            <div className="soft-panel-header">
+              <strong>📊 Estrutura exata a criar</strong>
+              <span className="chip neutral">${previewAdsets.length} conjunto(s) · ${previewAdsCount} anúncio(s)</span>
             </div>
-          ` : null}
+            <div className="builder-structure-list">
+              ${previewAdsets.map((item) => html`
+                <div key=${item._clientId} className="builder-structure-item">
+                  <div className="builder-structure-head">
+                    <div><strong>CJ${item._cjNum} — ${item.name}</strong><span>${(item.countries || []).map((code) => `${flagEmoji(code)} ${COUNTRY_MAP[code]?.name || code}`).join(" · ")}</span></div>
+                    <span className="chip neutral">${item.ads?.length || 0} anúncio(s)</span>
+                  </div>
+                  ${(item.ads || []).length
+                    ? html`<ul>${item.ads.map((ad) => html`<li key=${`${item._clientId}-${ad._anNum}`}><strong>AN${ad._anNum}</strong> ${ad.name} <span>${ad.ad_format === "video" ? "Vídeo" : "Imagem"}</span></li>`)}</ul>`
+                    : html`<p className="muted small">Sem anúncios — será criado somente o conjunto.</p>`}
+                </div>
+              `)}
+            </div>
+          </div>
           <div className="soft-panel warn">
-            <strong>âš ï¸ Atenção:</strong> tudo será criado com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
+            <strong>⚠️ Atenção:</strong> tudo será criado com status <strong>${campStatus === "PAUSED" ? "Pausado" : "Ativo"}</strong>.
             ${campStatus === "ACTIVE" ? html` <span className="muted small">Isso significa que os anúncios entrarão em veiculação imediatamente após aprovação do Meta.</span>` : null}
           </div>
           <div className="action-row-between">
-            <button onClick=${() => setStep(3)} disabled=${publishing}>â† Voltar</button>
+            <button onClick=${() => setStep(3)} disabled=${publishing}>← Voltar</button>
             <button className="primary publish-btn" onClick=${handlePublish} disabled=${publishing}>
               ${publishing ? "Criando..." : "🚀 Publicar campanha"}
             </button>
@@ -8148,19 +8315,7 @@ const DEFAULT_DOMAINS = [
   "intre.remediototal.com.br",
 ];
 
-const PAISES_NICHOS = [
-  // América do Sul
-  "Argentina", "Bolívia", "Brasil", "Chile", "Colômbia", "Equador",
-  "Guiana", "Guiana Francesa", "Paraguai", "Peru", "Suriname", "Uruguai", "Venezuela",
-  // América do Norte
-  "Estados Unidos", "Canadá", "México", "Cuba", "Guatemala", "Honduras",
-  "Costa Rica", "Panamá", "República Dominicana", "El Salvador", "Nicarágua",
-  // Europa
-  "Alemanha", "França", "Espanha", "Portugal", "Itália", "Reino Unido",
-  "Países Baixos", "Bélgica", "Suécia", "Noruega", "Dinamarca", "Finlândia",
-  "Suíça", "Ãustria", "Polônia", "República Tcheca", "Hungria", "Romênia",
-  "Grécia", "Croácia", "Irlanda", "Ucrânia",
-];
+const PAISES_NICHOS = COUNTRY_LIST.map((country) => country.name);
 
 function PaisSelect({ value, onChange, placeholder, inputStyle, onEnter }) {
   const [open, setOpen] = useState(false);
@@ -8185,10 +8340,11 @@ function PaisSelect({ value, onChange, placeholder, inputStyle, onEnter }) {
     if (e.key === "Enter") {
       e.preventDefault();
       if (open && filtered.length > 0) {
-        select(filtered[0]);
-        if (onEnter) setTimeout(onEnter, 0);
+        const selected = filtered[0];
+        select(selected);
+        if (onEnter) onEnter(selected);
       } else if (query.trim() && onEnter) {
-        onEnter();
+        onEnter(query.trim());
       }
     } else if (e.key === "Escape") {
       setOpen(false);
@@ -8283,22 +8439,39 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const addNicho = () => {
     const nome = newNichoNome.trim();
     if (!nome) return;
-    const slug = newNichoSlug.trim() || toSlug(nome);
-    if (nichos.find((n) => n.slug === slug)) return;
-    setNichos([...nichos, { nome, slug, paises: newNichoPaises }]);
+    const slug = toSlug(newNichoSlug.trim() || nome);
+    if (nichos.find((n) => n.slug === slug)) {
+      setSaveMsg(`Erro: o ID ${slug} ja esta em uso.`);
+      return;
+    }
+    setNichos([...nichos, { id: createBuilderId("niche"), nome, slug, paises: newNichoPaises }]);
     setNewNichoNome(""); setNewNichoSlug(""); setNewNichoPaises([]); setNewNichoPaisInput("");
   };
 
-  const addNewPais = () => {
-    const p = newNichoPaisInput.trim();
-    if (!p || newNichoPaises.includes(p)) return;
+  const canonicalNicheCountry = (value) => PAISES_NICHOS.find(
+    (country) => normalizeCountryLabel(country) === normalizeCountryLabel(value)
+  ) || "";
+
+  const addNewPais = (selectedValue) => {
+    const raw = typeof selectedValue === "string" ? selectedValue : newNichoPaisInput;
+    const p = canonicalNicheCountry(raw);
+    if (!p) {
+      if (String(raw || "").trim()) setSaveMsg("Erro: selecione um pais valido da lista.");
+      return;
+    }
+    if (newNichoPaises.includes(p)) return;
     setNewNichoPaises([...newNichoPaises, p]);
     setNewNichoPaisInput("");
   };
 
-  const addEditPais = () => {
-    const p = editPaisInput.trim();
-    if (!p || editPaises.includes(p)) return;
+  const addEditPais = (selectedValue) => {
+    const raw = typeof selectedValue === "string" ? selectedValue : editPaisInput;
+    const p = canonicalNicheCountry(raw);
+    if (!p) {
+      if (String(raw || "").trim()) setSaveMsg("Erro: selecione um pais valido da lista.");
+      return;
+    }
+    if (editPaises.includes(p)) return;
     setEditPaises([...editPaises, p]);
     setEditPaisInput("");
   };
@@ -8307,19 +8480,40 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const cancelEditNicho = () => { setEditingSlug(null); setEditNome(""); setEditSlug(""); setEditPaises([]); setEditPaisInput(""); };
   const saveEditNicho = (originalSlug) => {
     const nome = editNome.trim();
-    const slug = editSlug.trim() || toSlug(nome);
+    const slug = toSlug(editSlug.trim() || nome);
     if (!nome || !slug) return;
-    setNichos(nichos.map((n) => n.slug === originalSlug ? { nome, slug, paises: editPaises } : n));
+    if (nichos.some((n) => n.slug === slug && n.slug !== originalSlug)) {
+      setSaveMsg(`Erro: o ID ${slug} ja esta em uso.`);
+      return;
+    }
+    setNichos(nichos.map((n) => n.slug === originalSlug ? { ...n, nome, slug, paises: editPaises } : n));
+    if (slug !== originalSlug) {
+      setUrls((current) => current.map((url) => url.nicho === originalSlug ? { ...url, nicho: slug } : url));
+    }
     cancelEditNicho();
   };
 
-  const removeNicho = (slug) => setNichos(nichos.filter((n) => n.slug !== slug));
+  const removeNicho = (slug) => {
+    const linked = urls.filter((url) => url.nicho === slug).length;
+    if (linked) {
+      setSaveMsg(`Erro: este nicho possui ${linked} URL(s). Reatribua ou remova as URLs primeiro.`);
+      return;
+    }
+    setNichos(nichos.filter((n) => n.slug !== slug));
+  };
 
   const addUrl = () => {
     const nome = newUrlNome.trim();
     const url = newUrlValue.trim();
     if (!nome || !url) return;
-    setUrls([...urls, { nome, url, nicho: newUrlNicho || null }]);
+    try {
+      const parsed = new URL(url);
+      if (!new Set(["http:", "https:"]).has(parsed.protocol)) throw new Error("invalid");
+    } catch {
+      setSaveMsg("Erro: informe uma URL completa iniciando com http:// ou https://.");
+      return;
+    }
+    setUrls([...urls, { id: createBuilderId("url"), nome, url, nicho: newUrlNicho || null }]);
     setNewUrlNome(""); setNewUrlValue(""); setNewUrlNicho("");
   };
   const removeUrl = (i) => setUrls(urls.filter((_, j) => j !== i));
@@ -8327,7 +8521,14 @@ function ConfiguracoesView({ settings, onSave, saving }) {
   const saveEditUrl = (i) => {
     const nome = editUrlNome.trim(); const url = editUrlValue.trim();
     if (!nome || !url) return;
-    setUrls(urls.map((u, j) => j === i ? { nome, url, nicho: editUrlNicho || null } : u));
+    try {
+      const parsed = new URL(url);
+      if (!new Set(["http:", "https:"]).has(parsed.protocol)) throw new Error("invalid");
+    } catch {
+      setSaveMsg("Erro: informe uma URL completa iniciando com http:// ou https://.");
+      return;
+    }
+    setUrls(urls.map((u, j) => j === i ? { ...u, nome, url, nicho: editUrlNicho || null } : u));
     setEditingUrlIdx(null); setEditUrlNome(""); setEditUrlValue(""); setEditUrlNicho("");
   };
 
@@ -8790,7 +8991,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
 
         <div className="settings-section">
           <h3 className="settings-title">URLs cadastradas</h3>
-          <p className="muted small settings-lead">Cadastre a URL base (sem UTMs). As UTMs serão adicionadas diretamente no campo de URL ao criar o anúncio.</p>
+          <p className="muted small settings-lead">Cadastre somente a URL base (sem UTMs). Na criação do anúncio, o rastreamento é enviado separadamente no campo próprio da Meta.</p>
           ${urls.length === 0
             ? html`<p className="muted small" style=${{ marginBottom: "12px" }}>Nenhuma URL cadastrada ainda.</p>`
             : html`
@@ -11883,7 +12084,7 @@ function App() {
   const handlePublishDrafts = async () => {
     if (!drafts.length) return;
     setPublishing(true);
-    const forceUtmCopy = true;
+    const forceUtmCopy = false;
     const remaining = [];
     for (const draft of drafts) {
       let step = "copy";
@@ -12045,7 +12246,6 @@ function App() {
                         adset_id: newAdsetId,
                         name: ad.new_name || ad.name,
                         status: DUPLICATE_STATUS,
-                        utm_tags: DEFAULT_UTM_TAGS,
                         sanitize_video_placements: true,
                       }),
                     })
@@ -12100,7 +12300,6 @@ function App() {
                             adset_id: newAdsetId,
                             name: ad.new_name || ad.name,
                             status: DUPLICATE_STATUS,
-                            utm_tags: DEFAULT_UTM_TAGS,
                             sanitize_video_placements: true,
                           }),
                         })

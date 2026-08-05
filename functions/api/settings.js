@@ -23,38 +23,50 @@ function uniqueStrings(values, normalizer = (value) => String(value || "").trim(
 }
 
 function sanitizeNichos(values) {
-  return Array.isArray(values)
-    ? values
-        .filter((item) => item && typeof item.nome === "string" && item.nome.trim())
-        .map((item) => ({
-          nome: item.nome.trim(),
-          slug: String(item.slug || "").trim(),
-          paises: uniqueStrings(
-            Array.isArray(item.paises) ? item.paises : item.pais ? [item.pais] : [],
-            (value) => String(value || "").trim()
-          ),
-        }))
-    : [];
+  const result = [];
+  const seen = new Set();
+  for (const item of Array.isArray(values) ? values : []) {
+    const nome = String(item?.nome || "").trim();
+    const slug = String(item?.slug || "").trim().toLowerCase();
+    if (!nome || !slug) throw new Error("Todo nicho precisa de nome e ID.");
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      throw new Error(`ID de nicho invalido: ${slug}`);
+    }
+    if (seen.has(slug)) throw new Error(`ID de nicho duplicado: ${slug}`);
+    seen.add(slug);
+    result.push({
+      id: String(item.id || `niche:${slug}`).trim(),
+      nome,
+      slug,
+      paises: uniqueStrings(
+        Array.isArray(item.paises) ? item.paises : item.pais ? [item.pais] : [],
+        (value) => String(value || "").trim()
+      ),
+    });
+  }
+  return result;
 }
 
 function sanitizeUrls(values) {
-  return Array.isArray(values)
-    ? values
-        .filter(
-          (item) =>
-            item &&
-            typeof item.nome === "string" &&
-            item.nome.trim() &&
-            typeof item.url === "string" &&
-            item.url.trim()
-        )
-        .map((item) => ({
-          id: String(item.id || "").trim(),
-          nome: item.nome.trim(),
-          url: item.url.trim(),
-          nicho: item.nicho ? String(item.nicho).trim() : null,
-        }))
-    : [];
+  const result = [];
+  for (const item of Array.isArray(values) ? values : []) {
+    const nome = String(item?.nome || "").trim();
+    const url = String(item?.url || "").trim();
+    if (!nome || !url) throw new Error("Toda URL precisa de nome e endereco.");
+    try {
+      const parsed = new URL(url);
+      if (!new Set(["http:", "https:"]).has(parsed.protocol)) throw new Error("protocol");
+    } catch {
+      throw new Error(`URL invalida: ${url}`);
+    }
+    result.push({
+      id: String(item.id || crypto.randomUUID()).trim(),
+      nome,
+      url,
+      nicho: item.nicho ? String(item.nicho).trim() : null,
+    });
+  }
+  return result;
 }
 
 function sanitizeCommissionPercent(value) {
@@ -175,6 +187,9 @@ export async function onRequest({ request, env }) {
         : [];
       const nichos = sanitizeNichos(body.nichos);
       const urls = sanitizeUrls(body.urls);
+      const nicheSlugs = new Set(nichos.map((item) => item.slug));
+      const orphanUrl = urls.find((item) => item.nicho && !nicheSlugs.has(item.nicho));
+      if (orphanUrl) throw new Error(`A URL ${orphanUrl.nome} referencia um nicho inexistente.`);
       const users = await sanitizeUsers(body.users, current.users, allowedDomainSet);
 
       const settings = await saveSettings(env, {
