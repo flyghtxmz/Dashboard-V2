@@ -6934,7 +6934,7 @@ const COUNTRY_REGIONS = {
 
 const COUNTRY_MAP = Object.fromEntries(COUNTRY_LIST.map((c) => [c.code, c]));
 
-const LANGUAGE_LIST = [
+const LANGUAGE_FALLBACK_LIST = [
   { id: 5,   label: "Português (Brasil)" },
   { id: 41,  label: "Português (Portugal)" },
   { id: 6,   label: "Espanhol" },
@@ -7260,6 +7260,9 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const [conversionEvent, setConversionEvent] = useState("PURCHASE");
   const [devicePlatforms, setDevicePlatforms] = useState(["mobile", "desktop"]);
   const [locLanguages, setLocLanguages] = useState([]);
+  const [languageList, setLanguageList] = useState(LANGUAGE_FALLBACK_LIST);
+  const [languagesLoading, setLanguagesLoading] = useState(true);
+  const [languagesError, setLanguagesError] = useState("");
   const normalizedPageSearch = pageSearch.trim().toLocaleLowerCase("pt-BR");
   const filteredPageOptions = normalizedPageSearch
     ? (pages || []).filter((page) =>
@@ -7572,6 +7575,23 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
       .catch(() => {})
       .finally(() => setCampNumLoading(false));
   }, [nicho, objective, accountId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchJson("/api/meta-locales")
+      .then((response) => {
+        if (cancelled) return;
+        const locales = Array.isArray(response?.data) ? response.data : [];
+        if (locales.length) setLanguageList(locales);
+      })
+      .catch((error) => {
+        if (!cancelled) setLanguagesError(formatError(error));
+      })
+      .finally(() => {
+        if (!cancelled) setLanguagesLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!adsetNameManual) { const v = buildAdsetName(nicho, objective, countries, cjNum); if (v) setAdsetName(v); }
@@ -7971,7 +7991,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
               <label>Idiomas <span className="muted small">(vazio = todos)</span></label>
               <div className="tag-list" style=${{ marginBottom: "8px" }}>
                 ${locLanguages.map((id) => {
-                  const lang = LANGUAGE_LIST.find((l) => l.id === id);
+                  const lang = languageList.find((l) => l.id === id);
                   return html`
                     <span key=${id} className="tag-chip success">
                       ${lang?.label || id}
@@ -7991,11 +8011,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
                   e.target.value = "";
                 }}
               >
-                <option value="">+ Adicionar idioma...</option>
-                ${LANGUAGE_LIST.filter((l) => !locLanguages.includes(l.id)).map((l) => html`
+                <option value="">${languagesLoading ? "Carregando idiomas da Meta..." : "+ Adicionar idioma..."}</option>
+                ${languageList.filter((l) => !locLanguages.includes(l.id)).map((l) => html`
                   <option key=${l.id} value=${l.id}>${l.label}</option>
                 `)}
               </select>
+              ${languagesError ? html`<span className="muted small">Não foi possível atualizar a lista da Meta; exibindo a lista local.</span>` : null}
             </div>
             <div className="field">
               <label>Idade mínima</label>
