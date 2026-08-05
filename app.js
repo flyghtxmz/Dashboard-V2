@@ -3,13 +3,14 @@ import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
 import htm from "https://esm.sh/htm@3.1.1";
 import {
   SITE_URL_TAGS,
+  builderAdDraftFingerprint,
   createBuilderId,
   materializeCampaignAdsets,
   nextBuilderNumber,
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=155";
+} from "./campaign-builder.mjs?v=156";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -19,7 +20,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 155;
+const APP_VERSION_BUILD = 156;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -7204,6 +7205,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const [currentAdsetClientId, setCurrentAdsetClientId] = useState(() => createBuilderId("adset"));
   const [currentAdClientId, setCurrentAdClientId] = useState(() => createBuilderId("ad"));
   const [editingSavedAdId, setEditingSavedAdId] = useState(null);
+  const [seededAdFingerprint, setSeededAdFingerprint] = useState("");
   const [adTargetIds, setAdTargetIds] = useState([]);
   const publishRequestIdRef = useRef("");
   const adFormRef = useRef(null);
@@ -7339,6 +7341,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setCurrentAdsetClientId(createBuilderId("adset"));
     setCurrentAdClientId(createBuilderId("ad"));
     setEditingSavedAdId(null);
+    setSeededAdFingerprint("");
     setAdTargetIds([]);
     setCjNum("01");
     setAnNum("01");
@@ -7461,12 +7464,17 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   });
 
   const currentAdIsReady = !skipAd && currentAdHasInput && currentAdIssues.length === 0;
+  const currentAdIsUntouchedSeed = Boolean(
+    seededAdFingerprint &&
+    !editingSavedAdId &&
+    builderAdDraftFingerprint(snapshotCurrentAd()) === seededAdFingerprint
+  );
   const allBuilderAds = () => {
     if (skipAd) return [];
     const savedWithoutEditing = editingSavedAdId
       ? savedAds.filter((ad) => ad._clientId !== editingSavedAdId)
       : savedAds;
-    return [...savedWithoutEditing, ...(currentAdIsReady ? [snapshotCurrentAd()] : [])];
+    return [...savedWithoutEditing, ...(currentAdIsReady && !currentAdIsUntouchedSeed ? [snapshotCurrentAd()] : [])];
   };
   const buildMaterializedAdsets = (preserveMetadata = false) => materializeCampaignAdsets({
     adsets: allBuilderAdsets(),
@@ -7486,11 +7494,23 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setStep(3);
   };
 
-  const clearCurrentAdForNext = (adsForNumbering = savedAds) => {
-    setAnNum(nextBuilderNumber((adsForNumbering || []).map((item) => item._anNum)));
+  const clearCurrentAdForNext = (adsForNumbering = savedAds, options = {}) => {
+    const nextNumber = nextBuilderNumber((adsForNumbering || []).map((item) => item._anNum));
+    setAnNum(nextNumber);
     setCurrentAdClientId(createBuilderId("ad"));
     setEditingSavedAdId(null);
     setAdName(""); setAdNameManual(false);
+    if (options.preserveCreative && options.seedAd) {
+      setSeededAdFingerprint(builderAdDraftFingerprint({
+        ...options.seedAd,
+        _clientId: "",
+        _anNum: nextNumber,
+        _nameManual: false,
+        name: "",
+      }));
+      return;
+    }
+    setSeededAdFingerprint("");
     setImageUrl(""); setImageHash(""); setVideoId(""); setThumbUrl("");
     setHeadline(""); setAdBody(""); setAdDescription("");
   };
@@ -7506,6 +7526,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     }
     setCurrentAdClientId(clientId);
     setEditingSavedAdId(clientId);
+    setSeededAdFingerprint("");
     setSkipAd(false);
     setAnNum(ad._anNum || "01");
     setAdName(ad.name || "");
@@ -7564,6 +7585,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCampNum("01"); setCjNum("01"); setAnNum("01");
     setSavedAdsets([]); setSavedAds([]); setCurrentAdsetClientId(createBuilderId("adset"));
     setCurrentAdClientId(createBuilderId("ad")); setEditingSavedAdId(null); setAdTargetIds([]);
+    setSeededAdFingerprint("");
     publishRequestIdRef.current = "";
     setSpendCap("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
@@ -8451,8 +8473,12 @@ ${(() => {
                 <button className="ghost" disabled=${!currentAdIsReady} onClick=${() => {
                   const nextAd = snapshotCurrentAd();
                   const nextSavedAds = upsertBuilderAd(savedAds, nextAd, editingSavedAdId);
+                  const wasEditing = Boolean(editingSavedAdId);
                   setSavedAds(nextSavedAds);
-                  clearCurrentAdForNext(nextSavedAds);
+                  clearCurrentAdForNext(nextSavedAds, {
+                    preserveCreative: !wasEditing,
+                    seedAd: nextAd,
+                  });
                 }}>
                   ${editingSavedAdId ? "Salvar alterações do anúncio" : "➕ Salvar e adicionar outro anúncio"}
                 </button>
@@ -8493,7 +8519,7 @@ ${(() => {
             <div className="review-card">
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>📣 Anúncios</p>
               <p><strong>Total a criar:</strong> ${previewAdsCount}</p>
-              <p><strong>Modelos preenchidos:</strong> ${skipAd ? 0 : savedAds.length + (currentAdIsReady && !editingSavedAdId ? 1 : 0)}</p>
+              <p><strong>Modelos preenchidos:</strong> ${skipAd ? 0 : savedAds.length + (currentAdIsReady && !editingSavedAdId && !currentAdIsUntouchedSeed ? 1 : 0)}</p>
               <p><strong>Rastreamento:</strong> ${destinationType === "WEBSITE" ? "Parâmetros de URL da Meta" : "Específico do destino"}</p>
               ${skipAd ? html`<p className="muted small">Os anúncios serão adicionados posteriormente.</p>` : null}
             </div>

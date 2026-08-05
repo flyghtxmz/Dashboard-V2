@@ -75,6 +75,15 @@ export function upsertBuilderAd(savedAds = [], nextAd = {}, editingId = null) {
   return replaced ? updated : [...updated, nextAd];
 }
 
+export function builderAdDraftFingerprint(ad = {}) {
+  const automaticName = !ad?._nameManual;
+  const comparable = Object.fromEntries(
+    Object.entries(ad || {}).filter(([key]) => key !== "_clientId" && key !== "name")
+  );
+  comparable.name = automaticName ? "" : String(ad?.name || "");
+  return JSON.stringify(comparable);
+}
+
 export function buildAutomaticAdName(niche, countries, cjNumber, adNumber) {
   const slug = String(niche?.slug || niche || "anuncio").trim() || "anuncio";
   const geo = (Array.isArray(countries) && countries.length ? countries : ["BR"])

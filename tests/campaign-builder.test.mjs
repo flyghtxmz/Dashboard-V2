@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   SITE_URL_TAGS,
+  builderAdDraftFingerprint,
   materializeCampaignAdsets,
   nextBuilderNumber,
   resolveNicheCountryCodes,
@@ -73,4 +74,31 @@ test("salvar novo anúncio acrescenta um item", () => {
     { _clientId: "ad:2", _anNum: "02" }
   );
   assert.deepEqual(updated.map((ad) => ad._clientId), ["ad:1", "ad:2"]);
+});
+
+test("rascunho duplicado diferencia o novo AN sem depender do nome automatico", () => {
+  const original = {
+    _clientId: "ad:1",
+    _anNum: "01",
+    _nameManual: false,
+    name: "saude-mx-cj01-an01",
+    headline: "Headline mantida",
+    body: "Texto mantido",
+  };
+  const next = {
+    ...original,
+    _clientId: "ad:2",
+    _anNum: "02",
+    name: "saude-mx-cj01-an02",
+  };
+
+  assert.notEqual(builderAdDraftFingerprint(original), builderAdDraftFingerprint(next));
+  assert.equal(
+    builderAdDraftFingerprint({ ...original, _clientId: "ad:outro", name: "outro nome automatico" }),
+    builderAdDraftFingerprint(original)
+  );
+  assert.notEqual(
+    builderAdDraftFingerprint({ ...original, headline: "Headline alterada" }),
+    builderAdDraftFingerprint(original)
+  );
 });
