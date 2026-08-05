@@ -1,10 +1,11 @@
 import { jsonResponse, getJoinadsToken, safeJson } from "../_utils.js";
 import { loadSettings, normalizeDomain } from "../_settings.js";
-import { refreshJoinadsDailyCache } from "../_joinads-cache.js";
+import { refreshJoinadsDailyCache, validateJoinadsDomainPayload } from "../_joinads-cache.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
 const TIME_ZONE = "America/Sao_Paulo";
-const SUPER_KEYS = ["utm_content", "utm_campaign", "utm_term", "utm_source", "utm_medium", "utm_user"];
+const SUPER_KEYS = ["utm_content", "utm_campaign", "utm_term", "utm_source", "utm_medium"];
+const DEFAULT_DISABLED_DOMAINS = ["br.remediototal.com.br", "intre.remediototal.com.br"];
 
 function saoPauloDate(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -70,68 +71,131 @@ export async function onRequest({ request, env }) {
   const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(String(requestedDay || ""))
     ? requestedDay
     : previousDay(saoPauloDate());
+  const strict = new URL(request.url).searchParams.get("strict") === "1";
   const settings = await loadSettings(env);
   const domains = Array.from(new Set((settings.domains || []).map(normalizeDomain).filter(Boolean)));
-  const jobs = [];
-  const addJob = (name, reportName, identity, fetchDay) => jobs.push({ name, reportName, identity, fetchDay });
+  const disabledDomains = new Set(
+    String(env.JOINADS_FINALIZE_DISABLED_DOMAINS ?? DEFAULT_DISABLED_DOMAINS.join(","))
+      .split(",")
+      .map(normalizeDomain)
+      .filter(Boolean)
+  );
+  const candidateDomains = domains.filter((domain) => !disabledDomains.has(domain));
+  const results = domains
+    .filter((domain) => disabledDomains.has(domain))
+    .map((domain) => ({
+      name: `domain:${domain}`,
+      ok: true,
+      skipped: true,
+      reason: "disabled_until_joinads_accepts_domain",
+    }));
 
-  addJob("earnings:all", "earnings", { domain: "__all__" }, (day) => {
-    const query = new URLSearchParams({ start_date: day, end_date: day });
-    return joinadsRequest(token, `/earnings?${query.toString()}`);
-  });
+  const runJob = async (job) => {
+    try {
+      const summary = await refreshJoinadsDailyCache({
+        env,
+        reportName: job.reportName,
+        day: reportDate,
+        identity: job.identity,
+        fetchDay: job.fetchDay,
+        validatePayload: job.validatePayload,
+      });
+      return { name: job.name, ok: true, critical: job.critical !== false, ...summary };
+    } catch (error) {
+      return {
+        name: job.name,
+        ok: false,
+        critical: job.critical !== false,
+        error: error.message,
+        code: error.code || null,
+        status: error.status || null,
+      };
+    }
+  };
 
-  domains.forEach((domain) => {
-    addJob(`earnings:${domain}`, "earnings", { domain }, (day) => {
+  results.push(await runJob({
+    name: "earnings:all",
+    reportName: "earnings",
+    identity: { domain: "__all__" },
+    fetchDay: (day) => {
+      const query = new URLSearchParams({ start_date: day, end_date: day });
+      return joinadsRequest(token, `/earnings?${query.toString()}`);
+    },
+  }));
+
+  const domainChecks = await Promise.all(candidateDomains.map((domain) => runJob({
+    name: `earnings:${domain}`,
+    reportName: "earnings",
+    identity: { domain },
+    fetchDay: (day) => {
       const query = new URLSearchParams({ start_date: day, end_date: day, domain });
       return joinadsRequest(token, `/earnings?${query.toString()}`);
-    });
+    },
+    validatePayload: (payload) => validateJoinadsDomainPayload(payload, domain),
+  })));
+  results.push(...domainChecks);
+  const activeDomains = domainChecks
+    .filter((item) => item.ok)
+    .map((item) => item.name.slice("earnings:".length));
+
+  const jobs = [];
+  const addJob = (name, reportName, identity, fetchDay, validatePayload) => {
+    jobs.push({ name, reportName, identity, fetchDay, validatePayload });
+  };
+
+  activeDomains.forEach((domain) => {
+    const validateDomain = (payload) => validateJoinadsDomainPayload(payload, domain);
     SUPER_KEYS.forEach((customKey) => {
       const payload = {
         start_date: reportDate, end_date: reportDate, "domain[]": [domain],
         custom_key: customKey, group: ["domain", "custom_value"],
       };
-      addJob(`super-filter:${domain}:${customKey}`, "super-filter", payload, (day) =>
-        joinadsRequest(token, "/super-filter", {
+      addJob(
+        `super-filter:${domain}:${customKey}`,
+        "super-filter",
+        payload,
+        (day) => joinadsRequest(token, "/super-filter", {
           method: "POST", body: JSON.stringify({ ...payload, start_date: day, end_date: day }),
-        })
+        }),
+        validateDomain
       );
     });
     const countryIdentity = { domain, report_type: "Analytical", custom_key: "utm_campaign" };
     addJob(`key-value-country:${domain}`, "key-value-country", countryIdentity, (day) => {
       const query = new URLSearchParams({ start_date: day, end_date: day, ...countryIdentity });
       return joinadsRequest(token, `/key-value-country?${query.toString()}`);
-    });
+    }, validateDomain);
     const topIdentity = { domains: [domain], limit: "500", sort: "revenue" };
     addJob(`top-url:${domain}`, "top-url", topIdentity, (day) => {
       const query = new URLSearchParams({ start_date: day, end_date: day, limit: "500", sort: "revenue" });
       query.append("domain[]", domain);
       return joinadsRequest(token, `/top-url?${query.toString()}`);
-    });
+    }, validateDomain);
   });
 
-  const results = new Array(jobs.length);
+  const jobResults = new Array(jobs.length);
   let cursor = 0;
   const worker = async () => {
     while (cursor < jobs.length) {
       const index = cursor++;
-      const job = jobs[index];
-      try {
-        const summary = await refreshJoinadsDailyCache({
-          env, reportName: job.reportName, day: reportDate, identity: job.identity, fetchDay: job.fetchDay,
-        });
-        results[index] = { name: job.name, ok: true, ...summary };
-      } catch (error) {
-        results[index] = { name: job.name, ok: false, error: error.message, status: error.status || null };
-      }
+      jobResults[index] = await runJob(jobs[index]);
     }
   };
   await Promise.all(Array.from({ length: Math.min(3, jobs.length) }, worker));
+  results.push(...jobResults);
   const failed = results.filter((item) => !item.ok);
+  const criticalFailed = failed.filter((item) => item.critical !== false);
   const run = {
     reportDate, startedAt, finishedAt: new Date().toISOString(),
-    status: failed.length ? "partial" : "success", domainsCount: domains.length,
-    reportsOk: results.length - failed.length, reportsFailed: failed.length, details: results,
+    status: criticalFailed.length ? "partial" : "success",
+    strict,
+    domainsCount: domains.length,
+    activeDomains,
+    disabledDomains: Array.from(disabledDomains).filter((domain) => domains.includes(domain)),
+    reportsOk: results.length - failed.length,
+    reportsFailed: failed.length,
+    details: results,
   };
   try { await recordRun(env, run); } catch (error) { run.auditError = error.message; }
-  return jsonResponse(failed.length ? 502 : 200, { code: run.status, ...run });
+  return jsonResponse(strict && criticalFailed.length ? 502 : 200, { code: run.status, ...run });
 }

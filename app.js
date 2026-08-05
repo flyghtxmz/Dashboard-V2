@@ -11,7 +11,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 141;
+const APP_VERSION_BUILD = 142;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1295,6 +1295,47 @@ function MetricasMensagensView({
     { revenueUsd: 0, grossRevenueUsd: 0, impressions: 0, clicks: 0 }
   );
   const earningsCacheDiagnostics = diagnostics?.joinadsSuperFilterDiagnostics?.earnings?.cache || {};
+  const cacheDiagnostics = [
+    diagnostics?.joinadsSuperFilterDiagnostics?.earnings?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.earningsAll?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.keyValueCountry?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.utmContent?.response?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.utmCampaign?.response?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.utmTerm?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.utmSource?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.utmMedium?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.topUrl?.cache,
+  ].filter(Boolean);
+  const cacheDays = (field) => Array.from(new Set(
+    cacheDiagnostics.flatMap((item) => Array.isArray(item?.[field]) ? item[field] : [])
+  )).sort();
+  const joinadsFallbackDays = cacheDays("sameDayFallbackDays");
+  const joinadsApiDays = cacheDays("apiDays");
+  const joinadsProvisionalDays = cacheDays("provisionalDays");
+  const joinadsDatabaseDays = cacheDays("cacheHitDays");
+  const joinadsDataSource = joinadsFallbackDays.length
+    ? {
+        label: "JoinAds: fallback temporario",
+        className: "danger",
+        title: `A API falhou ou voltou zerada; preservado o ultimo valor valido dos dias: ${joinadsFallbackDays.join(", ")}.`,
+      }
+    : joinadsProvisionalDays.length || joinadsApiDays.length
+    ? {
+        label: "JoinAds: API ao vivo",
+        className: "good",
+        title: `Dias consultados na API: ${joinadsApiDays.join(", ") || "nenhum"}. Dias ainda provisorios: ${joinadsProvisionalDays.join(", ") || "nenhum"}.`,
+      }
+    : joinadsDatabaseDays.length
+    ? {
+        label: "JoinAds: banco finalizado",
+        className: "neutral",
+        title: `Dias consolidados lidos do banco: ${joinadsDatabaseDays.join(", ")}.`,
+      }
+    : {
+        label: "JoinAds: origem indisponivel",
+        className: "danger",
+        title: "Os endpoints nao informaram a procedencia dos dados desta carga.",
+      };
   const earningsUsedSameDayFallback = (earningsCacheDiagnostics.sameDayFallbackDays || []).includes(
     reportFilters.endDate
   );
@@ -2818,6 +2859,7 @@ function MetricasMensagensView({
           </div>
           <div className="inline-actions">
             <span className="chip neutral">${normalizedMessageSearch ? `${visibleCampaignRows.length} de ${campaignRows.length}` : campaignRows.length} campanhas de mensagem</span>
+            <span className=${`chip ${joinadsDataSource.className}`} title=${joinadsDataSource.title}>${joinadsDataSource.label}</span>
             ${explicitComparisonDate && comparisonMetrics?.campaigns
               ? html`<span className="chip neutral" title=${`Setas comparam os dados atuais com o dia ${explicitComparisonLabel}`}>Comparando com ${explicitComparisonLabel}</span>`
               : !explicitComparisonDate && refreshComparisonSnapshot?.campaigns
@@ -4151,14 +4193,12 @@ function DiagnosticsJoin({
   topUrls,
   domain,
   superKey,
-  userRows = [],
   messenleadUnresolved = [],
 }) {
   const superCount = Array.isArray(superRows) ? superRows.length : 0;
   const kvCount = Array.isArray(kvRows) ? kvRows.length : 0;
   const earningsCount = Array.isArray(earnings) ? earnings.length : 0;
   const topCount = Array.isArray(topUrls) ? topUrls.length : 0;
-  const userCount = Array.isArray(userRows) ? userRows.length : 0;
   const unresolvedCount = Array.isArray(messenleadUnresolved) ? messenleadUnresolved.length : 0;
 
   return html`
@@ -4194,11 +4234,6 @@ function DiagnosticsJoin({
           <div className="metric-label">top-url (linhas)</div>
           <div className="metric-value">${topCount}</div>
           <div className="metric-helper">/top-url</div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">utm_user (linhas)</div>
-          <div className="metric-value">${userCount}</div>
-          <div className="metric-helper">segmentacao de usuario</div>
         </div>
         <div className="metric-card">
           <div className="metric-label">source_key sem resolucao</div>
@@ -8647,7 +8682,6 @@ function App() {
   const [superFilter, setSuperFilter] = useState([]);
   const [joinadsContentRows, setJoinadsContentRows] = useState([]);
   const [joinadsCampaignRows, setJoinadsCampaignRows] = useState([]);
-  const [joinadsUserRows, setJoinadsUserRows] = useState([]);
   const [joinadsMediumRows, setJoinadsMediumRows] = useState([]);
   const [joinadsSuperFilterDiagnostics, setJoinadsSuperFilterDiagnostics] = useState({});
   const [advertiserRows, setAdvertiserRows] = useState([]);
@@ -8735,7 +8769,6 @@ function App() {
     setSuperFilter([]);
     setJoinadsContentRows([]);
     setJoinadsCampaignRows([]);
-    setJoinadsUserRows([]);
     setJoinadsMediumRows([]);
     setJoinadsSuperFilterDiagnostics({});
     setAdvertiserRows([]);
@@ -9202,7 +9235,6 @@ function App() {
     setEarningsAll(arr(d.earningsAll));
     setJoinadsContentRows(arr(d.joinadsContentRows));
     setJoinadsCampaignRows(arr(d.joinadsCampaignRows));
-    setJoinadsUserRows(arr(d.joinadsUserRows));
     setJoinadsMediumRows(arr(d.joinadsMediumRows));
     setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
     setLoadHealth(obj(d.loadHealth));
@@ -9469,7 +9501,6 @@ function App() {
         keyValueContentRes,
         metaSourceRes,
         metaMediumRes,
-        joinadsUserRes,
         bidHistoryRes,
       ] = await Promise.all([
         topPromise,
@@ -9521,16 +9552,6 @@ function App() {
             group: ["domain", "custom_value"],
           }),
         }).catch((err) => { criticalFailures.push({ source: "joinads-utm-medium", error: formatError(err) }); pushLog("meta-utmmedium", err); return { data: [] }; }),
-        fetchJson(`${API_BASE}/super-filter`, {
-          method: "POST",
-          body: JSON.stringify({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            "domain[]": [filters.domain.trim()],
-            custom_key: "utm_user",
-            group: ["domain", "custom_value"],
-          }),
-        }).catch((err) => { pushLog("joinads-utmuser", err); return { data: [] }; }),
         bidHistoryPromise,
       ]);
 
@@ -9543,6 +9564,26 @@ function App() {
           endpoint: "https://office.joinads.me/api/clients-endpoints/earnings",
           rows: Array.isArray(earningsRes?.data) ? earningsRes.data.length : 0,
           cache: earningsRes?.cache || null,
+        },
+        earningsAll: {
+          rows: Array.isArray(earningsAllRes?.data) ? earningsAllRes.data.length : 0,
+          cache: earningsAllRes?.cache || null,
+        },
+        topUrl: {
+          rows: Array.isArray(topRes?.data) ? topRes.data.length : 0,
+          cache: topRes?.cache || null,
+        },
+        utmTerm: {
+          rows: Array.isArray(superTermRes?.data) ? superTermRes.data.length : 0,
+          cache: superTermRes?.cache || null,
+        },
+        utmSource: {
+          rows: Array.isArray(metaSourceRes?.data) ? metaSourceRes.data.length : 0,
+          cache: metaSourceRes?.cache || null,
+        },
+        utmMedium: {
+          rows: Array.isArray(metaMediumRes?.data) ? metaMediumRes.data.length : 0,
+          cache: metaMediumRes?.cache || null,
         },
         keyValueCountry: {
           endpoint: "https://office.joinads.me/api/clients-endpoints/key-value-country",
@@ -9851,7 +9892,6 @@ function App() {
       );
       setJoinadsContentRows(Array.isArray(contentSuperRes?.data) ? contentSuperRes.data : []);
       setJoinadsCampaignRows(Array.isArray(campaignSuperRes?.data) ? campaignSuperRes.data : []);
-      setJoinadsUserRows(Array.isArray(joinadsUserRes?.data) ? joinadsUserRes.data : []);
       setJoinadsMediumRows(Array.isArray(metaMediumRes?.data) ? metaMediumRes.data : []);
       setMessenleadSources(Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : []);
       setMessenleadUnresolved(Array.isArray(messenleadRes?.unresolved) ? messenleadRes.unresolved : []);
@@ -10010,7 +10050,6 @@ function App() {
           earningsAll,
           joinadsContentRows,
           joinadsCampaignRows,
-          joinadsUserRows,
           joinadsMediumRows,
           joinadsSuperFilterDiagnostics,
           advertiserRows,
@@ -10098,7 +10137,6 @@ function App() {
     setEarningsAll(arr(d.earningsAll));
     setJoinadsContentRows(arr(d.joinadsContentRows));
     setJoinadsCampaignRows(arr(d.joinadsCampaignRows));
-    setJoinadsUserRows(arr(d.joinadsUserRows));
     setJoinadsMediumRows(arr(d.joinadsMediumRows));
     setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
     setLoadHealth(obj(d.loadHealth));
@@ -12568,7 +12606,6 @@ function App() {
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
                   joinadsCampaignRowsCount: joinadsCampaignRows.length,
-                  joinadsUserRowsCount: joinadsUserRows.length,
                   joinadsSuperFilterDiagnostics,
                   messenleadSourcesCount: messenleadSources.length,
                   messenleadUnresolved,
@@ -12786,7 +12823,6 @@ function App() {
             diagnostics=${{
               joinadsContentRowsCount: joinadsContentRows.length,
               joinadsCampaignRowsCount: joinadsCampaignRows.length,
-              joinadsUserRowsCount: joinadsUserRows.length,
               joinadsSuperFilterDiagnostics,
               messenleadSourcesCount: messenleadSources.length,
               messenleadUnresolved,
@@ -12958,7 +12994,6 @@ function App() {
                   topUrls=${topUrls}
                   domain=${appliedFilters?.domain || filters.domain}
                   superKey=${superKey}
-                  userRows=${joinadsUserRows}
                   messenleadUnresolved=${messenleadUnresolved}
                 />
               `}

@@ -5,7 +5,7 @@ import {
   safeJson,
 } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
-import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
+import { fetchJoinadsDailyCached, hasJoinadsDailyStorage, validateJoinadsDomainPayload } from "../_joinads-cache.js";
 import { validateDateRange } from "../_dates.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
@@ -70,6 +70,9 @@ export async function onRequest({ request, env }) {
     const cached = await fetchJoinadsDailyCached({
       env, reportName: "top-url", startDate: start_date, endDate: end_date,
       identity: { domains: access.domains, limit, sort }, fetchDay: (day) => fetchRange(day, day),
+      validatePayload: access.domains.length === 1
+        ? (payload) => validateJoinadsDomainPayload(payload, access.domains[0])
+        : undefined,
     });
     const byUrl = new Map();
     cached.results.flatMap((result) => result?.data || []).forEach((row) => {

@@ -52,6 +52,8 @@ Usado para atribuição por `utm_campaign`, país e bloco. O Dashboard envia `re
 
 Usado para reconciliação por `utm_campaign`, `utm_content`, `utm_source`, `utm_medium` e `utm_term`. A resposta documentada possui `revenue` e `revenue_client`, além de `revshare`.
 
+`utm_user` não faz parte das chaves documentadas/aceitas pela JoinAds e não é consultada pelo Dashboard. A identificação de usuário do Dashboard vem dos parâmetros da Meta/Messenlead e não depende dessa chave na JoinAds.
+
 ### `GET /report/advertiser/campaign`
 
 Usado somente para diagnóstico de anunciantes. A resposta possui `AD_EXCHANGE_LINE_ITEM_LEVEL_REVENUE`, mas não possui um campo `_CLIENT`. Até confirmação formal da JoinAds, esse valor deve ser considerado possivelmente bruto e não deve alimentar ROAS ou lucro.
@@ -65,6 +67,10 @@ O cache diário do backend existe para evitar consultar novamente dias históric
 - O dia anterior é provisório até aproximadamente 10h no horário de São Paulo.
 - Depois da atualização posterior às 10h, o dia anterior pode ser consolidado no banco.
 - Dias históricos consolidados podem ser lidos do banco.
+- Antes de gravar ou reutilizar uma resposta segmentada, o backend confere se todas as linhas pertencem ao domínio solicitado. Um cache antigo com domínio divergente é descartado e consultado novamente.
+- A finalização automática tenta novamente entre 10h e 13h. Somente a última tentativa é estrita e gera falha no GitHub se relatórios essenciais ainda estiverem indisponíveis.
+- `br.remediototal.com.br` e `intre.remediototal.com.br` ficam fora da finalização por padrão enquanto `/earnings` da JoinAds não os aceitar. A lista pode ser alterada pela variável `JOINADS_FINALIZE_DISABLED_DOMAINS`.
+- Em Métricas Mensagens, um selo informa `API ao vivo`, `banco finalizado` ou `fallback temporário`. O fallback preserva apenas o último valor válido do mesmo dia e nunca mistura datas.
 - A interface não deve aplicar um snapshot antigo ao clicar em **Carregar dados**. Ela mantém os dados atuais visíveis e troca o conjunto somente quando a nova consulta termina.
 - Uma cotação USD/BRL armazenada só pode ser reutilizada para a mesma data de referência. Uma cotação de outra data não deve recalcular temporariamente ROAS ou lucro.
 

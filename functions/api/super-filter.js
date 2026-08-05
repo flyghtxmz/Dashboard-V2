@@ -5,7 +5,7 @@ import {
   safeJson,
 } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
-import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
+import { fetchJoinadsDailyCached, hasJoinadsDailyStorage, validateJoinadsDomainPayload } from "../_joinads-cache.js";
 import { validateDateRange } from "../_dates.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
@@ -99,6 +99,9 @@ export async function onRequest({ request, env }) {
         endDate: end_date,
         identity: payload,
         fetchDay: (day) => fetchPayload({ ...payload, start_date: day, end_date: day }),
+        validatePayload: access.domains.length === 1
+          ? (result) => validateJoinadsDomainPayload(result, access.domains[0])
+          : undefined,
       });
       data = {
         code: "success",

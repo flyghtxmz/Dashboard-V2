@@ -79,6 +79,38 @@ function summarizePayload(payload) {
   };
 }
 
+function normalizeReportDomain(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    return url.hostname.replace(/^www\./, "");
+  } catch {
+    return raw.replace(/^https?:\/\//, "").split(/[/:?#]/)[0].replace(/^www\./, "");
+  }
+}
+
+function rowReportDomain(row) {
+  const explicit = row?.domain ?? row?.DOMAIN ?? row?.name ?? row?.NAME;
+  if (explicit) return normalizeReportDomain(explicit);
+  const url = row?.url ?? row?.URL;
+  return url ? normalizeReportDomain(url) : "";
+}
+
+export function validateJoinadsDomainPayload(payload, domain) {
+  if (!payload || payload.code === "error" || !Array.isArray(payload.data)) return false;
+  if (!payload.data.length) return true;
+  const expected = normalizeReportDomain(domain);
+  if (!expected) return false;
+  return payload.data.every((row) => rowReportDomain(row) === expected);
+}
+
+function isValidPayload(payload, validatePayload, day) {
+  return validatePayload
+    ? !!payload && validatePayload(payload, day)
+    : !!payload && payload.code !== "error" && Array.isArray(payload.data);
+}
+
 async function writeStored(storage, key, reportName, day, payload, { provisional = false } = {}) {
   const now = new Date().toISOString();
   const summary = summarizePayload(payload);
@@ -115,9 +147,7 @@ export async function refreshJoinadsDailyCache({ env, reportName, day, identity,
   const key = await hashKey({ schema: CACHE_SCHEMA, reportName, day, identity });
   const storedEnvelope = await readStored(storage, key);
   const payload = await fetchDay(day);
-  const valid = validatePayload
-    ? !!payload && validatePayload(payload, day)
-    : !!payload && payload.code !== "error" && Array.isArray(payload.data);
+  const valid = isValidPayload(payload, validatePayload, day);
   if (!valid) {
     const error = new Error(`Resposta invalida da JoinAds para ${reportName} em ${day}`);
     error.code = "INVALID_JOINADS_PAYLOAD";
@@ -160,7 +190,13 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
       const key = await hashKey({ schema: CACHE_SCHEMA, reportName, day, identity });
       let storedEnvelope = await readStored(storage, key);
       let envelope = finalizable && storedEnvelope?.provisional !== true ? storedEnvelope : null;
-      if (storedEnvelope && (storedEnvelope.schema !== CACHE_SCHEMA || storedEnvelope.reportName !== reportName || storedEnvelope.reportDate !== day || !storedEnvelope.payload)) {
+      if (storedEnvelope && (
+        storedEnvelope.schema !== CACHE_SCHEMA ||
+        storedEnvelope.reportName !== reportName ||
+        storedEnvelope.reportDate !== day ||
+        !storedEnvelope.payload ||
+        !isValidPayload(storedEnvelope.payload, validatePayload, day)
+      )) {
         await deleteStored(storage, key);
         storedEnvelope = null;
         envelope = null;
@@ -182,9 +218,7 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
           liveError = error;
           payload = null;
         }
-        const valid = validatePayload
-          ? !!payload && validatePayload(payload, day)
-          : !!payload && payload.code !== "error" && Array.isArray(payload.data);
+        const valid = isValidPayload(payload, validatePayload, day);
         const liveSummary = valid ? summarizePayload(payload) : null;
         const storedRevenue = Number(storedEnvelope?.totals?.revenue || 0);
         const suspiciousEmptyRevenue = valid && liveSummary.totals.revenue <= 0 && storedRevenue > 0;

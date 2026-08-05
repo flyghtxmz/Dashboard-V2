@@ -6,7 +6,7 @@ import {
   safeJson,
 } from "../_utils.js";
 import { getSession, requireDomainAccess } from "../_auth.js";
-import { fetchJoinadsDailyCached, hasJoinadsDailyStorage } from "../_joinads-cache.js";
+import { fetchJoinadsDailyCached, hasJoinadsDailyStorage, validateJoinadsDomainPayload } from "../_joinads-cache.js";
 import { validateDateRange } from "../_dates.js";
 
 const API_BASE = "https://office.joinads.me/api/clients-endpoints";
@@ -43,6 +43,7 @@ async function fetchEarningsCached(env, token, startDate, endDate, domain) {
     env, reportName: "earnings", startDate, endDate,
     identity: { domain: domain || "__all__" },
     fetchDay: (day) => fetchEarnings(token, day, day, domain),
+    validatePayload: domain ? (payload) => validateJoinadsDomainPayload(payload, domain) : undefined,
   });
   return {
     code: "success",

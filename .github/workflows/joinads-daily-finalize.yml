@@ -2,8 +2,12 @@ name: JoinAds Daily Finalize
 
 on:
   schedule:
-    # 10:00 America/Sao_Paulo (UTC-3).
+    # Tentativas horarias entre 10:00 e 13:00 America/Sao_Paulo (UTC-3).
+    # As primeiras execucoes aquecem/repetem a coleta; a ultima e estrita.
     - cron: "0 13 * * *"
+    - cron: "0 14 * * *"
+    - cron: "0 15 * * *"
+    - cron: "0 16 * * *"
   workflow_dispatch:
 
 jobs:
@@ -15,12 +19,17 @@ jobs:
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
           JOINADS_CRON_SECRET: ${{ secrets.JOINADS_CRON_SECRET }}
           CPA_CRON_SECRET: ${{ secrets.CPA_CRON_SECRET }}
+          SCHEDULE: ${{ github.event.schedule }}
         run: |
           SECRET="${JOINADS_CRON_SECRET:-$CPA_CRON_SECRET}"
           if [ -z "$DASHBOARD_URL" ] || [ -z "$SECRET" ]; then
             echo "Missing DASHBOARD_URL and JOINADS_CRON_SECRET (or CPA_CRON_SECRET)."
             exit 1
           fi
+          STRICT=""
+          if [ -z "$SCHEDULE" ] || [ "$SCHEDULE" = "0 16 * * *" ]; then
+            STRICT="?strict=1"
+          fi
           curl --fail-with-body --retry 2 --retry-delay 30 -sS -X POST \
-            "$DASHBOARD_URL/api/joinads-finalize" \
+            "$DASHBOARD_URL/api/joinads-finalize$STRICT" \
             -H "x-cron-secret: $SECRET"
