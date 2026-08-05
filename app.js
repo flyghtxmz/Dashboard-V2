@@ -8,7 +8,7 @@ import {
   nextBuilderNumber,
   normalizeCountryLabel,
   resolveNicheCountryCodes,
-} from "./campaign-builder.mjs?v=148";
+} from "./campaign-builder.mjs?v=149";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -18,7 +18,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 148;
+const APP_VERSION_BUILD = 149;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -7102,7 +7102,7 @@ function LocationPicker({ selected, onChange }) {
   `;
 }
 
-function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels, pixelsLoading, onLoadPixels, nichos, savedUrls }) {
+function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesError, onLoadPages, pixels, pixelsLoading, onLoadPixels, nichos, savedUrls }) {
   const _savedUrls = Array.isArray(savedUrls) ? savedUrls : [];
   const [step, setStep] = useState(1);
   const [publishing, setPublishing] = useState(false);
@@ -7153,6 +7153,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [skipAd, setSkipAd] = useState(false);
   const [adName, setAdName] = useState("");
   const [pageId, setPageId] = useState("");
+  const [pageSearch, setPageSearch] = useState("");
   const [adFormat, setAdFormat] = useState("image"); // "image" | "video"
   const [imageUrl, setImageUrl] = useState("");
   const [videoId, setVideoId] = useState("");
@@ -7173,6 +7174,16 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
   const [conversionEvent, setConversionEvent] = useState("PURCHASE");
   const [devicePlatforms, setDevicePlatforms] = useState(["mobile", "desktop"]);
   const [locLanguages, setLocLanguages] = useState([]);
+  const normalizedPageSearch = pageSearch.trim().toLocaleLowerCase("pt-BR");
+  const filteredPageOptions = normalizedPageSearch
+    ? (pages || []).filter((page) =>
+        `${page?.name || ""} ${page?.id || ""}`.toLocaleLowerCase("pt-BR").includes(normalizedPageSearch)
+      )
+    : (pages || []);
+  const selectedPage = (pages || []).find((page) => String(page.id) === String(pageId));
+  const visiblePageOptions = selectedPage && !filteredPageOptions.some((page) => String(page.id) === String(pageId))
+    ? [selectedPage, ...filteredPageOptions]
+    : filteredPageOptions;
 
   const availableGoals = OPTIMIZATION_GOALS_MAP[objective] || OPTIMIZATION_GOALS_MAP["OUTCOME_TRAFFIC"];
   const isPositiveMoney = (value) => {
@@ -7418,7 +7429,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
     setBidAmount(""); setStartTime(""); setEndTime("");
     setPixelId(""); setConversionEvent("PURCHASE"); setDevicePlatforms(["mobile", "desktop"]);
     setLocLanguages([]);
-    setSkipAd(false); setAdName(""); setPageId(""); setAdFormat("image");
+    setSkipAd(false); setAdName(""); setPageId(""); setPageSearch(""); setAdFormat("image");
     setImageUrl(""); setVideoId(""); setThumbUrl(""); setIgActorId("");
     setHeadline(""); setAdBody(""); setAdDescription(""); setCtaType("LEARN_MORE"); setDestUrl(""); setUrlTags(DEFAULT_UTM_TAGS);
   };
@@ -8039,16 +8050,36 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, onLoadPages, pixels
               <div className="field">
                 <label>
                   Página do Facebook *
-                  ${pagesLoading ? html`<span className="muted small"> carregando...</span>` : null}
+                  ${pagesLoading
+                    ? html`<span className="muted small"> carregando...</span>`
+                    : html`<span className="muted small"> — ${(pages || []).length} disponível(is)</span>`}
                 </label>
+                ${(pages || []).length > 8 ? html`
+                  <input
+                    type="search"
+                    value=${pageSearch}
+                    onInput=${(event) => setPageSearch(event.target.value)}
+                    placeholder="Buscar página por nome ou ID"
+                    style=${{ marginBottom: "6px" }}
+                  />
+                ` : null}
                 <select value=${pageId} onChange=${(e) => setPageId(e.target.value)}>
-                  <option value="">Selecione uma página</option>
-                  ${(pages || []).map((p) => html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}
+                  <option value="">${normalizedPageSearch && visiblePageOptions.length === 0 ? "Nenhuma página encontrada" : "Selecione uma página"}</option>
+                  ${visiblePageOptions.map((p) => html`<option key=${p.id} value=${p.id}>${p.name} (${p.id})</option>`)}
                 </select>
-                ${(!pages || pages.length === 0) && !pagesLoading ? html`
-                  <button className="ghost small" onClick=${onLoadPages} style=${{ marginTop: "6px" }}>
-                    Carregar páginas
+                <div className="action-row-between" style=${{ marginTop: "6px" }}>
+                  <span className="muted small">
+                    ${pagesMeta?.sources?.length
+                      ? pagesMeta.sources.map((source) => `${source.name}: ${source.rows}`).join(" · ")
+                      : "Inclui páginas gerenciadas e promovíveis pela conta."}
+                  </span>
+                  <button className="ghost small" onClick=${onLoadPages} disabled=${pagesLoading}>
+                    ${pagesLoading ? "Carregando..." : (pages || []).length ? "Atualizar lista" : "Carregar páginas"}
                   </button>
+                </div>
+                ${pagesError ? html`<span className="form-validation-hint">${pagesError}</span>` : null}
+                ${pagesMeta?.warnings?.length ? html`
+                  <span className="form-validation-hint">Uma fonte da Meta não pôde ser consultada: ${pagesMeta.warnings.map((warning) => warning.source).join(", ")}.</span>
                 ` : null}
               </div>
               <div className="field">
@@ -9555,6 +9586,7 @@ function App() {
   const [pagesLoading, setPagesLoading] = useState(false);
   const [pagesError, setPagesError] = useState("");
   const [pagesList, setPagesList] = useState([]);
+  const [pagesMeta, setPagesMeta] = useState(null);
   const [pixelsLoading, setPixelsLoading] = useState(false);
   const [pixelsList, setPixelsList] = useState([]);
   const [adDestMap, setAdDestMap] = useState({});
@@ -9600,6 +9632,7 @@ function App() {
     setDrafts([]);
     setPagesError("");
     setPagesList([]);
+    setPagesMeta(null);
     setPixelsList([]);
     setTokenInfo(null);
     setTokenError("");
@@ -11213,16 +11246,20 @@ function App() {
     setPagesLoading(true);
     setPagesError("");
     try {
-      const res = await fetchJson(`${API_BASE}/meta-pages`, {
+      const accountId = filters.metaAccountId.trim();
+      const path = `${API_BASE}/meta-pages${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ""}`;
+      const res = await fetchJson(path, {
         cacheTtlMs: 5 * 60 * 1000,
-        cacheKey: "meta-pages",
+        cacheKey: `meta-pages-${accountId || "me"}`,
         force: true,
       });
       setPagesList(res.data || []);
+      setPagesMeta(res.meta || null);
     } catch (err) {
       setPagesError(formatError(err));
       pushLog("meta-pages", err);
       setPagesList([]);
+      setPagesMeta(null);
     } finally {
       setPagesLoading(false);
     }
@@ -13373,6 +13410,8 @@ function App() {
                   accountId=${filters.metaAccountId.trim()}
                   pages=${pagesList}
                   pagesLoading=${pagesLoading}
+                  pagesMeta=${pagesMeta}
+                  pagesError=${pagesError}
                   onLoadPages=${handleLoadPages}
                   pixels=${pixelsList}
                   pixelsLoading=${pixelsLoading}
@@ -13740,6 +13779,9 @@ function App() {
                 ${pagesError
                   ? html`<div className="status error"><strong>Erro:</strong> ${pagesError}</div>`
                   : null}
+                ${pagesMeta?.warnings?.length
+                  ? html`<div className="status warn"><strong>Consulta parcial:</strong> ${pagesMeta.warnings.map((warning) => `${warning.source}: ${warning.message}`).join(" · ")}</div>`
+                  : null}
                 <div className="table-wrapper scroll-x">
                   <table>
                     <thead>
@@ -13747,17 +13789,19 @@ function App() {
                         <th>ID</th>
                         <th>Nome</th>
                         <th>Categoria</th>
+                        <th>Origem</th>
                       </tr>
                     </thead>
                     <tbody>
                       ${pagesList.length === 0
-                        ? html`<tr><td colSpan="3" className="muted">Sem páginas carregadas.</td></tr>`
+                        ? html`<tr><td colSpan="4" className="muted">Sem páginas carregadas.</td></tr>`
                         : pagesList.map(
                             (page) => html`
                               <tr key=${page.id}>
                                 <td>${page.id}</td>
                                 <td>${page.name}</td>
                                 <td>${page.category || "-"}</td>
+                                <td>${(page.sources || []).join(" + ") || "-"}</td>
                               </tr>
                             `
                           )}
@@ -13782,6 +13826,8 @@ function App() {
                 accountId=${filters.metaAccountId.trim()}
                 pages=${pagesList}
                 pagesLoading=${pagesLoading}
+                pagesMeta=${pagesMeta}
+                pagesError=${pagesError}
                 onLoadPages=${handleLoadPages}
                 pixels=${pixelsList}
                 pixelsLoading=${pixelsLoading}
