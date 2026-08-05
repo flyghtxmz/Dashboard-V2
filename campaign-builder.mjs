@@ -61,6 +61,20 @@ export function nextBuilderNumber(values = []) {
   return String(highest + 1).padStart(2, "0");
 }
 
+export function upsertBuilderAd(savedAds = [], nextAd = {}, editingId = null) {
+  const current = Array.isArray(savedAds) ? savedAds : [];
+  if (!editingId) return [...current, nextAd];
+  let replaced = false;
+  const updated = current.map((ad) => {
+    const matches = ad?._clientId === editingId ||
+      (!ad?._clientId && ad?._anNum === nextAd?._anNum);
+    if (!matches) return ad;
+    replaced = true;
+    return nextAd;
+  });
+  return replaced ? updated : [...updated, nextAd];
+}
+
 export function buildAutomaticAdName(niche, countries, cjNumber, adNumber) {
   const slug = String(niche?.slug || niche || "anuncio").trim() || "anuncio";
   const geo = (Array.isArray(countries) && countries.length ? countries : ["BR"])

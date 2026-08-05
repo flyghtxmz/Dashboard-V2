@@ -5,6 +5,7 @@ import {
   materializeCampaignAdsets,
   nextBuilderNumber,
   resolveNicheCountryCodes,
+  upsertBuilderAd,
 } from "../campaign-builder.mjs";
 
 test("converte paises antigos do nicho para ISO sem separar acentos", () => {
@@ -49,4 +50,27 @@ test("UTM de site usa IDs estáveis nos três níveis", () => {
 test("numeração continua após exclusões sem reutilizar CJ ou AN", () => {
   assert.equal(nextBuilderNumber(["02", "05", "03"]), "06");
   assert.equal(nextBuilderNumber([]), "01");
+});
+
+test("editar anúncio salvo substitui o original sem criar duplicidade", () => {
+  const saved = [
+    { _clientId: "ad:1", _anNum: "01", headline: "Original" },
+    { _clientId: "ad:2", _anNum: "02", headline: "Outro" },
+  ];
+  const updated = upsertBuilderAd(
+    saved,
+    { _clientId: "ad:1", _anNum: "01", headline: "Editado" },
+    "ad:1"
+  );
+  assert.equal(updated.length, 2);
+  assert.equal(updated[0].headline, "Editado");
+  assert.equal(updated[1].headline, "Outro");
+});
+
+test("salvar novo anúncio acrescenta um item", () => {
+  const updated = upsertBuilderAd(
+    [{ _clientId: "ad:1", _anNum: "01" }],
+    { _clientId: "ad:2", _anNum: "02" }
+  );
+  assert.deepEqual(updated.map((ad) => ad._clientId), ["ad:1", "ad:2"]);
 });

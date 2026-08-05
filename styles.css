@@ -3864,6 +3864,22 @@ tbody tr:last-child td {
   padding: 9px 0;
 }
 
+.builder-saved-ad.is-editing {
+  margin: 0 -8px;
+  padding: 9px 8px;
+  border-radius: 9px;
+  background: var(--warn-wash);
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.builder-editing-ad {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0;
+}
+
 .builder-saved-ad-targets {
   display: flex;
   flex-wrap: wrap;
@@ -3877,6 +3893,11 @@ tbody tr:last-child td {
   }
 
   .builder-structure-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .builder-editing-ad {
     align-items: stretch;
     flex-direction: column;
   }

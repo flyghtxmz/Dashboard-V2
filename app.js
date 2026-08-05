@@ -8,7 +8,8 @@ import {
   nextBuilderNumber,
   normalizeCountryLabel,
   resolveNicheCountryCodes,
-} from "./campaign-builder.mjs?v=151";
+  upsertBuilderAd,
+} from "./campaign-builder.mjs?v=155";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -18,7 +19,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 154;
+const APP_VERSION_BUILD = 155;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -7201,8 +7202,11 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const [savedAdsets, setSavedAdsets] = useState([]);
   const [savedAds, setSavedAds] = useState([]);
   const [currentAdsetClientId, setCurrentAdsetClientId] = useState(() => createBuilderId("adset"));
+  const [currentAdClientId, setCurrentAdClientId] = useState(() => createBuilderId("ad"));
+  const [editingSavedAdId, setEditingSavedAdId] = useState(null);
   const [adTargetIds, setAdTargetIds] = useState([]);
   const publishRequestIdRef = useRef("");
+  const adFormRef = useRef(null);
   const [cbo, setCbo] = useState(false);
   const [campBudgetType, setCampBudgetType] = useState("daily");
   const [campBudget, setCampBudget] = useState("");
@@ -7333,6 +7337,8 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setSavedAdsets([]);
     setSavedAds([]);
     setCurrentAdsetClientId(createBuilderId("adset"));
+    setCurrentAdClientId(createBuilderId("ad"));
+    setEditingSavedAdId(null);
     setAdTargetIds([]);
     setCjNum("01");
     setAnNum("01");
@@ -7432,6 +7438,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const allBuilderAdsetIds = () => allBuilderAdsets().map((item) => item._clientId);
 
   const snapshotCurrentAd = () => ({
+    _clientId: currentAdClientId,
     name: adName.trim(),
     page_id: pageId,
     ad_format: adFormat,
@@ -7454,9 +7461,13 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   });
 
   const currentAdIsReady = !skipAd && currentAdHasInput && currentAdIssues.length === 0;
-  const allBuilderAds = () => skipAd
-    ? []
-    : [...savedAds, ...(currentAdIsReady ? [snapshotCurrentAd()] : [])];
+  const allBuilderAds = () => {
+    if (skipAd) return [];
+    const savedWithoutEditing = editingSavedAdId
+      ? savedAds.filter((ad) => ad._clientId !== editingSavedAdId)
+      : savedAds;
+    return [...savedWithoutEditing, ...(currentAdIsReady ? [snapshotCurrentAd()] : [])];
+  };
   const buildMaterializedAdsets = (preserveMetadata = false) => materializeCampaignAdsets({
     adsets: allBuilderAdsets(),
     ads: allBuilderAds(),
@@ -7473,6 +7484,55 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
       ? current.filter((id) => ids.includes(id))
       : ids);
     setStep(3);
+  };
+
+  const clearCurrentAdForNext = (adsForNumbering = savedAds) => {
+    setAnNum(nextBuilderNumber((adsForNumbering || []).map((item) => item._anNum)));
+    setCurrentAdClientId(createBuilderId("ad"));
+    setEditingSavedAdId(null);
+    setAdName(""); setAdNameManual(false);
+    setImageUrl(""); setImageHash(""); setVideoId(""); setThumbUrl("");
+    setHeadline(""); setAdBody(""); setAdDescription("");
+  };
+
+  const editSavedAd = (ad, index) => {
+    if (currentAdHasInput && editingSavedAdId !== ad._clientId) {
+      const confirmed = window.confirm("O anúncio que está no formulário ainda não foi salvo. Deseja substituí-lo pelo anúncio selecionado?");
+      if (!confirmed) return;
+    }
+    const clientId = ad._clientId || createBuilderId("ad");
+    if (!ad._clientId) {
+      setSavedAds((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, _clientId: clientId } : item));
+    }
+    setCurrentAdClientId(clientId);
+    setEditingSavedAdId(clientId);
+    setSkipAd(false);
+    setAnNum(ad._anNum || "01");
+    setAdName(ad.name || "");
+    setAdNameManual(Boolean(ad._nameManual));
+    setPageId(String(ad.page_id || ""));
+    setManualPageEntry(Boolean(ad.page_id) && !(pages || []).some((page) => String(page.id) === String(ad.page_id)));
+    setAdFormat(ad.ad_format === "video" ? "video" : "image");
+    setImageUrl(ad.image_url || "");
+    setImageHash(ad.image_hash || "");
+    setVideoId(ad.video_id || "");
+    setThumbUrl(ad.thumb_url || "");
+    setIgActorId(ad.ig_actor_id || "");
+    setHeadline(ad.headline || "");
+    setAdBody(ad.body || "");
+    setAdDescription(ad.description || "");
+    setCtaType(ad.cta_type || "LEARN_MORE");
+    setDestUrl(ad.destination_url || "");
+    setUrlTags(ad.url_tags || (destinationType === "WEBSITE" ? DEFAULT_UTM_TAGS : ""));
+    setAdTargetIds(Array.isArray(ad._targetAdsetIds) ? [...ad._targetAdsetIds] : allBuilderAdsetIds());
+    setFormError("");
+    setTimeout(() => adFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
+  const removeSavedAd = (ad, index) => {
+    const remaining = savedAds.filter((item, itemIndex) => ad._clientId ? item._clientId !== ad._clientId : itemIndex !== index);
+    setSavedAds(remaining);
+    if (editingSavedAdId && editingSavedAdId === ad._clientId) clearCurrentAdForNext(remaining);
   };
 
   useEffect(() => {
@@ -7502,7 +7562,8 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
     setCampName(""); setObjective("OUTCOME_TRAFFIC"); setSpecialCat("NONE"); setDestinationType("WEBSITE");
     setCampStatus("PAUSED"); setCbo(false); setCampBudgetType("daily"); setCampBudget(""); setNicho(null);
     setCampNameManual(false); setAdsetNameManual(false); setAdNameManual(false); setCampNum("01"); setCjNum("01"); setAnNum("01");
-    setSavedAdsets([]); setSavedAds([]); setCurrentAdsetClientId(createBuilderId("adset")); setAdTargetIds([]);
+    setSavedAdsets([]); setSavedAds([]); setCurrentAdsetClientId(createBuilderId("adset"));
+    setCurrentAdClientId(createBuilderId("ad")); setEditingSavedAdId(null); setAdTargetIds([]);
     publishRequestIdRef.current = "";
     setSpendCap("");
     setAdsetName(""); setAdsetBudgetType("daily"); setAdsetBudget("");
@@ -8067,7 +8128,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
       `}
 
       ${/* ── Passo 3: Anúncio ── */ step === 3 && html`
-        <section className="card wide">
+        <section className="card wide" ref=${adFormRef}>
           <div className="card-head">
             <div>
               <span className="eyebrow">Passo 3 de 4</span>
@@ -8080,6 +8141,12 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
               <strong>Pular anúncio agora</strong> — criar somente campanha + conjunto, adicionar anúncio depois no Gerenciador
             </label>
           </div>
+          ${editingSavedAdId ? html`
+            <div className="status warn builder-editing-ad">
+              <span><strong>Editando anúncio salvo.</strong> Salvar substituirá o anúncio selecionado, sem criar uma cópia.</span>
+              <button className="ghost small" onClick=${() => clearCurrentAdForNext(savedAds)}>Cancelar edição</button>
+            </div>
+          ` : null}
           ${!skipAd ? html`
             <div className="soft-panel builder-target-panel">
               <div className="soft-panel-header">
@@ -8341,11 +8408,16 @@ ${(() => {
           ${!skipAd && savedAds.length > 0 ? html`
             <div className="soft-panel accent compact" style=${{ marginBottom: "4px" }}>
               <p className="helper-text-inline" style=${{ marginBottom: "8px" }}>Anúncios já salvos (${savedAds.length}):</p>
-              ${savedAds.map((a, i) => html`
-                <div key=${i} className="builder-saved-ad" style=${{ borderBottom: i < savedAds.length - 1 ? "1px solid var(--border)" : "none" }}>
+              ${savedAds.map((a, i) => {
+                const isEditing = Boolean(editingSavedAdId && editingSavedAdId === a._clientId);
+                return html`
+                <div key=${a._clientId || i} className=${`builder-saved-ad${isEditing ? " is-editing" : ""}`} style=${{ borderBottom: i < savedAds.length - 1 ? "1px solid var(--border)" : "none" }}>
                   <div className="action-row-between">
                     <span><strong>AN${a._anNum}</strong> — ${a._nameManual ? a.name : "nome automático por conjunto"} · ${a.ad_format === "video" ? "Vídeo" : "Imagem"} · ${(a._targetAdsetIds || []).length} conjunto(s)</span>
-                    <button className="ghost small" style=${{ color: "var(--danger)" }} onClick=${() => setSavedAds((prev) => prev.filter((_, j) => j !== i))}>✕</button>
+                    <div className="action-group">
+                      <button className="ghost small" onClick=${() => editSavedAd(a, i)} disabled=${isEditing}>${isEditing ? "Editando" : "Editar"}</button>
+                      <button className="ghost small" style=${{ color: "var(--neg)" }} title="Remover anúncio" onClick=${() => removeSavedAd(a, i)}>Remover</button>
+                    </div>
                   </div>
                   <div className="builder-saved-ad-targets">
                     ${allBuilderAdsets().map((item) => html`
@@ -8353,6 +8425,7 @@ ${(() => {
                         <input
                           type="checkbox"
                           checked=${(a._targetAdsetIds || []).includes(item._clientId)}
+                          disabled=${isEditing}
                           onChange=${(e) => setSavedAds((current) => current.map((ad, index) => {
                             if (index !== i) return ad;
                             const targets = new Set(ad._targetAdsetIds || []);
@@ -8366,7 +8439,7 @@ ${(() => {
                     `)}
                   </div>
                 </div>
-              `)}
+              `;})}
             </div>
           ` : null}
 
@@ -8376,14 +8449,12 @@ ${(() => {
               ${step3Issues.length ? html`<span className="form-validation-hint">${step3Issues[0]}</span>` : null}
               ${!skipAd ? html`
                 <button className="ghost" disabled=${!currentAdIsReady} onClick=${() => {
-                  setSavedAds((prev) => [...prev, snapshotCurrentAd()]);
-                  const nextAn = nextBuilderNumber([...savedAds.map((item) => item._anNum), anNum]);
-                  setAnNum(nextAn);
-                  setAdNameManual(false);
-                  setImageUrl(""); setImageHash(""); setVideoId(""); setThumbUrl("");
-                  setHeadline(""); setAdBody(""); setAdDescription("");
+                  const nextAd = snapshotCurrentAd();
+                  const nextSavedAds = upsertBuilderAd(savedAds, nextAd, editingSavedAdId);
+                  setSavedAds(nextSavedAds);
+                  clearCurrentAdForNext(nextSavedAds);
                 }}>
-                  ➕ Salvar e adicionar outro anúncio
+                  ${editingSavedAdId ? "Salvar alterações do anúncio" : "➕ Salvar e adicionar outro anúncio"}
                 </button>
               ` : null}
               <button className="primary" disabled=${!step3Valid} onClick=${() => setStep(4)}>
@@ -8422,7 +8493,7 @@ ${(() => {
             <div className="review-card">
               <p className="eyebrow" style=${{ marginBottom: "12px" }}>📣 Anúncios</p>
               <p><strong>Total a criar:</strong> ${previewAdsCount}</p>
-              <p><strong>Modelos preenchidos:</strong> ${skipAd ? 0 : savedAds.length + (currentAdIsReady ? 1 : 0)}</p>
+              <p><strong>Modelos preenchidos:</strong> ${skipAd ? 0 : savedAds.length + (currentAdIsReady && !editingSavedAdId ? 1 : 0)}</p>
               <p><strong>Rastreamento:</strong> ${destinationType === "WEBSITE" ? "Parâmetros de URL da Meta" : "Específico do destino"}</p>
               ${skipAd ? html`<p className="muted small">Os anúncios serão adicionados posteriormente.</p>` : null}
             </div>
