@@ -8,7 +8,7 @@ import {
   nextBuilderNumber,
   normalizeCountryLabel,
   resolveNicheCountryCodes,
-} from "./campaign-builder.mjs?v=147";
+} from "./campaign-builder.mjs?v=148";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -18,7 +18,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 147;
+const APP_VERSION_BUILD = 148;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -5211,7 +5211,7 @@ function EditarView({
                         onClick=${() => onHideCampaign?.(c.id)}
                         title="Ocultar do Dashboard e desta lista"
                       >
-                        ðŸ‘ Ocultar
+                        👁️ Ocultar
                       </button>
                     </td>
                   </tr>`;
@@ -5271,7 +5271,7 @@ function EditarView({
                         />
                         <button className="ghost small" disabled=${renaming}
                           onClick=${() => onRenameAdset?.(as.id, currentName, renameKey)}>
-                          ${renaming ? "..." : "âœ"}
+                          ${renaming ? "..." : "✏"}
                         </button>
                       </div>
                     </td>
@@ -5337,7 +5337,7 @@ function EditarView({
                         <button className="ghost small" disabled=${renamingAd}
                           onClick=${() => onRenameAd?.(row.id, row.name, renameAdKey)}
                           title="Renomear">
-                          ${renamingAd ? "..." : "âœ"}
+                          ${renamingAd ? "..." : "✏"}
                         </button>
                       </div>
                     </td>
@@ -5367,7 +5367,7 @@ function EditarView({
                               title=${row.destination_url || row.url || ""}>
                               ${row.destination_url || row.url || (row.object_story_id ? "Post" : "—")}
                             </span>
-                            <button className="ghost small" onClick=${() => setEditingUrlId(row.id)} title="Editar URL">âœ</button>
+                            <button className="ghost small" onClick=${() => setEditingUrlId(row.id)} title="Editar URL">✏</button>
                             ${(row.object_story_id && !row.destination_url)
                               ? html`<button className="ghost small" disabled=${verifyingRow}
                                   onClick=${() => onResolveDestination?.(row)} title="Resolver destino">
@@ -5381,7 +5381,7 @@ function EditarView({
                       <div className="inline-actions compact">
                         <button className="ghost small" disabled=${verifyingRow}
                           onClick=${() => onVerify?.(row)} title="Verificar URL">
-                          ${verifyingRow ? "..." : "ðŸ”"}
+                          ${verifyingRow ? "..." : "🔍"}
                         </button>
                         <button className="ghost small" disabled=${busy}
                           onClick=${() => onSave(row)} title="Duplicar">
@@ -9204,7 +9204,7 @@ function MediaLibrarySection({ accountId }) {
       <div className="media-thumb">
         ${item.url
           ? html`<img src=${item.url} alt=${item.name} />`
-          : html`<div className="media-thumb-fallback">${item.type === "video" ? "🎬" : "ðŸ–¼ï¸"}</div>`
+          : html`<div className="media-thumb-fallback">${item.type === "video" ? "🎬" : "🖼️"}</div>`
         }
         <span className=${`media-badge ${item.type === "video" ? "video" : "image"}`}>${item.type === "video" ? "VID" : "IMG"}</span>
       </div>
@@ -9220,10 +9220,10 @@ function MediaLibrarySection({ accountId }) {
         ` : html`
           <p className="media-card-title">${getDisplayName(item)}</p>
           ${isHidden ? html`
-            <button onClick=${() => unhideItem(item.key)} className="media-mini-btn full">ðŸ‘ï¸ Mostrar</button>
+            <button onClick=${() => unhideItem(item.key)} className="media-mini-btn full">👁️ Mostrar</button>
           ` : html`
             <div className="media-card-actions">
-              <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" className="media-mini-btn">âœï¸</button>
+              <button onClick=${() => { setEditingKey(item.key); setEditValue(getDisplayName(item)); setMovingKey(null); }} title="Renomear" className="media-mini-btn">✏️</button>
               <button onClick=${() => { setMovingKey(movingKey === item.key ? null : item.key); setMoveValue(getFolder(item, labels)); setEditingKey(null); }} title="Mover para pasta" className="media-mini-btn">📂</button>
               <button onClick=${() => hideItem(item.key)} title="Ocultar" className="media-mini-btn">🙈</button>
             </div>
@@ -9272,10 +9272,10 @@ function MediaLibrarySection({ accountId }) {
             <button
               onClick=${() => { setCurrentFolder(null); setEditingKey(null); setMovingKey(null); setHidingFolder(null); }}
               className="media-back-btn"
-            >â† Pastas</button>
+            >← Pastas</button>
             <span className="media-statustext">/</span>
             <span className="media-statustext" style=${{ fontWeight: 700, color: "var(--ink)" }}>
-              ${currentFolder === "__hidden__" ? "🙈 Arquivos Ocultos" : html`ðŸ“ ${currentFolder}`}
+              ${currentFolder === "__hidden__" ? "🙈 Arquivos Ocultos" : html`📁 ${currentFolder}`}
             </span>
           ` : html`<span className="media-statustext">${media.length} mídias em ${folderNames.length} pasta${folderNames.length !== 1 ? "s" : ""}${saving ? " — salvando..." : ""}</span>`}
         </div>
