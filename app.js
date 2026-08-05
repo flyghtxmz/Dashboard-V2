@@ -29,7 +29,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 145;
+const APP_VERSION_BUILD = 146;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -7016,12 +7016,17 @@ function LocationPicker({ selected, onChange }) {
     else if (pts.length > 1) map.fitBounds(pts, { padding: [40, 40], maxZoom: 7 });
   }, [selected]);
 
-  const doSearch = () => {
-    const q = query.trim().toLowerCase();
+  const normalizeLocationSearch = (value) => String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  const doSearch = (searchValue = query) => {
+    const q = normalizeLocationSearch(searchValue);
     if (!q) { setSearchResults([]); return; }
     setSearchResults(
       COUNTRY_LIST.filter((c) =>
-        c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
+        normalizeLocationSearch(c.name).includes(q) || c.code.toLowerCase().includes(q)
       ).slice(0, 8)
     );
   };
@@ -7046,66 +7051,49 @@ function LocationPicker({ selected, onChange }) {
         <option value="travel">Pessoas viajando para este local</option>
       </select>
 
-      <div style=${{ border: "1px solid var(--border)", borderRadius: "10px", overflow: "hidden", marginBottom: "12px", background: "#fff" }}>
+      <div className="location-selected-list">
         ${selected.length === 0 ? html`
-          <div style=${{ padding: "12px 14px", color: "var(--muted)", fontSize: "0.88rem" }}>
+          <div className="location-empty">
             Nenhuma localização adicionada. Use a busca abaixo para adicionar países.
           </div>
         ` : selected.map((code) => html`
-          <div key=${code} style=${{
-            display: "flex", alignItems: "center", gap: "10px",
-            padding: "10px 14px", borderBottom: "1px solid var(--border-light)", background: "#fff",
-          }}>
+          <div key=${code} className="location-selected-row">
             <span dangerouslySetInnerHTML=${{ __html: pinSvg }} style=${{ flexShrink: 0, display: "flex" }} />
-            <span style=${{ flex: 1, fontWeight: 500, fontSize: "0.92rem" }}>${COUNTRY_MAP[code]?.name || code}</span>
+            <span className="location-name">${COUNTRY_MAP[code]?.name || code}</span>
             <div style=${{ display: "flex", gap: "6px", alignItems: "center" }}>
-              <span style=${{
-                fontSize: "0.78rem", padding: "3px 10px",
-                border: "1px solid #b2dfdb", borderRadius: "6px",
-                background: "#e8f5e9", color: "#198a76", fontWeight: 600,
-              }}>Incluir ▾</span>
+              <span className="location-include-badge">Incluir ▾</span>
               <button
                 onClick=${() => remove(code)}
-                style=${{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: "1rem", padding: "0 4px", lineHeight: 1 }}
+                className="location-remove"
               >✕</button>
             </div>
           </div>
         `)}
       </div>
 
-      <div style=${{ display: "flex", gap: "8px", marginBottom: "8px", position: "relative" }}>
+      <div className="location-search-row">
         <input
           type="text"
           value=${query}
-          onInput=${(e) => { setQuery(e.target.value); doSearch(); }}
+          onInput=${(e) => { const value = e.target.value; setQuery(value); doSearch(value); }}
           onKeyDown=${(e) => { if (e.key === "Enter") doSearch(); }}
           placeholder="Pesquisar localizações"
           style=${{ flex: 1 }}
         />
-        <button className="ghost" onClick=${doSearch}>Procurar</button>
+        <button className="ghost" onClick=${() => doSearch()}>Procurar</button>
       </div>
 
       ${searchResults.length > 0 ? html`
-        <div style=${{
-          border: "1px solid var(--border)", borderRadius: "8px", background: "#fff",
-          marginBottom: "12px", boxShadow: "0 4px 12px rgba(20,18,58,0.08)", overflow: "hidden",
-        }}>
+        <div className="location-results">
           ${searchResults.map((c) => html`
             <div key=${c.code}
               onClick=${() => add(c.code)}
-              style=${{
-                display: "flex", alignItems: "center", gap: "10px",
-                padding: "9px 14px", cursor: "pointer", fontSize: "0.9rem",
-                background: selected.includes(c.code) ? "#e8f5e9" : "transparent",
-                borderBottom: "1px solid var(--border-light)",
-              }}
-              onMouseEnter=${(e) => { if (!selected.includes(c.code)) e.currentTarget.style.background = "#f7f8ff"; }}
-              onMouseLeave=${(e) => { e.currentTarget.style.background = selected.includes(c.code) ? "#e8f5e9" : "transparent"; }}
+              className=${`location-result ${selected.includes(c.code) ? "is-selected" : ""}`}
             >
               <span dangerouslySetInnerHTML=${{ __html: pinSvg }} style=${{ flexShrink: 0, display: "flex" }} />
-              <span style=${{ flex: 1 }}>${c.name}</span>
-              <span style=${{ fontSize: "0.78rem", color: "var(--muted)" }}>${c.code}</span>
-              ${selected.includes(c.code) ? html`<span style=${{ color: "#198a76", fontWeight: 700 }}>✓</span>` : null}
+              <span className="location-name">${c.name}</span>
+              <span className="location-code">${c.code}</span>
+              ${selected.includes(c.code) ? html`<span className="location-check">✓</span>` : null}
             </div>
           `)}
         </div>
@@ -8219,20 +8207,11 @@ function PaisSelect({ value, onChange, placeholder, inputStyle, onEnter }) {
         style=${{ width: "100%", boxSizing: "border-box", ...inputStyle }}
       />
       ${open && filtered.length > 0 ? html`
-        <ul style=${{
-          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 300,
-          background: "#fff", border: "1px solid #dde", borderRadius: "12px",
-          boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
-          maxHeight: "180px", overflowY: "auto",
-          margin: 0, padding: "4px 0", listStyle: "none",
-          fontSize: "0.86rem", color: "#1a1a2e",
-        }}>
+        <ul className="theme-autocomplete">
           ${filtered.map((p) => html`
             <li key=${p}
               onMouseDown=${(e) => { e.preventDefault(); select(p); }}
-              onMouseEnter=${(e) => { e.currentTarget.style.background = "#f0f1ff"; }}
-              onMouseLeave=${(e) => { e.currentTarget.style.background = "transparent"; }}
-              style=${{ padding: "7px 14px", cursor: "pointer", color: "#1a1a2e" }}
+              className="theme-autocomplete-option"
             >${p}</li>
           `)}
         </ul>
