@@ -8,7 +8,7 @@ import {
   nextBuilderNumber,
   normalizeCountryLabel,
   resolveNicheCountryCodes,
-} from "./campaign-builder.mjs?v=149";
+} from "./campaign-builder.mjs?v=150";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -18,7 +18,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 149;
+const APP_VERSION_BUILD = 150;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -7377,7 +7377,7 @@ function CriarCampanhaView({ accountId, pages, pagesLoading, pagesMeta, pagesErr
   const buildMaterializedAdsets = (preserveMetadata = false) => materializeCampaignAdsets({
     adsets: allBuilderAdsets(),
     ads: allBuilderAds(),
-    niche,
+    niche: nicho,
     status: campStatus,
     preserveMetadata,
   });
@@ -13858,8 +13858,48 @@ function App() {
   `;
 }
 
+class DashboardErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error("Erro de renderizacao no dashboard", error, info);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return html`
+      <div className="layout">
+        <main className="grid">
+          <section className="card wide" style=${{ maxWidth: "760px", margin: "48px auto" }}>
+            <span className="eyebrow">Erro de interface</span>
+            <h1 className="section-title">O dashboard encontrou um erro ao abrir esta tela</h1>
+            <p className="muted">
+              Seus dados nao foram alterados. Recarregue a pagina para voltar ao painel.
+            </p>
+            <pre className="debug-log" style=${{ marginTop: "14px", whiteSpace: "pre-wrap" }}>
+              ${this.state.error?.message || "Erro inesperado"}
+            </pre>
+            <div className="action-row-end" style=${{ marginTop: "16px" }}>
+              <button className="primary" onClick=${() => window.location.reload()}>
+                Recarregar dashboard
+              </button>
+            </div>
+          </section>
+        </main>
+      </div>
+    `;
+  }
+}
+
 const rootElement = document.getElementById("root");
 if (rootElement) {
   const root = createRoot(rootElement);
-  root.render(html`<${App} />`);
+  root.render(html`<${DashboardErrorBoundary}><${App} /><//>`);
 }
