@@ -2034,6 +2034,61 @@ tbody tr:last-child td {
   min-width: 1160px;
 }
 
+.flat-metrics-table {
+  min-width: 2460px;
+  table-layout: auto;
+}
+
+.flat-metrics-table.adset-summary-table {
+  min-width: 2060px;
+}
+
+.flat-metrics-table th,
+.flat-metrics-table td {
+  width: auto !important;
+  min-width: 112px;
+  white-space: nowrap;
+}
+
+.flat-metrics-table th:first-child,
+.flat-metrics-table td:first-child {
+  width: 250px !important;
+  min-width: 250px;
+  white-space: normal;
+}
+
+.campaign-metrics-table th:nth-child(2),
+.campaign-metrics-table td:nth-child(2),
+.campaign-metrics-table th:nth-child(3),
+.campaign-metrics-table td:nth-child(3) {
+  width: 210px !important;
+  min-width: 210px;
+  white-space: normal;
+}
+
+.flat-metrics-table td:not(.identity-cell):not(:last-child) {
+  text-align: right;
+}
+
+.flat-metrics-table th:not(:first-child) {
+  text-align: right;
+}
+
+.campaign-metrics-table th:nth-child(2),
+.campaign-metrics-table th:nth-child(3),
+.campaign-metrics-table th:nth-child(4),
+.campaign-metrics-table th:nth-child(5),
+.campaign-metrics-table th:nth-child(20),
+.campaign-metrics-table th:nth-child(21),
+.campaign-metrics-table td:nth-child(4),
+.campaign-metrics-table td:nth-child(5),
+.campaign-metrics-table td:nth-child(20),
+.campaign-metrics-table td:nth-child(21),
+.adset-summary-table th:last-child,
+.adset-summary-table td:last-child {
+  text-align: left;
+}
+
 .meta-join-table th:nth-child(1),
 .meta-join-table td:nth-child(1) {
   width: 220px;
@@ -2336,6 +2391,35 @@ tbody tr:last-child td {
 
   .adset-summary-table {
     min-width: 1080px;
+  }
+
+  .flat-metrics-table {
+    min-width: 2460px;
+  }
+
+  .flat-metrics-table.adset-summary-table {
+    min-width: 2060px;
+  }
+
+  .flat-metrics-table th,
+  .flat-metrics-table td {
+    min-width: 104px;
+    padding: 9px 10px;
+    font-size: 0.78rem;
+  }
+
+  .flat-metrics-table th:first-child,
+  .flat-metrics-table td:first-child {
+    width: 210px !important;
+    min-width: 210px;
+  }
+
+  .campaign-metrics-table th:nth-child(2),
+  .campaign-metrics-table td:nth-child(2),
+  .campaign-metrics-table th:nth-child(3),
+  .campaign-metrics-table td:nth-child(3) {
+    width: 175px !important;
+    min-width: 175px;
   }
 }
 

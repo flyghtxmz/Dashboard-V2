@@ -5572,13 +5572,15 @@ function MetaJoinTable({
     acc.spend += toNumber(row.spend_value);
     acc.results += toNumber(row.results_meta);
     acc.metaImpressions += toNumber(row.meta_impressions_value);
+    acc.metaClicks += toNumber(row.meta_clicks_value);
     if (row.joinads_matched) {
       acc.revenueUsd += toNumber(row.revenue_client_value);
       acc.revenueBrl += toNumber(row.revenue_client_brl_value);
       acc.joinImpressions += toNumber(row.impressions_joinads);
+      acc.joinClicks += toNumber(row.clicks_joinads);
     }
     return acc;
-  }, { spend: 0, results: 0, metaImpressions: 0, revenueUsd: 0, revenueBrl: 0, joinImpressions: 0 });
+  }, { spend: 0, results: 0, metaImpressions: 0, metaClicks: 0, revenueUsd: 0, revenueBrl: 0, joinImpressions: 0, joinClicks: 0 });
   const totalRoas = totals.spend > 0 ? totals.revenueBrl / totals.spend : null;
   const totalProfit = totals.revenueBrl - totals.spend;
   const campaignCount = new Set(consolidated.map((row) => row.campaign_id || row.campaign_name)).size;
@@ -5663,18 +5665,21 @@ function MetaJoinTable({
       <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></div>
     </div>
     <div className="table-wrapper scroll-x meta-join-table-wrap">
-      <table className="meta-join-table">
+      <table className="meta-join-table flat-metrics-table campaign-metrics-table">
         <thead><tr>
           <th><button className="table-sort" onClick=${() => setSorting("campaign_name")}>Campanha${mark("campaign_name")}</button></th>
-          <th>Conjunto / anuncio</th><th>Periodo / entrega</th>
-          <th><button className="table-sort" onClick=${() => setSorting("spend_value")}>Meta${mark("spend_value")}</button></th>
-          <th><button className="table-sort" onClick=${() => setSorting("revenue_client_brl_value")}>JoinAds${mark("revenue_client_brl_value")}</button></th>
-          <th><button className="table-sort" onClick=${() => setSorting("roas_joinads_value")}>Resultado${mark("roas_joinads_value")}</button></th>
-          <th>Atribuicao</th><th>Controles</th>
+          <th>Conjunto</th><th>Anuncio</th><th>Periodo</th><th>Status</th>
+          <th><button className="table-sort" onClick=${() => setSorting("spend_value")}>Gasto Meta${mark("spend_value")}</button></th>
+          <th>Resultados</th><th>CPA Meta</th><th>Imp. Meta</th><th>Cliques Meta</th><th>CTR Meta</th>
+          <th>Receita USD</th>
+          <th><button className="table-sort" onClick=${() => setSorting("revenue_client_brl_value")}>Receita BRL${mark("revenue_client_brl_value")}</button></th>
+          <th>Imp. JoinAds</th><th>Cliques JoinAds</th><th>${unitLabel} JoinAds</th><th>CTR JoinAds</th>
+          <th><button className="table-sort" onClick=${() => setSorting("roas_joinads_value")}>ROAS${mark("roas_joinads_value")}</button></th>
+          <th>Lucro Op.</th><th>Atribuicao</th><th>Controles</th>
         </tr></thead>
         <tbody>
           ${sortedRows.length === 0
-            ? html`<tr><td colSpan="8" className="muted empty-table">Sem dados para o periodo ou para a busca.</td></tr>`
+            ? html`<tr><td colSpan="21" className="muted empty-table">Sem dados para o periodo ou para a busca.</td></tr>`
             : sortedRows.map((row) => {
                 const statusRaw = row.ad_status || "";
                 const status = statusRaw || row.effective_status || "";
@@ -5689,19 +5694,31 @@ function MetaJoinTable({
                   : row.impressions_joinads > 0
                   ? toNumber(row.revenue_client_value) / row.impressions_joinads * 1000
                   : null;
+                const metaCtr = row.meta_impressions_value > 0
+                  ? toNumber(row.meta_clicks_value) / row.meta_impressions_value * 100
+                  : null;
                 return html`<tr key=${row.ad_id || `${row.adset_name}-${row.ad_name}`}>
                   <td className="identity-cell campaign-identity"><strong>${row.campaign_name || "Campanha sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)}</span></td>
-                  <td className="identity-cell ad-identity"><span className="identity-level">Conjunto</span><strong>${row.adset_name || "Sem nome"}</strong><span className="metric-id">${row.adset_id || "Sem ID"}</span><span className="identity-level">Anuncio</span>${row.asset_url ? html`<a href=${row.asset_url} target="_blank" rel="noopener noreferrer">${row.ad_name || "Sem nome"}</a>` : html`<span>${row.ad_name || "Sem nome"}</span>`}<span className="metric-id">${row.ad_id || "Sem ID"}</span></td>
-                  <td><div className="metric-stack compact-stack"><span>${row.date_label}</span><span className=${`status-badge ${statusToneMap[status] || "neutral"}`}>${formatStatusLabel(status)}</span>${row.ad_id && canToggle && allowCampaignOps ? html`<button className=${`toggle ${active ? "on" : "off"}`} disabled=${statusLoading?.[row.ad_id]} onClick=${() => onToggleAd(row.ad_id, active ? "PAUSED" : "ACTIVE")}>${statusLoading?.[row.ad_id] ? "..." : active ? "Ligado" : "Desligado"}</button>` : null}</div></td>
-                  <td className="numeric-stack-cell"><div className="metric-stack"><strong>${currencyBRL.format(row.spend_value)}</strong><span><b>${row.results_observed ? number.format(row.results_meta) : "-"}</b> resultados</span><span>CPA ${row.cost_per_result_value != null ? currencyBRL.format(row.cost_per_result_value) : "-"}</span><span>${number.format(row.meta_impressions_value)} imp. · ${number.format(row.meta_clicks_value)} cliques</span></div></td>
-                  <td className="numeric-stack-cell"><div className="metric-stack"><strong>${row.joinads_matched ? currencyUSD.format(row.revenue_client_value) : "-"}</strong><span>${row.joinads_matched && row.revenue_client_brl_value != null ? currencyBRL.format(row.revenue_client_brl_value) : "Sem receita atribuida"}</span><span>${row.joinads_matched ? `${number.format(row.impressions_joinads)} imp. · ${number.format(row.clicks_joinads)} cliques` : "-"}</span><span>${unitLabel} ${ecpm != null ? currencyUSD.format(ecpm) : "-"} · CTR ${joinCtr != null ? `${joinCtr.toFixed(2)}%` : "-"}</span></div></td>
-                  <td className="numeric-stack-cell"><div className="metric-stack result-stack"><strong className=${row.roas_joinads_value != null && row.roas_joinads_value >= 1 ? "positive" : row.roas_joinads_value != null ? "negative" : ""}>${row.roas_joinads_value != null ? `${row.roas_joinads_value.toFixed(2)}x` : "-"}</strong><span>ROAS atribuido</span><b className=${row.lucro_op_brl_value != null && row.lucro_op_brl_value >= 0 ? "positive" : row.lucro_op_brl_value != null ? "negative" : ""}>${row.lucro_op_brl_value != null ? currencyBRL.format(row.lucro_op_brl_value) : "-"}</b><span>Lucro operacional</span></div></td>
+                  <td className="identity-cell"><strong>${row.adset_name || "Sem nome"}</strong><span className="metric-id">${row.adset_id || "Sem ID"}</span></td>
+                  <td className="identity-cell">${row.asset_url ? html`<a href=${row.asset_url} target="_blank" rel="noopener noreferrer">${row.ad_name || "Sem nome"}</a>` : html`<strong>${row.ad_name || "Sem nome"}</strong>`}<span className="metric-id">${row.ad_id || "Sem ID"}</span></td>
+                  <td>${row.date_label}</td>
+                  <td><div className="metric-stack compact-stack"><span className=${`status-badge ${statusToneMap[status] || "neutral"}`}>${formatStatusLabel(status)}</span>${row.ad_id && canToggle && allowCampaignOps ? html`<button className=${`toggle ${active ? "on" : "off"}`} disabled=${statusLoading?.[row.ad_id]} onClick=${() => onToggleAd(row.ad_id, active ? "PAUSED" : "ACTIVE")}>${statusLoading?.[row.ad_id] ? "..." : active ? "Ligado" : "Desligado"}</button>` : null}</div></td>
+                  <td><strong>${currencyBRL.format(row.spend_value)}</strong></td>
+                  <td>${row.results_observed ? number.format(row.results_meta) : "-"}</td>
+                  <td>${row.cost_per_result_value != null ? currencyBRL.format(row.cost_per_result_value) : "-"}</td>
+                  <td>${number.format(row.meta_impressions_value)}</td><td>${number.format(row.meta_clicks_value)}</td><td>${metaCtr != null ? `${metaCtr.toFixed(2)}%` : "-"}</td>
+                  <td><strong>${row.joinads_matched ? currencyUSD.format(row.revenue_client_value) : "-"}</strong></td>
+                  <td><strong>${row.joinads_matched && row.revenue_client_brl_value != null ? currencyBRL.format(row.revenue_client_brl_value) : "-"}</strong></td>
+                  <td>${row.joinads_matched ? number.format(row.impressions_joinads) : "-"}</td><td>${row.joinads_matched ? number.format(row.clicks_joinads) : "-"}</td>
+                  <td>${ecpm != null ? currencyUSD.format(ecpm) : "-"}</td><td>${joinCtr != null ? `${joinCtr.toFixed(2)}%` : "-"}</td>
+                  <td><strong className=${row.roas_joinads_value != null && row.roas_joinads_value >= 1 ? "positive" : row.roas_joinads_value != null ? "negative" : ""}>${row.roas_joinads_value != null ? `${row.roas_joinads_value.toFixed(2)}x` : "-"}</strong></td>
+                  <td><strong className=${row.lucro_op_brl_value != null && row.lucro_op_brl_value >= 0 ? "positive" : row.lucro_op_brl_value != null ? "negative" : ""}>${row.lucro_op_brl_value != null ? currencyBRL.format(row.lucro_op_brl_value) : "-"}</strong></td>
                   <td><div className="attribution-cell" title=${attribution.detail}><span className=${`chip ${attribution.tone}`}>${attribution.label}</span><span className="muted small">${attribution.detail}</span></div></td>
                   <td>${controls(row)}</td>
                 </tr>`;
               })}
         </tbody>
-        ${sortedRows.length ? html`<tfoot><tr><td colSpan="3"><strong>Total exibido</strong><span>${consolidated.length} anuncios</span></td><td><strong>${currencyBRL.format(totals.spend)}</strong><span>${number.format(totals.results)} resultados · ${number.format(totals.metaImpressions)} imp.</span></td><td><strong>${currencyUSD.format(totals.revenueUsd)}</strong><span>${currencyBRL.format(totals.revenueBrl)} · ${number.format(totals.joinImpressions)} imp.</span></td><td><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong><span>${currencyBRL.format(totalProfit)}</span></td><td colSpan="2"><span>${attributedCount} anuncios com receita atribuida</span></td></tr></tfoot>` : null}
+        ${sortedRows.length ? html`<tfoot><tr><td colSpan="5"><strong>Total exibido</strong><span>${consolidated.length} anuncios</span></td><td><strong>${currencyBRL.format(totals.spend)}</strong></td><td><strong>${number.format(totals.results)}</strong></td><td></td><td><strong>${number.format(totals.metaImpressions)}</strong></td><td><strong>${number.format(totals.metaClicks)}</strong></td><td></td><td><strong>${currencyUSD.format(totals.revenueUsd)}</strong></td><td><strong>${currencyBRL.format(totals.revenueBrl)}</strong></td><td><strong>${number.format(totals.joinImpressions)}</strong></td><td><strong>${number.format(totals.joinClicks)}</strong></td><td></td><td></td><td><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></td><td><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></td><td colSpan="2"><span>${attributedCount} anuncios atribuidos</span></td></tr></tfoot>` : null}
       </table>
     </div>
     <p className="muted small table-note">Campanhas diretas ao site permanecem visiveis mesmo antes de a JoinAds devolver receita para a UTM.</p>
@@ -6568,13 +6585,15 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
     acc.spend += item.spend;
     acc.results += item.results;
     acc.metaImpressions += item.metaImpressions;
+    acc.metaClicks += item.metaClicks;
     if (item.revenueUsd != null) {
       acc.revenueUsd += item.revenueUsd;
       acc.revenueBrl += toNumber(item.revenueBrl);
       acc.joinImpressions += toNumber(item.impressions);
+      acc.joinClicks += toNumber(item.clicks);
     }
     return acc;
-  }, { spend: 0, results: 0, metaImpressions: 0, revenueUsd: 0, revenueBrl: 0, joinImpressions: 0 });
+  }, { spend: 0, results: 0, metaImpressions: 0, metaClicks: 0, revenueUsd: 0, revenueBrl: 0, joinImpressions: 0, joinClicks: 0 });
   const totalRoas = totals.spend > 0 ? totals.revenueBrl / totals.spend : null;
   const totalProfit = totals.revenueBrl - totals.spend;
   const attributionView = (value) => {
@@ -6596,29 +6615,30 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
       <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></div>
       <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></div>
     </div>
-    <div className="table-wrapper scroll-x meta-join-table-wrap"><table className="meta-join-table adset-summary-table">
+    <div className="table-wrapper scroll-x meta-join-table-wrap"><table className="meta-join-table flat-metrics-table adset-summary-table">
       <thead><tr>
         <th><button className="table-sort" onClick=${() => setSorting("campaign_name")}>Campanha / conjunto${mark("campaign_name")}</button></th>
-        <th><button className="table-sort" onClick=${() => setSorting("spend")}>Meta${mark("spend")}</button></th>
-        <th><button className="table-sort" onClick=${() => setSorting("revenueBrl")}>JoinAds${mark("revenueBrl")}</button></th>
-        <th>Eficiencia</th>
-        <th><button className="table-sort" onClick=${() => setSorting("roas")}>Resultado${mark("roas")}</button></th>
-        <th>Atribuicao</th>
+        <th>Anuncios</th><th><button className="table-sort" onClick=${() => setSorting("spend")}>Gasto Meta${mark("spend")}</button></th>
+        <th>Resultados</th><th>CPA Meta</th><th>Imp. Meta</th><th>Cliques Meta</th><th>CTR Meta</th>
+        <th>Receita USD</th><th><button className="table-sort" onClick=${() => setSorting("revenueBrl")}>Receita BRL${mark("revenueBrl")}</button></th>
+        <th>Imp. JoinAds</th><th>Cliques JoinAds</th><th>${unitLabel} JoinAds</th><th>CTR JoinAds</th>
+        <th><button className="table-sort" onClick=${() => setSorting("roas")}>ROAS${mark("roas")}</button></th><th>Lucro Op.</th><th>Atribuicao</th>
       </tr></thead>
       <tbody>${sorted.length === 0
-        ? html`<tr><td colSpan="6" className="muted empty-table">Sem conjuntos para o periodo.</td></tr>`
+        ? html`<tr><td colSpan="17" className="muted empty-table">Sem conjuntos para o periodo.</td></tr>`
         : sorted.map((row) => {
             const attribution = attributionView(row.attribution);
             return html`<tr key=${row.adset_id || `${row.campaign_name}-${row.adset_name}`}>
-              <td className="identity-cell"><span className="identity-level">Campanha</span><strong>${row.campaign_name || "Sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="identity-level">Conjunto</span><b>${row.adset_name || "Sem nome"}</b><span className="metric-id">${row.adset_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)} · ${row.ads} anuncios</span></td>
-              <td className="numeric-stack-cell"><div className="metric-stack"><strong>${currencyBRL.format(row.spend)}</strong><span><b>${row.resultsObserved ? number.format(row.results) : "-"}</b> resultados · CPA ${row.cpa != null ? currencyBRL.format(row.cpa) : "-"}</span><span>${number.format(row.metaImpressions)} imp. · ${number.format(row.metaClicks)} cliques</span><span>CTR ${row.metaCtr != null ? `${row.metaCtr.toFixed(2)}%` : "-"}</span></div></td>
-              <td className="numeric-stack-cell"><div className="metric-stack"><strong>${row.revenueUsd != null ? currencyUSD.format(row.revenueUsd) : "-"}</strong><span>${row.revenueBrl != null ? currencyBRL.format(row.revenueBrl) : "Sem receita atribuida"}</span><span>${row.impressions != null ? `${number.format(row.impressions)} imp. · ${number.format(row.clicks)} cliques` : "-"}</span></div></td>
-              <td className="numeric-stack-cell"><div className="metric-stack"><strong>${unitLabel} ${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</strong><span>CTR JoinAds ${row.joinCtr != null ? `${row.joinCtr.toFixed(2)}%` : "-"}</span><span>CPA Meta ${row.cpa != null ? currencyBRL.format(row.cpa) : "-"}</span></div></td>
-              <td className="numeric-stack-cell"><div className="metric-stack result-stack"><strong className=${row.roas != null && row.roas >= 1 ? "positive" : row.roas != null ? "negative" : ""}>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</strong><span>ROAS atribuido</span><b className=${row.profit != null && row.profit >= 0 ? "positive" : row.profit != null ? "negative" : ""}>${row.profit != null ? currencyBRL.format(row.profit) : "-"}</b><span>Lucro operacional</span></div></td>
+              <td className="identity-cell"><span className="identity-level">Campanha</span><strong>${row.campaign_name || "Sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="identity-level">Conjunto</span><b>${row.adset_name || "Sem nome"}</b><span className="metric-id">${row.adset_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)}</span></td>
+              <td>${number.format(row.ads)}</td><td><strong>${currencyBRL.format(row.spend)}</strong></td><td>${row.resultsObserved ? number.format(row.results) : "-"}</td><td>${row.cpa != null ? currencyBRL.format(row.cpa) : "-"}</td>
+              <td>${number.format(row.metaImpressions)}</td><td>${number.format(row.metaClicks)}</td><td>${row.metaCtr != null ? `${row.metaCtr.toFixed(2)}%` : "-"}</td>
+              <td><strong>${row.revenueUsd != null ? currencyUSD.format(row.revenueUsd) : "-"}</strong></td><td><strong>${row.revenueBrl != null ? currencyBRL.format(row.revenueBrl) : "-"}</strong></td>
+              <td>${row.impressions != null ? number.format(row.impressions) : "-"}</td><td>${row.clicks != null ? number.format(row.clicks) : "-"}</td><td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td><td>${row.joinCtr != null ? `${row.joinCtr.toFixed(2)}%` : "-"}</td>
+              <td><strong className=${row.roas != null && row.roas >= 1 ? "positive" : row.roas != null ? "negative" : ""}>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</strong></td><td><strong className=${row.profit != null && row.profit >= 0 ? "positive" : row.profit != null ? "negative" : ""}>${row.profit != null ? currencyBRL.format(row.profit) : "-"}</strong></td>
               <td><div className="attribution-cell" title=${attribution.detail}><span className=${`chip ${attribution.tone}`}>${attribution.label}</span><span className="muted small">${attribution.detail}</span></div></td>
             </tr>`;
           })}</tbody>
-      ${sorted.length ? html`<tfoot><tr><td><strong>Total geral</strong><span>${grouped.length} conjuntos</span></td><td><strong>${currencyBRL.format(totals.spend)}</strong><span>${number.format(totals.results)} resultados · ${number.format(totals.metaImpressions)} imp.</span></td><td><strong>${currencyUSD.format(totals.revenueUsd)}</strong><span>${currencyBRL.format(totals.revenueBrl)} · ${number.format(totals.joinImpressions)} imp.</span></td><td><span>${unitLabel} ${totals.joinImpressions > 0 ? currencyUSD.format(totals.revenueUsd / totals.joinImpressions * 1000) : "-"}</span></td><td><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong><span>${currencyBRL.format(totalProfit)}</span></td><td><span>${grouped.filter((row) => row.revenueUsd != null).length} atribuidos</span></td></tr></tfoot>` : null}
+      ${sorted.length ? html`<tfoot><tr><td><strong>Total geral</strong><span>${grouped.length} conjuntos</span></td><td></td><td><strong>${currencyBRL.format(totals.spend)}</strong></td><td><strong>${number.format(totals.results)}</strong></td><td></td><td><strong>${number.format(totals.metaImpressions)}</strong></td><td><strong>${number.format(totals.metaClicks)}</strong></td><td></td><td><strong>${currencyUSD.format(totals.revenueUsd)}</strong></td><td><strong>${currencyBRL.format(totals.revenueBrl)}</strong></td><td><strong>${number.format(totals.joinImpressions)}</strong></td><td><strong>${number.format(totals.joinClicks)}</strong></td><td><strong>${totals.joinImpressions > 0 ? currencyUSD.format(totals.revenueUsd / totals.joinImpressions * 1000) : "-"}</strong></td><td></td><td><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></td><td><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></td><td><span>${grouped.filter((row) => row.revenueUsd != null).length} atribuidos</span></td></tr></tfoot>` : null}
     </table></div>
     <p className="muted small table-note">Quando dois conjuntos antigos tem o mesmo nome, a receita por nome nao e aplicada. A UTM por ID elimina esse risco.</p>
   </section>`;
