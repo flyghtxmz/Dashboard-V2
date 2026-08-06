@@ -10,8 +10,8 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=161";
-import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=161";
+} from "./campaign-builder.mjs?v=162";
+import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=162";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 161;
+const APP_VERSION_BUILD = 162;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4684,6 +4684,7 @@ function GerenciarView({
   const [modelAdsetName, setModelAdsetName] = useState("");
   const [modelAdditionalAds, setModelAdditionalAds] = useState([]);
   const [modelMode, setModelMode] = useState("adset");
+  const [managerToast, setManagerToast] = useState(null);
   const [form, setForm] = useState({
     name: "",
     daily_budget_brl: "20.00",
@@ -4700,6 +4701,32 @@ function GerenciarView({
 
   useEffect(() => {
     onLoad?.();
+  }, []);
+
+  useEffect(() => {
+    if (!managerToast) return undefined;
+    const timeoutId = window.setTimeout(() => setManagerToast(null), 5500);
+    return () => window.clearTimeout(timeoutId);
+  }, [managerToast]);
+
+  useEffect(() => {
+    const closeMenus = (event) => {
+      const currentMenu = event.target.closest?.(".manager-more");
+      document.querySelectorAll(".manager-more[open]").forEach((details) => {
+        if (!currentMenu || details !== currentMenu) details.removeAttribute("open");
+      });
+    };
+    const closeAfterAction = (event) => {
+      const action = event.target.closest?.(".manager-more-menu button");
+      if (!action) return;
+      window.setTimeout(() => action.closest(".manager-more")?.removeAttribute("open"), 0);
+    };
+    document.addEventListener("pointerdown", closeMenus);
+    document.addEventListener("click", closeAfterAction);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenus);
+      document.removeEventListener("click", closeAfterAction);
+    };
   }, []);
 
   const campaignIsMessages = (campaign) => {
@@ -4848,9 +4875,31 @@ function GerenciarView({
       setCreateBusy(false);
     }
   };
+  const publishWithFeedback = async () => {
+    const result = await onPublish?.();
+    if (!result) return;
+    if (result.publishedItems > 0) {
+      setManagerToast({
+        type: "success",
+        title: "Publicado com sucesso",
+        message: `${result.publishedItems} item(ns) enviado(s) para o Gerenciador de Anúncios.`,
+      });
+    } else if (result.failedDrafts > 0) {
+      setManagerToast({
+        type: "error",
+        title: "Não foi possível publicar",
+        message: "Confira os detalhes no diagnóstico e tente novamente.",
+      });
+    }
+  };
 
   return html`
     <main className="manager-grid">
+      ${managerToast ? html`<aside className=${`manager-toast ${managerToast.type}`} role="status" aria-live="polite">
+        <span className="manager-toast-icon">${managerToast.type === "success" ? "✓" : "!"}</span>
+        <div><strong>${managerToast.title}</strong><p>${managerToast.message}</p></div>
+        <button aria-label="Fechar notificação" onClick=${() => setManagerToast(null)}>×</button>
+      </aside>` : null}
       <section className="card wide manager-hero">
         <div className="card-head manager-head">
           <div>
@@ -4901,7 +4950,7 @@ function GerenciarView({
           <strong>${filteredCampaigns.length}</strong>
           <span>${filteredCampaigns.length === 1 ? "campanha encontrada" : "campanhas encontradas"}</span>
           <span className="manager-summary-divider">•</span>
-          <span>Novos itens são criados pausados</span>
+          <span>Conjuntos ficam pausados; novos anúncios são publicados ativos</span>
         </div>
 
         <div className="manager-campaigns">
@@ -5088,7 +5137,7 @@ function GerenciarView({
                                       <strong>${modelMode === "ad_only" ? "Criar anúncio no conjunto atual" : "Montar novo conjunto pelo modelo"}</strong>
                                       <p className="muted small">
                                         ${modelMode === "ad_only"
-                                          ? "O CJ será mantido. Somente o AN do novo anúncio será incrementado."
+                                          ? "O CJ será mantido. Somente o AN será incrementado e o novo anúncio será publicado ativo."
                                           : "O próximo CJ será aplicado automaticamente. Escolha os anúncios e, se quiser, troque a imagem."}
                                       </p>
                                     </div>
@@ -5207,7 +5256,7 @@ function GerenciarView({
       <section className="card wide manager-drafts">
         <div className="card-head">
           <div><span className="eyebrow">Rascunho</span><h2 className="section-title">Conjuntos e anúncios preparados</h2></div>
-          <button className="primary" onClick=${onPublish} disabled=${publishing || !drafts.length}>
+          <button className="primary" onClick=${publishWithFeedback} disabled=${publishing || !drafts.length}>
             ${publishing ? "Publicando..." : `Publicar ${drafts.length || ""}`}
           </button>
         </div>
@@ -5225,7 +5274,7 @@ function GerenciarView({
                   <button className="ghost small" onClick=${() => onRemoveDraft(draft.id)}>Remover</button>
                 </div>
                 ${draft.mode === "ad_only"
-                  ? html`<div className="manager-current-adset"><span>O conjunto não será duplicado</span><strong>${draft.source_adset_name}</strong></div>`
+                  ? html`<div className="manager-current-adset"><span>O conjunto não será duplicado; o anúncio será publicado ativo em</span><strong>${draft.source_adset_name}</strong></div>`
                   : html`<div className="draft-fields">
                       <label className="field"><span>Novo nome do conjunto</span><input value=${draft.adset_new_name} onChange=${(e) => onUpdateDraft(draft.id, { adset_new_name: e.target.value })} /></label>
                       <label className="field"><span>Número de cópias</span><input type="number" min="1" value=${draft.copies || 1} onChange=${(e) => onUpdateDraft(draft.id, { copies: Math.max(1, Number(e.target.value) || 1) })} /></label>
@@ -13494,6 +13543,8 @@ function App() {
     setPublishing(true);
     const forceUtmCopy = false;
     const remaining = [];
+    let publishedItems = 0;
+    let publishedDrafts = 0;
     for (const draft of drafts) {
       let step = "copy";
       const replacesCreative = (draft.ads || []).some(
@@ -13519,7 +13570,7 @@ function App() {
                   ad_id: sourceAdId,
                   adset_id: draft.target_adset_id,
                   name: String(ad.new_name || ad.name || "Novo anúncio").trim(),
-                  status: DUPLICATE_STATUS,
+                  status: "ACTIVE",
                   sanitize_video_placements: true,
                   replacement_image_hash: ad.replacement_image_hash || "",
                 }),
@@ -13527,8 +13578,10 @@ function App() {
             );
           }
           pushLog("gerenciar-anuncio", {
-            message: `${adsToCreate.length} anúncio(s) criado(s) em ${draft.source_adset_name}, sem alterar o CJ.`,
+            message: `${adsToCreate.length} anúncio(s) ativo(s) criado(s) em ${draft.source_adset_name}, sem alterar o CJ.`,
           });
+          publishedItems += adsToCreate.length;
+          publishedDrafts += 1;
           continue;
         }
         step = "copy";
@@ -13824,6 +13877,8 @@ function App() {
         pushLog("duplicar", {
           message: `Publicado: ${draft.source_adset_name} -> ${draft.adset_new_name}`,
         });
+        publishedItems += Math.max(1, Number(draft.copies) || 1);
+        publishedDrafts += 1;
       } catch (err) {
         pushLog(`duplicar-${step}`, err);
         remaining.push(draft);
@@ -13831,6 +13886,11 @@ function App() {
     }
     setDrafts(remaining);
     setPublishing(false);
+    return {
+      publishedItems,
+      publishedDrafts,
+      failedDrafts: remaining.length,
+    };
   };
 
   useEffect(() => {
