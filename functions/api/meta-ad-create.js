@@ -89,6 +89,14 @@ export function applyReplacementImageHash(objectStorySpec, assetFeedSpec, imageH
     nextStory.link_data.image_hash = hash;
     delete nextStory.link_data.image_url;
     delete nextStory.link_data.picture;
+    if (Array.isArray(nextStory.link_data.child_attachments)) {
+      nextStory.link_data.child_attachments = nextStory.link_data.child_attachments.map((attachment) => ({
+        ...attachment,
+        image_hash: hash,
+        image_url: undefined,
+        picture: undefined,
+      }));
+    }
     changed = true;
   } else if (nextStory?.photo_data) {
     nextStory.photo_data.image_hash = hash;
@@ -103,11 +111,34 @@ export function applyReplacementImageHash(objectStorySpec, assetFeedSpec, imageH
   }
 
   if (nextFeed) {
-    nextFeed.images = [{ hash }];
+    nextFeed.images = Array.isArray(nextFeed.images) && nextFeed.images.length
+      ? nextFeed.images.map((image) => {
+          const nextImage = { ...image, hash };
+          delete nextImage.url;
+          delete nextImage.image_url;
+          return nextImage;
+        })
+      : [{ hash }];
     changed = true;
   }
 
   return { objectStorySpec: nextStory, assetFeedSpec: nextFeed, changed };
+}
+
+export function collectCreativeImageHashes(value, key = "") {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectCreativeImageHashes(item, key));
+  }
+  if (!value || typeof value !== "object") return [];
+  const hashes = [];
+  Object.entries(value).forEach(([childKey, childValue]) => {
+    if ((childKey === "image_hash" || (childKey === "hash" && key === "images")) && childValue) {
+      hashes.push(String(childValue));
+    } else {
+      hashes.push(...collectCreativeImageHashes(childValue, childKey));
+    }
+  });
+  return [...new Set(hashes)];
 }
 
 function isEmptyObject(value) {

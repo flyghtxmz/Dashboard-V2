@@ -10,8 +10,8 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=163";
-import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=163";
+} from "./campaign-builder.mjs?v=165";
+import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=165";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -20,7 +20,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 163;
+const APP_VERSION_BUILD = 165;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -13931,6 +13931,13 @@ function App() {
       }
     }
     setDrafts(remaining);
+    if (publishedItems > 0) {
+      // A Meta pode levar alguns instantes para disponibilizar a miniatura do novo
+      // criativo. Recarrega a estrutura depois da confirmacao para nao manter o
+      // preview do anuncio-modelo na hierarquia.
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+      await handleLoadEditar(true);
+    }
     setPublishing(false);
     return {
       publishedItems,

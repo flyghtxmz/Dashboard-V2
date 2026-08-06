@@ -50,6 +50,22 @@ function extractUrl(spec) {
   return v || "";
 }
 
+async function fetchSinglePage(url) {
+  const json = await fetchWithRetry(url);
+  return json.data || [];
+}
+
+function extractCreativeImageHash(creative) {
+  const spec = creative?.object_story_spec || {};
+  return String(
+    creative?.image_hash ||
+      spec?.link_data?.image_hash ||
+      spec?.photo_data?.image_hash ||
+      creative?.asset_feed_spec?.images?.[0]?.hash ||
+      ""
+  );
+}
+
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
   if (!token) return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
@@ -63,7 +79,7 @@ export async function onRequest({ request, env }) {
   const end_date = params.get("end_date");
   const force = params.get("force") === "1" || params.get("force") === "true";
   const kv = env.CPA_RULES_KV || env.DASHBOARD_KV;
-  const cacheKey = `meta_structure:v2:${account_id}:${start_date || ""}:${end_date || ""}`;
+  const cacheKey = `meta_structure:v3:${account_id}:${start_date || ""}:${end_date || ""}`;
 
   // ── KV cache read ──────────────────────────────────────
   if (kv && !force) {
@@ -96,8 +112,9 @@ export async function onRequest({ request, env }) {
     // ── 3 parallel paginated fetches — NO nested loops ────
     const campFields = "id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining";
     const adsetFields = "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,promoted_object,start_time,end_time";
-    const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{url_tags,image_hash,thumbnail_url,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link,image_hash,picture},photo_data{image_hash},video_data{call_to_action}}}";
+    const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{id,url_tags,image_hash,thumbnail_url,asset_feed_spec,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link,image_hash,picture},photo_data{image_hash},video_data{call_to_action}}}";
     const insightFields = "ad_id,spend,ctr,cpc,cpm,frequency,impressions,video_thruplay_watched_actions";
+    const imageFields = "hash,url,url_128";
 
     const [campaigns, adsets, ads, insightsRaw] = await Promise.all([
       fetchPaged(`${API_BASE}/${act}/campaigns?fields=${campFields}&limit=200&access_token=${t}`),
@@ -106,9 +123,24 @@ export async function onRequest({ request, env }) {
       fetchPaged(`${API_BASE}/${act}/insights?fields=${insightFields}&level=ad&${start_date && end_date ? `time_range=${encodeURIComponent(JSON.stringify({ since: start_date, until: end_date }))}` : "date_preset=last_30d"}&limit=500&access_token=${t}`),
     ]);
 
+    const requestedImageHashes = [...new Set(ads.map((ad) => extractCreativeImageHash(ad?.creative)).filter(Boolean))];
+    const accountImages = [];
+    for (let index = 0; index < requestedImageHashes.length; index += 50) {
+      const hashChunk = requestedImageHashes.slice(index, index + 50);
+      const images = await fetchSinglePage(
+        `${API_BASE}/${act}/adimages?fields=${imageFields}&hashes=${encodeURIComponent(JSON.stringify(hashChunk))}&limit=50&access_token=${t}`
+      );
+      accountImages.push(...images);
+    }
+
     // ── Build lookup maps ─────────────────────────────────
     const campMap = new Map(campaigns.map((c) => [c.id, c]));
     const adsetMap = new Map(adsets.map((a) => [a.id, a]));
+    const imageByHash = new Map(
+      (accountImages || [])
+        .filter((image) => image?.hash)
+        .map((image) => [String(image.hash), image])
+    );
     const insightMap = new Map();
     for (const r of insightsRaw) {
       const prev = insightMap.get(r.ad_id);
@@ -126,6 +158,8 @@ export async function onRequest({ request, env }) {
       const adset = adsetMap.get(ad.adset_id) || {};
       const ins = insightMap.get(ad.id) || {};
       const spec = ad?.creative?.object_story_spec || {};
+      const imageHash = extractCreativeImageHash(ad?.creative);
+      const accountImage = imageByHash.get(imageHash);
       const url = extractUrl(spec);
       const destination =
         ad?.creative?.link_url ||
@@ -156,6 +190,13 @@ export async function onRequest({ request, env }) {
           ad?.creative?.effective_object_story_id ||
           ad?.creative?.object_story_id || "",
         destination_url: destination,
+        image_hash: imageHash,
+        thumbnail_url:
+          accountImage?.url_128 ||
+          accountImage?.url ||
+          spec?.link_data?.picture ||
+          ad?.creative?.thumbnail_url ||
+          "",
         updated_time: ad.updated_time || "",
         // insights (last 30d)
         spend: ins.spend || null,
@@ -172,6 +213,8 @@ export async function onRequest({ request, env }) {
     ads.forEach((ad) => {
       if (!adsByAdset.has(ad.adset_id)) adsByAdset.set(ad.adset_id, []);
       const spec = ad?.creative?.object_story_spec || {};
+      const imageHash = extractCreativeImageHash(ad?.creative);
+      const accountImage = imageByHash.get(imageHash);
       adsByAdset.get(ad.adset_id).push({
         id: ad.id,
         name: ad.name,
@@ -182,8 +225,13 @@ export async function onRequest({ request, env }) {
         url_tags: ad?.creative?.url_tags || "",
         destination_url: ad?.creative?.link_url || ad?.creative?.object_url || extractUrl(spec) || "",
         object_story_id: ad?.creative?.effective_object_story_id || ad?.creative?.object_story_id || "",
-        image_hash: ad?.creative?.image_hash || spec?.link_data?.image_hash || spec?.photo_data?.image_hash || "",
-        thumbnail_url: ad?.creative?.thumbnail_url || spec?.link_data?.picture || "",
+        image_hash: imageHash,
+        thumbnail_url:
+          accountImage?.url_128 ||
+          accountImage?.url ||
+          spec?.link_data?.picture ||
+          ad?.creative?.thumbnail_url ||
+          "",
       });
     });
     const adsetsByCampaign = new Map();
