@@ -1399,6 +1399,22 @@ button.ghost.danger {
   margin-top: 13px;
   max-width: 620px;
 }
+.manager-current-adset {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  width: fit-content;
+  margin-top: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 0.82rem;
+}
+.manager-current-adset span {
+  color: var(--muted);
+}
 .manager-model-ads {
   display: grid;
   gap: 9px;

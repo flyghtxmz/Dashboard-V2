@@ -10,8 +10,8 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=160";
-import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=160";
+} from "./campaign-builder.mjs?v=161";
+import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=161";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 160;
+const APP_VERSION_BUILD = 161;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4683,6 +4683,7 @@ function GerenciarView({
   const [modelAdNames, setModelAdNames] = useState({});
   const [modelAdsetName, setModelAdsetName] = useState("");
   const [modelAdditionalAds, setModelAdditionalAds] = useState([]);
+  const [modelMode, setModelMode] = useState("adset");
   const [form, setForm] = useState({
     name: "",
     daily_budget_brl: "20.00",
@@ -4767,17 +4768,20 @@ function GerenciarView({
     setModelAdNames(Object.fromEntries(ads.map((ad) => [ad.id, generatedNames.adNames.get(ad.id) || ad.name])));
     setModelAdsetName(generatedNames.adsetName);
     setModelAdditionalAds([]);
+    setModelMode("adset");
     if (willOpen && typeof window !== "undefined") {
       window.setTimeout(() => {
         document.querySelector(`[data-manager-adset="${adset.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 0);
     }
   };
-  const buildAdditionalModelAd = (campaign, adset, ad, existingNames = []) => {
+  const buildAdditionalModelAd = (campaign, adset, ad, existingNames = [], preserveCj = false) => {
     const generatedNames = buildModelDraftNames(campaign, adset);
-    const baseName = generatedNames.adNames.get(ad.id) || ad.name || "Anúncio";
+    const baseName = preserveCj
+      ? ad.name || "Anúncio"
+      : generatedNames.adNames.get(ad.id) || ad.name || "Anúncio";
     const allNames = [
-      ...generatedNames.adNames.values(),
+      ...(preserveCj ? (adset.ads || []).map((item) => item.name) : [...generatedNames.adNames.values()]),
       ...existingNames,
     ];
     return {
@@ -4796,18 +4800,18 @@ function GerenciarView({
     ];
     setModelAdditionalAds((current) => [
       ...current,
-      buildAdditionalModelAd(campaign, adset, ad, existingNames),
+      buildAdditionalModelAd(campaign, adset, ad, existingNames, modelMode === "ad_only"),
     ]);
   };
   const beginModelWithAdCopy = (campaign, adset, ad) => {
-    const generatedNames = buildModelDraftNames(campaign, adset);
     const ads = adset?.ads || [];
     setModelingAdsetId(adset.id);
-    setModelSelections(Object.fromEntries(ads.map((item) => [item.id, true])));
+    setModelSelections(Object.fromEntries(ads.map((item) => [item.id, false])));
     setModelCreativeOverrides({});
-    setModelAdNames(Object.fromEntries(ads.map((item) => [item.id, generatedNames.adNames.get(item.id) || item.name])));
-    setModelAdsetName(generatedNames.adsetName);
-    setModelAdditionalAds([buildAdditionalModelAd(campaign, adset, ad)]);
+    setModelAdNames(Object.fromEntries(ads.map((item) => [item.id, item.name])));
+    setModelAdsetName(adset.name);
+    setModelAdditionalAds([buildAdditionalModelAd(campaign, adset, ad, [], true)]);
+    setModelMode("ad_only");
     if (typeof window !== "undefined") {
       window.setTimeout(() => {
         document.querySelector(`[data-manager-adset="${adset.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -4824,6 +4828,7 @@ function GerenciarView({
       adNames: modelAdNames,
       adsetName: modelAdsetName,
       additionalAds: modelAdditionalAds,
+      mode: modelMode,
     });
     setModelingAdsetId("");
     setCreatingFor("");
@@ -5080,19 +5085,25 @@ function GerenciarView({
                               ? html`<div className="manager-model-panel">
                                   <div className="manager-model-head">
                                     <div>
-                                      <strong>Montar novo conjunto pelo modelo</strong>
-                                      <p className="muted small">O próximo CJ será aplicado automaticamente. Escolha os anúncios e, se quiser, troque a imagem.</p>
+                                      <strong>${modelMode === "ad_only" ? "Criar anúncio no conjunto atual" : "Montar novo conjunto pelo modelo"}</strong>
+                                      <p className="muted small">
+                                        ${modelMode === "ad_only"
+                                          ? "O CJ será mantido. Somente o AN do novo anúncio será incrementado."
+                                          : "O próximo CJ será aplicado automaticamente. Escolha os anúncios e, se quiser, troque a imagem."}
+                                      </p>
                                     </div>
                                     <button className="ghost small" onClick=${() => setModelingAdsetId("")}>Fechar</button>
                                   </div>
-                                  <label className="field manager-model-adset-name">
-                                    <span>Novo nome do conjunto</span>
-                                    <input value=${modelAdsetName} onInput=${(event) => setModelAdsetName(event.target.value)} />
-                                  </label>
+                                  ${modelMode === "ad_only"
+                                    ? html`<div className="manager-current-adset"><span>Adicionar dentro de</span><strong>${adset.name}</strong></div>`
+                                    : html`<label className="field manager-model-adset-name">
+                                        <span>Novo nome do conjunto</span>
+                                        <input value=${modelAdsetName} onInput=${(event) => setModelAdsetName(event.target.value)} />
+                                      </label>`}
                                   ${(adset.ads || []).length === 0
                                     ? html`<div className="manager-empty compact"><span>Este conjunto não possui anúncios. Você ainda pode copiar somente o conjunto.</span></div>`
                                     : html`<div className="manager-model-ads">
-                                        ${(adset.ads || []).map((ad) => html`
+                                        ${modelMode === "adset" ? (adset.ads || []).map((ad) => html`
                                           <div className=${`manager-model-ad ${modelSelections[ad.id] ? "is-selected" : ""}`} key=${ad.id}>
                                             <div className="manager-model-select">
                                               <label className="manager-model-checkbox" title="Incluir este anúncio">
@@ -5139,7 +5150,7 @@ function GerenciarView({
                                                 </div>`
                                               : null}
                                           </div>
-                                        `)}
+                                        `) : null}
                                         ${modelAdditionalAds.map((item, index) => html`
                                           <div className="manager-model-ad is-selected is-additional" key=${item.draft_id}>
                                             <div className="manager-model-select">
@@ -5172,12 +5183,16 @@ function GerenciarView({
                                         `)}
                                       </div>`}
                                   <div className="manager-create-actions">
-                                    <span className="muted small">${Object.values(modelSelections).filter(Boolean).length + modelAdditionalAds.length} anúncio(s) no novo conjunto</span>
+                                    <span className="muted small">
+                                      ${modelMode === "ad_only"
+                                        ? `${modelAdditionalAds.length} novo(s) anúncio(s) em ${adset.name}`
+                                        : `${Object.values(modelSelections).filter(Boolean).length + modelAdditionalAds.length} anúncio(s) no novo conjunto`}
+                                    </span>
                                     <button
                                       className="primary"
-                                      disabled=${!modelAdsetName.trim() || (adset.ads || []).some((ad) => modelSelections[ad.id] && !String(modelAdNames[ad.id] || "").trim()) || modelAdditionalAds.some((item) => !String(item.name || "").trim())}
+                                      disabled=${!modelAdsetName.trim() || (modelMode === "ad_only" && modelAdditionalAds.length === 0) || (adset.ads || []).some((ad) => modelSelections[ad.id] && !String(modelAdNames[ad.id] || "").trim()) || modelAdditionalAds.some((item) => !String(item.name || "").trim())}
                                       onClick=${() => confirmModel(campaign, adset)}
-                                    >Adicionar ao rascunho</button>
+                                    >${modelMode === "ad_only" ? "Adicionar anúncio ao rascunho" : "Adicionar ao rascunho"}</button>
                                   </div>
                                 </div>`
                               : null}
@@ -5191,24 +5206,31 @@ function GerenciarView({
 
       <section className="card wide manager-drafts">
         <div className="card-head">
-          <div><span className="eyebrow">Rascunho</span><h2 className="section-title">Novos conjuntos por modelo</h2></div>
+          <div><span className="eyebrow">Rascunho</span><h2 className="section-title">Conjuntos e anúncios preparados</h2></div>
           <button className="primary" onClick=${onPublish} disabled=${publishing || !drafts.length}>
             ${publishing ? "Publicando..." : `Publicar ${drafts.length || ""}`}
           </button>
         </div>
         ${!drafts.length
-          ? html`<div className="manager-empty compact"><span>Use “Usar como modelo” em um conjunto para preparar uma cópia.</span></div>`
+          ? html`<div className="manager-empty compact"><span>Use um conjunto ou anúncio como modelo para preparar a criação.</span></div>`
           : html`<div className="draft-list">
               ${drafts.map((draft) => html`<div className="draft-card" key=${draft.id}>
                 <div className="draft-head">
-                  <div><strong>${draft.campaign_name}</strong><div className="muted small">Modelo: ${draft.source_adset_name}</div></div>
+                  <div>
+                    <strong>${draft.campaign_name}</strong>
+                    <div className="muted small">
+                      ${draft.mode === "ad_only" ? `Novo anúncio dentro de: ${draft.source_adset_name}` : `Conjunto-modelo: ${draft.source_adset_name}`}
+                    </div>
+                  </div>
                   <button className="ghost small" onClick=${() => onRemoveDraft(draft.id)}>Remover</button>
                 </div>
-                <div className="draft-fields">
-                  <label className="field"><span>Novo nome do conjunto</span><input value=${draft.adset_new_name} onChange=${(e) => onUpdateDraft(draft.id, { adset_new_name: e.target.value })} /></label>
-                  <label className="field"><span>Número de cópias</span><input type="number" min="1" value=${draft.copies || 1} onChange=${(e) => onUpdateDraft(draft.id, { copies: Math.max(1, Number(e.target.value) || 1) })} /></label>
-                  <label className="field"><span>Orçamento diário (R$)</span><input type="number" min="0" step="0.01" value=${draft.daily_budget_brl} onChange=${(e) => onUpdateDraft(draft.id, { daily_budget_brl: e.target.value })} /></label>
-                </div>
+                ${draft.mode === "ad_only"
+                  ? html`<div className="manager-current-adset"><span>O conjunto não será duplicado</span><strong>${draft.source_adset_name}</strong></div>`
+                  : html`<div className="draft-fields">
+                      <label className="field"><span>Novo nome do conjunto</span><input value=${draft.adset_new_name} onChange=${(e) => onUpdateDraft(draft.id, { adset_new_name: e.target.value })} /></label>
+                      <label className="field"><span>Número de cópias</span><input type="number" min="1" value=${draft.copies || 1} onChange=${(e) => onUpdateDraft(draft.id, { copies: Math.max(1, Number(e.target.value) || 1) })} /></label>
+                      <label className="field"><span>Orçamento diário (R$)</span><input type="number" min="0" step="0.01" value=${draft.daily_budget_brl} onChange=${(e) => onUpdateDraft(draft.id, { daily_budget_brl: e.target.value })} /></label>
+                    </div>`}
                 <details className="manager-draft-ads">
                   <summary>Revisar anúncios (${(draft.ads || []).filter((ad) => !ad.removed).length}/${(draft.ads || []).length})</summary>
                   <div className="manager-draft-ad-list">
@@ -12958,12 +12980,14 @@ function App() {
       campaign_name: campaign.name,
       source_adset_id: adset.id,
       source_adset_name: adset.name,
+      mode: options.mode === "ad_only" ? "ad_only" : "adset",
+      target_adset_id: options.mode === "ad_only" ? adset.id : "",
       adset_new_name: String(options.adsetName || names.adsetName).trim(),
       cj_token: names.cjToken,
       daily_budget_brl: "",
       copies: count,
       ads: [
-        ...(adset.ads || []).map((ad) => ({
+        ...(options.mode === "ad_only" ? [] : (adset.ads || []).map((ad) => ({
           id: ad.id,
           source_ad_id: ad.id,
           name: ad.name,
@@ -12971,7 +12995,7 @@ function App() {
           removed: selectedAdIds ? !selectedAdIds.has(ad.id) : false,
           replacement_image_hash: creativeOverrides[ad.id]?.key || "",
           replacement_image_url: creativeOverrides[ad.id]?.url || "",
-        })),
+        }))),
         ...additionalAds.map((ad) => ({
           id: ad.draft_id,
           source_ad_id: ad.source_ad_id,
@@ -13480,6 +13504,33 @@ function App() {
       let manualCopyAds = requiresManualAds;
       let adCopyMode = requiresManualAds ? "create" : "copy";
       try {
+        if (draft.mode === "ad_only") {
+          const adsToCreate = (draft.ads || []).filter((ad) => !ad.removed);
+          if (!draft.target_adset_id || !adsToCreate.length) {
+            throw new Error("Informe ao menos um anúncio para adicionar ao conjunto atual.");
+          }
+          for (const ad of adsToCreate) {
+            step = "create-ad-in-existing-adset";
+            const sourceAdId = ad.source_ad_id || ad.id;
+            await retryOnSubcode33(() =>
+              fetchJson(`${API_BASE}/meta-ad-create`, {
+                method: "POST",
+                body: JSON.stringify({
+                  ad_id: sourceAdId,
+                  adset_id: draft.target_adset_id,
+                  name: String(ad.new_name || ad.name || "Novo anúncio").trim(),
+                  status: DUPLICATE_STATUS,
+                  sanitize_video_placements: true,
+                  replacement_image_hash: ad.replacement_image_hash || "",
+                }),
+              })
+            );
+          }
+          pushLog("gerenciar-anuncio", {
+            message: `${adsToCreate.length} anúncio(s) criado(s) em ${draft.source_adset_name}, sem alterar o CJ.`,
+          });
+          continue;
+        }
         step = "copy";
         let copyRes;
         if (requiresManualAds) {
