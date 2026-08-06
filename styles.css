@@ -2917,6 +2917,41 @@ button.ghost.danger {
   background: var(--surface);
 }
 
+.meta-join-table tbody tr.campaign-total-row td {
+  border-top: 2px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-bottom-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--card));
+  vertical-align: middle;
+}
+
+.meta-join-table tbody tr.campaign-total-row td:first-child,
+.meta-join-table tbody tr.campaign-total-row:hover td:first-child {
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+}
+
+.campaign-total-identity .identity-level {
+  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.campaign-total-row td > .muted.small {
+  display: block;
+  margin-top: 3px;
+}
+
+.meta-join-table tbody tr.campaign-detail-row td:first-child {
+  padding-left: 28px;
+}
+
+.meta-join-table tbody tr.campaign-detail-row td:first-child::before {
+  content: "↳";
+  float: left;
+  margin-left: -17px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
 .meta-join-table tbody td {
   padding: 13px 14px;
   vertical-align: top;

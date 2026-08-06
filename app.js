@@ -10,9 +10,9 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=167";
-import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=167";
-import { buildDirectSalesCampaignRows } from "./sales-attribution.mjs?v=167";
+} from "./campaign-builder.mjs?v=168";
+import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=168";
+import { buildDirectSalesCampaignRows } from "./sales-attribution.mjs?v=168";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 167;
+const APP_VERSION_BUILD = 168;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -6347,6 +6347,7 @@ function buildSalesDashboardSnapshot(rows, directCampaignRows = []) {
 
 function MetaJoinTable({
   rows,
+  campaignRows = [],
   adsetFilter,
   onFilterChange,
   onToggleAd,
@@ -6368,27 +6369,120 @@ function MetaJoinTable({
   const [bidInputs, setBidInputs] = useState({});
   const [bidModes, setBidModes] = useState({});
   const consolidated = useMemo(() => consolidateMetaJoinRows(rows), [rows]);
-  const sortedRows = useMemo(() => {
+  const campaignMetricMap = useMemo(() => {
+    const map = new Map();
+    (Array.isArray(campaignRows) ? campaignRows : []).forEach((row) => {
+      [row.campaign_id, row.campaign_name, row.custom_value]
+        .map(normalizeKey)
+        .filter(Boolean)
+        .forEach((key) => {
+          if (!map.has(key)) map.set(key, row);
+        });
+    });
+    return map;
+  }, [campaignRows]);
+  const campaignGroups = useMemo(() => {
+    const grouped = new Map();
+    consolidated.forEach((row, index) => {
+      const key = normalizeKey(row.campaign_id || row.campaign_name) || `campaign:${index}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(row);
+    });
+
+    const groups = Array.from(grouped, ([key, groupRows]) => {
+      const first = groupRows[0] || {};
+      const dates = new Set();
+      groupRows.forEach((row) => {
+        if (row._dates instanceof Set) row._dates.forEach((date) => date && dates.add(date));
+        else if (row.date || row.date_start) dates.add(row.date || row.date_start);
+      });
+      const sortedDates = Array.from(dates).sort();
+      const direct = campaignMetricMap.get(normalizeKey(first.campaign_id))
+        || campaignMetricMap.get(normalizeKey(first.campaign_name))
+        || null;
+      const summary = groupRows.reduce((acc, row) => {
+        acc.spend_value += toNumber(row.spend_value);
+        acc.results_meta += toNumber(row.results_meta);
+        acc.results_observed = acc.results_observed || !!row.results_observed;
+        acc.meta_impressions_value += toNumber(row.meta_impressions_value);
+        acc.meta_clicks_value += toNumber(row.meta_clicks_value);
+        return acc;
+      }, {
+        campaign_id: first.campaign_id || "",
+        campaign_name: first.campaign_name || "Campanha sem nome",
+        objective: first.objective || "",
+        spend_value: 0,
+        results_meta: 0,
+        results_observed: false,
+        meta_impressions_value: 0,
+        meta_clicks_value: 0,
+      });
+      summary.cost_per_result_value = summary.results_observed && summary.results_meta > 0
+        ? summary.spend_value / summary.results_meta
+        : null;
+      summary.meta_ctr = summary.meta_impressions_value > 0
+        ? summary.meta_clicks_value / summary.meta_impressions_value * 100
+        : null;
+      summary.date_label = sortedDates.length > 1
+        ? `${sortedDates[0]} a ${sortedDates[sortedDates.length - 1]}`
+        : sortedDates[0] || first.date_label || "-";
+      summary.adsets = new Set(groupRows.map((row) => row.adset_id || row.adset_name).filter(Boolean)).size;
+      summary.ads = groupRows.length;
+      summary.joinads_matched = !!direct?.joinads_matched;
+      summary.attribution_source = direct?.attribution_source || "unmatched";
+      summary.revenue_client_value = direct ? toNumber(direct.revenue_client) : null;
+      summary.revenue_client_brl_value = direct?.revenue_client_brl != null
+        ? toNumber(direct.revenue_client_brl)
+        : null;
+      summary.impressions_joinads = direct ? toNumber(direct.impressions) : null;
+      summary.clicks_joinads = direct ? toNumber(direct.clicks) : null;
+      summary.ecpm_client_value = direct && direct.impressions > 0
+        ? toNumber(direct.revenue_client) / toNumber(direct.impressions) * 1000
+        : null;
+      summary.joinads_ctr = direct && direct.impressions > 0
+        ? toNumber(direct.clicks) / toNumber(direct.impressions) * 100
+        : null;
+      summary.roas_joinads_value = summary.revenue_client_brl_value != null && summary.spend_value > 0
+        ? summary.revenue_client_brl_value / summary.spend_value
+        : null;
+      summary.lucro_op_brl_value = summary.revenue_client_brl_value != null
+        ? summary.revenue_client_brl_value - summary.spend_value
+        : null;
+      return { key, rows: groupRows, summary };
+    });
+
     const direction = sort.direction === "asc" ? 1 : -1;
-    return [...consolidated].sort((a, b) => {
-      const av = a[sort.key];
-      const bv = b[sort.key];
+    groups.sort((a, b) => {
+      const av = a.summary[sort.key];
+      const bv = b.summary[sort.key];
       if (typeof av === "string" || typeof bv === "string") {
         return String(av || "").localeCompare(String(bv || ""), "pt-BR") * direction;
       }
       return (toNumber(av) - toNumber(bv)) * direction;
     });
-  }, [consolidated, sort]);
+    groups.forEach((group) => {
+      group.rows.sort((a, b) => toNumber(b.spend_value) - toNumber(a.spend_value));
+    });
+    return groups;
+  }, [consolidated, campaignMetricMap, sort]);
+  const sortedRows = useMemo(
+    () => campaignGroups.flatMap((group) => [
+      { ...group.summary, _campaign_summary: true, _campaign_key: group.key },
+      ...group.rows,
+    ]),
+    [campaignGroups]
+  );
   const setSorting = (key) => setSort((prev) => ({
     key,
     direction: prev.key === key && prev.direction === "desc" ? "asc" : "desc",
   }));
   const mark = (key) => sort.key === key ? (sort.direction === "desc" ? " ↓" : " ↑") : "";
-  const totals = consolidated.reduce((acc, row) => {
-    acc.spend += toNumber(row.spend_value);
-    acc.results += toNumber(row.results_meta);
-    acc.metaImpressions += toNumber(row.meta_impressions_value);
-    acc.metaClicks += toNumber(row.meta_clicks_value);
+  const totals = campaignGroups.reduce((acc, group) => {
+    const row = group.summary;
+    acc.spend += row.spend_value;
+    acc.results += row.results_meta;
+    acc.metaImpressions += row.meta_impressions_value;
+    acc.metaClicks += row.meta_clicks_value;
     if (row.joinads_matched) {
       acc.revenueUsd += toNumber(row.revenue_client_value);
       acc.revenueBrl += toNumber(row.revenue_client_brl_value);
@@ -6400,9 +6494,10 @@ function MetaJoinTable({
   const totalRoas = totals.spend > 0 ? totals.revenueBrl / totals.spend : null;
   const totalProfit = totals.revenueBrl - totals.spend;
   const previousTotals = comparisonSnapshot?.totals || null;
-  const campaignCount = new Set(consolidated.map((row) => row.campaign_id || row.campaign_name)).size;
+  const campaignCount = campaignGroups.length;
   const adsetCount = new Set(consolidated.map((row) => row.adset_id || row.adset_name)).size;
-  const attributedCount = consolidated.filter((row) => row.joinads_matched).length;
+  const attributedCampaignCount = campaignGroups.filter((group) => group.summary.joinads_matched).length;
+  const attributedAdCount = consolidated.filter((row) => row.joinads_matched).length;
   const getBudgetInput = (row) => budgetInputs[row.adset_id] ?? (
     row.adset_daily_budget_brl != null ? row.adset_daily_budget_brl.toFixed(2) : ""
   );
@@ -6457,14 +6552,17 @@ function MetaJoinTable({
       <div>
         <span className="eyebrow">Meta x JoinAds</span>
         <h2 className="section-title">Campanhas de vendas para o site</h2>
-        <p className="section-subtitle">Somente campanhas com objetivo Vendas que levam diretamente ao site; campanhas de mensagens ficam em Métricas Mensagens.</p>
+        <p className="section-subtitle">A linha destacada consolida cada campanha uma unica vez. Os anuncios abaixo so recebem dados JoinAds quando existe atribuicao individual segura.</p>
       </div>
       <div className="chip-group">
         <span className="chip neutral">${campaignCount} campanhas</span>
         <span className="chip neutral">${adsetCount} conjuntos</span>
         <span className="chip neutral">${consolidated.length} anuncios</span>
-        <span className=${`chip ${attributedCount === consolidated.length ? "good" : "warn"}`}>
-          ${attributedCount}/${consolidated.length} atribuidos
+        <span className=${`chip ${attributedCampaignCount === campaignCount ? "good" : "warn"}`}>
+          ${attributedCampaignCount}/${campaignCount} campanhas com JoinAds
+        </span>
+        <span className=${`chip ${attributedAdCount === consolidated.length ? "good" : "neutral"}`}>
+          ${attributedAdCount}/${consolidated.length} anuncios com dados proprios
         </span>
         ${comparisonSnapshot
           ? html`<span className="chip good">Comparando com atualização anterior</span>`
@@ -6508,6 +6606,43 @@ function MetaJoinTable({
           ${sortedRows.length === 0
             ? html`<tr><td colSpan="21" className="muted empty-table">Sem dados para o periodo ou para a busca.</td></tr>`
             : sortedRows.map((row) => {
+                if (row._campaign_summary) {
+                  const campaignKey = String(row.campaign_id || row.campaign_name || row._campaign_key);
+                  const previous = comparisonSnapshot?.campaigns?.[campaignKey] || null;
+                  const source = String(row.attribution_source || "unmatched");
+                  const attribution = source === "utm_campaign_id"
+                    ? { label: "Campanha por ID", tone: "good", detail: "Total JoinAds ligado ao ID da campanha; contabilizado uma unica vez." }
+                    : source === "utm_campaign_name"
+                    ? { label: "Campanha por nome", tone: "warn", detail: "UTM legada ligada pelo nome da campanha." }
+                    : source.startsWith("key_value_campaign")
+                    ? { label: "Relatorio analitico", tone: "warn", detail: "Fallback por campanha usado quando o relatorio principal nao trouxe o total." }
+                    : source === "ad_level"
+                    ? { label: "Soma por anuncio", tone: "good", detail: "Total formado apenas pelos anuncios com atribuicao individual." }
+                    : { label: "Sem dados JoinAds", tone: "danger", detail: "Nenhuma UTM da JoinAds correspondeu a esta campanha." };
+                  return html`<tr className="campaign-total-row" key=${`campaign-total:${campaignKey}`}>
+                    <td className="identity-cell campaign-total-identity"><span className="identity-level">Total da campanha</span><strong>${row.campaign_name || "Campanha sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)}</span></td>
+                    <td><strong>${number.format(row.adsets || 0)}</strong><span className="muted small">conjuntos</span></td>
+                    <td><strong>${number.format(row.ads || 0)}</strong><span className="muted small">anuncios</span></td>
+                    <td>${row.date_label}</td>
+                    <td><span className="status-badge neutral">TOTAL</span></td>
+                    <td><strong>${currencyBRL.format(row.spend_value)}</strong><${RefreshDelta} current=${row.spend_value} previous=${previous?.spend_brl} format="brl" /></td>
+                    <td>${row.results_observed ? number.format(row.results_meta) : "-"}<${RefreshDelta} current=${row.results_observed ? row.results_meta : null} previous=${previous?.results} /></td>
+                    <td>${row.cost_per_result_value != null ? currencyBRL.format(row.cost_per_result_value) : "-"}<${RefreshDelta} current=${row.cost_per_result_value} previous=${previous?.cpa_brl} format="brl" /></td>
+                    <td>${number.format(row.meta_impressions_value)}<${RefreshDelta} current=${row.meta_impressions_value} previous=${previous?.meta_impressions} /></td>
+                    <td>${number.format(row.meta_clicks_value)}<${RefreshDelta} current=${row.meta_clicks_value} previous=${previous?.meta_clicks} /></td>
+                    <td>${row.meta_ctr != null ? `${row.meta_ctr.toFixed(2)}%` : "-"}<${RefreshDelta} current=${row.meta_ctr} previous=${previous?.meta_ctr} format="percent" /></td>
+                    <td><strong>${row.joinads_matched ? currencyUSD.format(row.revenue_client_value) : "-"}</strong><${RefreshDelta} current=${row.joinads_matched ? row.revenue_client_value : null} previous=${previous?.revenue_usd} format="usd" /></td>
+                    <td><strong>${row.joinads_matched && row.revenue_client_brl_value != null ? currencyBRL.format(row.revenue_client_brl_value) : "-"}</strong><${RefreshDelta} current=${row.joinads_matched ? row.revenue_client_brl_value : null} previous=${previous?.revenue_brl} format="brl" /></td>
+                    <td>${row.joinads_matched ? number.format(row.impressions_joinads) : "-"}<${RefreshDelta} current=${row.joinads_matched ? row.impressions_joinads : null} previous=${previous?.joinads_impressions} /></td>
+                    <td>${row.joinads_matched ? number.format(row.clicks_joinads) : "-"}<${RefreshDelta} current=${row.joinads_matched ? row.clicks_joinads : null} previous=${previous?.joinads_clicks} /></td>
+                    <td>${row.ecpm_client_value != null ? currencyUSD.format(row.ecpm_client_value) : "-"}<${RefreshDelta} current=${row.ecpm_client_value} previous=${previous?.ecpm} format="usd" /></td>
+                    <td>${row.joinads_ctr != null ? `${row.joinads_ctr.toFixed(2)}%` : "-"}<${RefreshDelta} current=${row.joinads_ctr} previous=${previous?.joinads_ctr} format="percent" /></td>
+                    <td><strong className=${row.roas_joinads_value != null && row.roas_joinads_value >= 1 ? "positive" : row.roas_joinads_value != null ? "negative" : ""}>${row.roas_joinads_value != null ? `${row.roas_joinads_value.toFixed(2)}x` : "-"}</strong><${RefreshDelta} current=${row.roas_joinads_value} previous=${previous?.roas} format="roas" /></td>
+                    <td><strong className=${row.lucro_op_brl_value != null && row.lucro_op_brl_value >= 0 ? "positive" : row.lucro_op_brl_value != null ? "negative" : ""}>${row.lucro_op_brl_value != null ? currencyBRL.format(row.lucro_op_brl_value) : "-"}</strong><${RefreshDelta} current=${row.lucro_op_brl_value} previous=${previous?.profit_brl} format="brl" /></td>
+                    <td><div className="attribution-cell" title=${attribution.detail}><span className=${`chip ${attribution.tone}`}>${attribution.label}</span><span className="muted small">${attribution.detail}</span></div></td>
+                    <td><span className="muted small">Controles nos anuncios</span></td>
+                  </tr>`;
+                }
                 const statusRaw = row.ad_status || "";
                 const status = statusRaw || row.effective_status || "";
                 const active = status === "ACTIVE";
@@ -6526,7 +6661,7 @@ function MetaJoinTable({
                   : null;
                 const rowKey = String(row.ad_id || `${row.adset_id || row.adset_name}:${row.ad_name || ""}`);
                 const previous = comparisonSnapshot?.ads?.[rowKey] || null;
-                return html`<tr key=${row.ad_id || `${row.adset_name}-${row.ad_name}`}>
+                return html`<tr className="campaign-detail-row" key=${row.ad_id || `${row.adset_name}-${row.ad_name}`}>
                   <td className="identity-cell campaign-identity"><strong>${row.campaign_name || "Campanha sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)}</span></td>
                   <td className="identity-cell"><strong>${row.adset_name || "Sem nome"}</strong><span className="metric-id">${row.adset_id || "Sem ID"}</span></td>
                   <td className="identity-cell">${row.asset_url ? html`<a href=${row.asset_url} target="_blank" rel="noopener noreferrer">${row.ad_name || "Sem nome"}</a>` : html`<strong>${row.ad_name || "Sem nome"}</strong>`}<span className="metric-id">${row.ad_id || "Sem ID"}</span></td>
@@ -6547,10 +6682,10 @@ function MetaJoinTable({
                 </tr>`;
               })}
         </tbody>
-        ${sortedRows.length ? html`<tfoot><tr><td colSpan="5"><strong>Total exibido</strong><span>${consolidated.length} anuncios</span></td><td><strong>${currencyBRL.format(totals.spend)}</strong></td><td><strong>${number.format(totals.results)}</strong></td><td></td><td><strong>${number.format(totals.metaImpressions)}</strong></td><td><strong>${number.format(totals.metaClicks)}</strong></td><td></td><td><strong>${currencyUSD.format(totals.revenueUsd)}</strong></td><td><strong>${currencyBRL.format(totals.revenueBrl)}</strong></td><td><strong>${number.format(totals.joinImpressions)}</strong></td><td><strong>${number.format(totals.joinClicks)}</strong></td><td></td><td></td><td><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></td><td><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></td><td colSpan="2"><span>${attributedCount} anuncios atribuidos</span></td></tr></tfoot>` : null}
+        ${sortedRows.length ? html`<tfoot><tr><td colSpan="5"><strong>Total exibido</strong><span>${campaignCount} campanhas · ${consolidated.length} anuncios</span></td><td><strong>${currencyBRL.format(totals.spend)}</strong></td><td><strong>${number.format(totals.results)}</strong></td><td></td><td><strong>${number.format(totals.metaImpressions)}</strong></td><td><strong>${number.format(totals.metaClicks)}</strong></td><td></td><td><strong>${currencyUSD.format(totals.revenueUsd)}</strong></td><td><strong>${currencyBRL.format(totals.revenueBrl)}</strong></td><td><strong>${number.format(totals.joinImpressions)}</strong></td><td><strong>${number.format(totals.joinClicks)}</strong></td><td></td><td></td><td><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></td><td><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></td><td colSpan="2"><span>${attributedCampaignCount} campanhas com dados JoinAds</span></td></tr></tfoot>` : null}
       </table>
     </div>
-    <p className="muted small table-note">Campanhas diretas ao site permanecem visiveis mesmo antes de a JoinAds devolver receita para a UTM.</p>
+    <p className="muted small table-note">Os totais de campanha nunca sao repartidos artificialmente entre anuncios. Assim, a receita nao some e tambem nao e duplicada.</p>
   </section>`;
 }
 
@@ -15290,6 +15425,7 @@ function App() {
               ${html`
                 <${MetaJoinTable}
                   rows=${filteredMeta}
+                  campaignRows=${directTrafficJoinadsRows}
                   adsetFilter=${filters.adsetFilter}
                   onFilterChange=${(value) =>
                     setFilters((prev) => ({ ...prev, adsetFilter: value }))}
