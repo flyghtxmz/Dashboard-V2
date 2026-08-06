@@ -10,9 +10,9 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=169";
-import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=169";
-import { buildDirectSalesCampaignRows } from "./sales-attribution.mjs?v=169";
+} from "./campaign-builder.mjs?v=170";
+import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=170";
+import { buildDirectSalesCampaignRows } from "./sales-attribution.mjs?v=170";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 169;
+const APP_VERSION_BUILD = 170;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4675,6 +4675,8 @@ function GerenciarView({
   onDeleteAdset,
   onDeleteAd,
   onDeleteCampaigns,
+  onApplyCampaignUtm,
+  utmRepairing,
   onToggleCampaignStatus,
   togglingStatus,
   deleting,
@@ -4931,6 +4933,37 @@ function GerenciarView({
       });
     }
   };
+  const applyCampaignUtmWithFeedback = async (campaign) => {
+    try {
+      const result = await onApplyCampaignUtm?.(campaign);
+      if (!result) return;
+      if (result.updated > 0 && result.failed === 0) {
+        setManagerToast({
+          type: "success",
+          title: "UTMs aplicadas com sucesso",
+          message: `${result.updated} anuncio(s) atualizado(s) com os parametros padrao de vendas.`,
+        });
+      } else if (result.updated === 0 && result.failed === 0) {
+        setManagerToast({
+          type: "success",
+          title: "UTMs ja estavam corretas",
+          message: "Nenhum anuncio desta campanha precisou ser alterado.",
+        });
+      } else {
+        setManagerToast({
+          type: "error",
+          title: "Correcao parcial das UTMs",
+          message: `${result.updated} atualizado(s) e ${result.failed} com falha. Confira o diagnostico.`,
+        });
+      }
+    } catch (err) {
+      setManagerToast({
+        type: "error",
+        title: "Nao foi possivel aplicar as UTMs",
+        message: formatError(err),
+      });
+    }
+  };
 
   return html`
     <main className="manager-grid">
@@ -5023,6 +5056,9 @@ function GerenciarView({
                           <button disabled=${!!togglingStatus?.[campaign.id]} onClick=${() => onToggleCampaignStatus?.(campaign.id, statusText(campaign))}>
                             ${statusText(campaign) === "ACTIVE" ? "Pausar campanha" : "Ativar campanha"}
                           </button>
+                          ${trafficType === "sales" ? html`<button disabled=${!!utmRepairing?.[campaign.id]} onClick=${() => applyCampaignUtmWithFeedback(campaign)}>
+                            ${utmRepairing?.[campaign.id] ? "Aplicando UTMs..." : "Aplicar UTMs padrao nos anuncios"}
+                          </button>` : null}
                           <button className="danger" disabled=${!!deleting?.[campaign.id]} onClick=${() => onDeleteCampaigns?.([campaign.id])}>Excluir campanha</button>
                         </div>
                       </details>
@@ -11082,6 +11118,7 @@ function App() {
   const [editRenaming, setEditRenaming] = useState({});
   const [editDeleting, setEditDeleting] = useState({});
   const [editTogglingStatus, setEditTogglingStatus] = useState({});
+  const [editUtmRepairing, setEditUtmRepairing] = useState({});
   const [hiddenCampaigns, setHiddenCampaigns] = useState(() => {
     try {
       const raw = localStorage.getItem("__cd_hidden_camps__");
@@ -12825,6 +12862,78 @@ function App() {
     });
     await handleLoadEditar(true);
     return response;
+  };
+
+  const handleApplyCampaignDefaultUtm = async (campaign) => {
+    if (!campaign?.id) return null;
+    const allAds = (campaign.adsets || []).flatMap((adset) => adset.ads || []);
+    const normalizeTags = (value) => String(value || "").trim().replace(/^\?/, "");
+    const targets = allAds.filter(
+      (ad) => ad?.id && normalizeTags(ad.url_tags) !== DEFAULT_UTM_TAGS
+    );
+    if (!targets.length) return { updated: 0, failed: 0 };
+
+    const confirmed = window.confirm(
+      `Aplicar as UTMs padrao de vendas em ${targets.length} anuncio(s) da campanha "${campaign.name || campaign.id}"?\n\n` +
+      "A Meta recriara o criativo de cada anuncio sem alterar nome, imagem, URL ou status. Anuncios ativos podem voltar para analise."
+    );
+    if (!confirmed) return null;
+
+    setEditUtmRepairing((prev) => ({ ...prev, [campaign.id]: true }));
+    let updated = 0;
+    const failures = [];
+    const updatedIds = new Set();
+    try {
+      for (const ad of targets) {
+        try {
+          const result = await fetchJson(`${API_BASE}/meta-ad-create`, {
+            method: "POST",
+            body: JSON.stringify({
+              ad_id: ad.id,
+              apply_to_existing: true,
+              utm_tags: DEFAULT_UTM_TAGS,
+            }),
+          });
+          if (normalizeTags(result?.url_tags) !== DEFAULT_UTM_TAGS) {
+            throw new Error("A Meta nao confirmou os parametros aplicados.");
+          }
+          updated += 1;
+          updatedIds.add(ad.id);
+        } catch (err) {
+          failures.push({ adId: ad.id, name: ad.name || "", error: formatError(err) });
+          pushLog(`meta-utm-repair:${ad.id}`, err);
+        }
+      }
+
+      if (updatedIds.size) {
+        setDupCampaigns((prev) => (prev || []).map((item) => item.id !== campaign.id
+          ? item
+          : {
+              ...item,
+              adsets: (item.adsets || []).map((adset) => ({
+                ...adset,
+                ads: (adset.ads || []).map((ad) => updatedIds.has(ad.id)
+                  ? { ...ad, url_tags: DEFAULT_UTM_TAGS }
+                  : ad),
+              })),
+            }));
+        setEditAds((prev) => (prev || []).map((ad) => updatedIds.has(ad.id)
+          ? { ...ad, url_tags: DEFAULT_UTM_TAGS }
+          : ad));
+      }
+      pushLog("meta-utm-repair", {
+        message: `UTMs aplicadas na campanha ${campaign.id}: ${updated}/${targets.length}`,
+        failures,
+      });
+      await handleLoadEditar(true);
+      return { updated, failed: failures.length };
+    } finally {
+      setEditUtmRepairing((prev) => {
+        const next = { ...prev };
+        delete next[campaign.id];
+        return next;
+      });
+    }
   };
 
   const handleSaveEditAd = async (row) => {
@@ -15537,6 +15646,8 @@ function App() {
               onDeleteAdset=${handleDeleteEditAdset}
               onDeleteAd=${handleDeleteEditAd}
               onDeleteCampaigns=${handleDeleteCampaigns}
+              onApplyCampaignUtm=${handleApplyCampaignDefaultUtm}
+              utmRepairing=${editUtmRepairing}
               onToggleCampaignStatus=${handleToggleCampaignStatus}
               deleting=${editDeleting}
               togglingStatus=${editTogglingStatus}

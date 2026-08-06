@@ -335,11 +335,16 @@ export async function onRequest({ request, env }) {
     adset_id,
     name,
     status,
+    apply_to_existing,
     sanitize_video_placements,
     replacement_image_hash,
   } = body || {};
-  if (!ad_id || !adset_id) {
-    return jsonResponse(400, { error: "Parametros obrigatorios: ad_id, adset_id" });
+  if (!ad_id || (!adset_id && !apply_to_existing)) {
+    return jsonResponse(400, {
+      error: apply_to_existing
+        ? "Parametro obrigatorio: ad_id"
+        : "Parametros obrigatorios: ad_id, adset_id",
+    });
   }
 
   try {
@@ -418,7 +423,11 @@ export async function onRequest({ request, env }) {
       };
     }
 
-    if (objectStorySpec || assetFeedSpec) {
+    if (apply_to_existing && objectStoryId && !replacement_image_hash) {
+      // Mantem o mesmo post e o historico social ao corrigir apenas as UTMs.
+      objectStorySpec = null;
+      assetFeedSpec = null;
+    } else if (objectStorySpec || assetFeedSpec) {
       objectStoryId = null;
     }
 
@@ -472,6 +481,32 @@ export async function onRequest({ request, env }) {
     const newCreativeId = creativeData?.id;
     if (!newCreativeId) {
       return jsonResponse(400, { error: "creative_id nao gerado" });
+    }
+
+    if (apply_to_existing) {
+      const updateRes = await fetch(`${API_BASE}/${encodeURIComponent(ad_id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creative: { creative_id: newCreativeId },
+          access_token: token,
+        }),
+      });
+      const updateData = await safeJson(updateRes);
+      if (!updateRes.ok) {
+        return jsonResponse(updateRes.status, {
+          error: "Erro Meta",
+          details: updateData,
+          stage: "update-existing-ad",
+        });
+      }
+      return jsonResponse(200, {
+        code: "success",
+        data: updateData,
+        updated_ad_id: ad_id,
+        creative_id: newCreativeId,
+        url_tags: resolvedUtmTags,
+      });
     }
 
     const params = new URLSearchParams();
