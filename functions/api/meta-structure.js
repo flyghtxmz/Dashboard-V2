@@ -63,7 +63,7 @@ export async function onRequest({ request, env }) {
   const end_date = params.get("end_date");
   const force = params.get("force") === "1" || params.get("force") === "true";
   const kv = env.CPA_RULES_KV || env.DASHBOARD_KV;
-  const cacheKey = `meta_structure:${account_id}:${start_date || ""}:${end_date || ""}`;
+  const cacheKey = `meta_structure:v2:${account_id}:${start_date || ""}:${end_date || ""}`;
 
   // ── KV cache read ──────────────────────────────────────
   if (kv && !force) {
@@ -96,7 +96,7 @@ export async function onRequest({ request, env }) {
     // ── 3 parallel paginated fetches — NO nested loops ────
     const campFields = "id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining";
     const adsetFields = "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,promoted_object,start_time,end_time";
-    const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}";
+    const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{url_tags,image_hash,thumbnail_url,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link,image_hash,picture},photo_data{image_hash},video_data{call_to_action}}}";
     const insightFields = "ad_id,spend,ctr,cpc,cpm,frequency,impressions,video_thruplay_watched_actions";
 
     const [campaigns, adsets, ads, insightsRaw] = await Promise.all([
@@ -182,6 +182,8 @@ export async function onRequest({ request, env }) {
         url_tags: ad?.creative?.url_tags || "",
         destination_url: ad?.creative?.link_url || ad?.creative?.object_url || extractUrl(spec) || "",
         object_story_id: ad?.creative?.effective_object_story_id || ad?.creative?.object_story_id || "",
+        image_hash: ad?.creative?.image_hash || spec?.link_data?.image_hash || spec?.photo_data?.image_hash || "",
+        thumbnail_url: ad?.creative?.thumbnail_url || spec?.link_data?.picture || "",
       });
     });
     const adsetsByCampaign = new Map();

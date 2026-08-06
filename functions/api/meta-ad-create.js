@@ -78,6 +78,38 @@ function normalizeAssetFeedSpec(spec) {
   return cleaned;
 }
 
+export function applyReplacementImageHash(objectStorySpec, assetFeedSpec, imageHash) {
+  const hash = String(imageHash || "").trim();
+  if (!hash) return { objectStorySpec, assetFeedSpec, changed: false };
+  let changed = false;
+  const nextStory = objectStorySpec ? structuredClone(objectStorySpec) : null;
+  const nextFeed = assetFeedSpec ? structuredClone(assetFeedSpec) : null;
+
+  if (nextStory?.link_data) {
+    nextStory.link_data.image_hash = hash;
+    delete nextStory.link_data.image_url;
+    delete nextStory.link_data.picture;
+    changed = true;
+  } else if (nextStory?.photo_data) {
+    nextStory.photo_data.image_hash = hash;
+    delete nextStory.photo_data.image_url;
+    delete nextStory.photo_data.picture;
+    changed = true;
+  } else if (nextStory?.template_data) {
+    nextStory.template_data.image_hash = hash;
+    delete nextStory.template_data.image_url;
+    delete nextStory.template_data.picture;
+    changed = true;
+  }
+
+  if (nextFeed) {
+    nextFeed.images = [{ hash }];
+    changed = true;
+  }
+
+  return { objectStorySpec: nextStory, assetFeedSpec: nextFeed, changed };
+}
+
 function isEmptyObject(value) {
   return (
     value &&
@@ -268,6 +300,7 @@ export async function onRequest({ request, env }) {
     status,
     utm_tags,
     sanitize_video_placements,
+    replacement_image_hash,
   } = body || {};
   if (!ad_id || !adset_id) {
     return jsonResponse(400, { error: "Parametros obrigatorios: ad_id, adset_id" });
@@ -313,6 +346,22 @@ export async function onRequest({ request, env }) {
       if (isEmptyObject(assetFeedSpec)) {
         assetFeedSpec = null;
       }
+    }
+
+    if (replacement_image_hash) {
+      const replacement = applyReplacementImageHash(
+        objectStorySpec,
+        assetFeedSpec,
+        replacement_image_hash
+      );
+      if (!replacement.changed) {
+        return jsonResponse(400, {
+          error: "Este criativo nao permite trocar a imagem automaticamente. Escolha outro anuncio como modelo.",
+        });
+      }
+      objectStorySpec = replacement.objectStorySpec;
+      assetFeedSpec = replacement.assetFeedSpec;
+      objectStoryId = null;
     }
 
     if (objectStorySpec && !objectStorySpec.page_id && creative.actor_id) {

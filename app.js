@@ -10,7 +10,8 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=156";
+} from "./campaign-builder.mjs?v=158";
+import { buildModelDraftNames, shiftCjName } from "./campaign-manager.mjs?v=158";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -20,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 157;
+const APP_VERSION_BUILD = 158;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4632,6 +4633,16 @@ function buildAdsetGrouped(rows, joinadsRows, brlRate) {
   return grouped;
 }
 
+function ManagerLevelIcon({ level }) {
+  if (level === "campaign") {
+    return html`<svg className="manager-level-icon campaign" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5a2 2 0 0 1 2-2h5l2 2H19a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>`;
+  }
+  if (level === "adset") {
+    return html`<svg className="manager-level-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg>`;
+  }
+  return html`<svg className="manager-level-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9h16M8 7h.01" /></svg>`;
+}
+
 function GerenciarView({
   campaigns,
   loading,
@@ -4666,6 +4677,9 @@ function GerenciarView({
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
+  const [modelingAdsetId, setModelingAdsetId] = useState("");
+  const [modelSelections, setModelSelections] = useState({});
+  const [modelCreativeOverrides, setModelCreativeOverrides] = useState({});
   const [form, setForm] = useState({
     name: "",
     daily_budget_brl: "20.00",
@@ -4731,6 +4745,7 @@ function GerenciarView({
   const openCreate = (campaign) => {
     setCreateError("");
     setCreateSuccess("");
+    setModelingAdsetId("");
     if (trafficType === "messages") {
       setCreatingFor(creatingFor === campaign.id ? "" : campaign.id);
       return;
@@ -4738,6 +4753,29 @@ function GerenciarView({
     setForm((prev) => ({ ...prev, name: `Novo conjunto - ${campaign.name || "Vendas"}` }));
     setCreatingFor(creatingFor === campaign.id ? "" : campaign.id);
     if (!(pixels || []).length && accountId) onLoadPixels?.(accountId);
+  };
+  const beginModel = (adset) => {
+    const ads = adset?.ads || [];
+    const willOpen = modelingAdsetId !== adset.id;
+    setModelingAdsetId(willOpen ? adset.id : "");
+    setModelSelections(Object.fromEntries(ads.map((ad) => [ad.id, true])));
+    setModelCreativeOverrides({});
+    if (willOpen && typeof window !== "undefined") {
+      window.setTimeout(() => {
+        document.querySelector(`[data-manager-adset="${adset.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 0);
+    }
+  };
+  const confirmModel = (campaign, adset) => {
+    const selectedAdIds = (adset.ads || [])
+      .filter((ad) => modelSelections[ad.id])
+      .map((ad) => ad.id);
+    onAddDraft?.(campaign, adset, 1, {
+      selectedAdIds,
+      creativeOverrides: modelCreativeOverrides,
+    });
+    setModelingAdsetId("");
+    setCreatingFor("");
   };
   const submitCreate = async (campaign) => {
     setCreateBusy(true);
@@ -4778,11 +4816,11 @@ function GerenciarView({
           <div className="manager-type-switch" role="tablist" aria-label="Tipo de campanha">
             <button
               className=${trafficType === "sales" ? "active" : ""}
-              onClick=${() => { setTrafficType("sales"); setCreatingFor(""); }}
+              onClick=${() => { setTrafficType("sales"); setCreatingFor(""); setModelingAdsetId(""); }}
             >Tráfego Vendas</button>
             <button
               className=${trafficType === "messages" ? "active" : ""}
-              onClick=${() => { setTrafficType("messages"); setCreatingFor(""); }}
+              onClick=${() => { setTrafficType("messages"); setCreatingFor(""); setModelingAdsetId(""); }}
             >Métricas Mensagens</button>
           </div>
           <input
@@ -4819,7 +4857,9 @@ function GerenciarView({
             : filteredCampaigns.map((campaign) => html`
                 <article className="manager-campaign" key=${campaign.id}>
                   <header className="manager-campaign-header">
-                    <div className="manager-title-block">
+                    <div className="manager-level-copy manager-title-block">
+                      <${ManagerLevelIcon} level="campaign" />
+                      <div>
                       <div className="manager-title-line">
                         <strong>${campaign.name || "Campanha sem nome"}</strong>
                         <span className=${`manager-status ${statusText(campaign) === "ACTIVE" ? "is-active" : "is-paused"}`}>
@@ -4827,16 +4867,20 @@ function GerenciarView({
                         </span>
                       </div>
                       <span className="muted small">ID ${campaign.id} • ${(campaign.adsets || []).length} conjunto(s)</span>
+                      </div>
                     </div>
                     <div className="manager-row-actions">
-                      <button
-                        className="ghost small"
-                        disabled=${!!togglingStatus?.[campaign.id]}
-                        onClick=${() => onToggleCampaignStatus?.(campaign.id, statusText(campaign))}
-                      >${statusText(campaign) === "ACTIVE" ? "Pausar" : "Ativar"}</button>
                       <button className="primary small" onClick=${() => openCreate(campaign)}>
                         ${creatingFor === campaign.id ? "Fechar" : "+ Novo conjunto"}
                       </button>
+                      <details className="manager-more">
+                        <summary aria-label="Ações da campanha">•••</summary>
+                        <div className="manager-more-menu">
+                          <button disabled=${!!togglingStatus?.[campaign.id]} onClick=${() => onToggleCampaignStatus?.(campaign.id, statusText(campaign))}>
+                            ${statusText(campaign) === "ACTIVE" ? "Pausar campanha" : "Ativar campanha"}
+                          </button>
+                        </div>
+                      </details>
                     </div>
                   </header>
 
@@ -4848,7 +4892,7 @@ function GerenciarView({
                           ${(campaign.adsets || []).length
                             ? html`<div className="manager-template-list">
                                 ${(campaign.adsets || []).map((adset) => html`
-                                  <button className="ghost" onClick=${() => { onAddDraft?.(campaign, adset, 1); setCreatingFor(""); }}>
+                                  <button className="ghost" onClick=${() => beginModel(adset)}>
                                     <span>${adset.name}</span><strong>Usar modelo</strong>
                                   </button>
                                 `)}
@@ -4931,21 +4975,91 @@ function GerenciarView({
                     ${(campaign.adsets || []).length === 0
                       ? html`<div className="manager-empty compact"><span>Esta campanha ainda não possui conjuntos.</span></div>`
                       : (campaign.adsets || []).map((adset) => html`
-                          <div className="manager-adset" key=${adset.id}>
-                            <div className="manager-adset-main">
-                              <div className="manager-title-line">
-                                <strong>${adset.name || "Conjunto sem nome"}</strong>
-                                <span className=${`manager-status ${statusText(adset) === "ACTIVE" ? "is-active" : "is-paused"}`}>${statusText(adset)}</span>
+                          <div className="manager-adset-group" data-manager-adset=${adset.id} key=${adset.id}>
+                            <div className="manager-adset">
+                              <div className="manager-level-copy manager-adset-main">
+                                <${ManagerLevelIcon} level="adset" />
+                                <div>
+                                  <div className="manager-title-line">
+                                    <strong>${adset.name || "Conjunto sem nome"}</strong>
+                                    <span className=${`manager-status ${statusText(adset) === "ACTIVE" ? "is-active" : "is-paused"}`}>${statusText(adset)}</span>
+                                  </div>
+                                  <span className="muted small">${budgetText(adset)} • ${(adset.ads || []).length} anúncio(s) • ID ${adset.id}</span>
+                                </div>
                               </div>
-                              <span className="muted small">${budgetText(adset)} • ${(adset.ads || []).length} anúncio(s) • ID ${adset.id}</span>
+                              <details className="manager-more">
+                                <summary aria-label="Ações do conjunto">•••</summary>
+                                <div className="manager-more-menu">
+                                  <button onClick=${() => beginModel(adset)}>Usar como modelo</button>
+                                  <button disabled=${!!togglingStatus?.[adset.id]} onClick=${() => onToggleAdsetStatus?.(adset.id, statusText(adset))}>
+                                    ${statusText(adset) === "ACTIVE" ? "Pausar conjunto" : "Ativar conjunto"}
+                                  </button>
+                                  <button className="danger" disabled=${!!deleting?.[adset.id]} onClick=${() => onDeleteAdset?.(adset.id, adset.name)}>Excluir conjunto</button>
+                                </div>
+                              </details>
                             </div>
-                            <div className="manager-row-actions">
-                              <button className="ghost small" onClick=${() => onAddDraft?.(campaign, adset, 1)}>Usar como modelo</button>
-                              <button className="ghost small" disabled=${!!togglingStatus?.[adset.id]} onClick=${() => onToggleAdsetStatus?.(adset.id, statusText(adset))}>
-                                ${statusText(adset) === "ACTIVE" ? "Pausar" : "Ativar"}
-                              </button>
-                              <button className="ghost small danger" disabled=${!!deleting?.[adset.id]} onClick=${() => onDeleteAdset?.(adset.id, adset.name)}>Excluir</button>
+
+                            <div className="manager-ads">
+                              ${(adset.ads || []).map((ad) => html`
+                                <div className="manager-ad-row" key=${ad.id}>
+                                  <div className="manager-level-copy">
+                                    <${ManagerLevelIcon} level="ad" />
+                                    ${ad.thumbnail_url
+                                      ? html`<img className="manager-ad-thumb" src=${ad.thumbnail_url} alt="" loading="lazy" />`
+                                      : null}
+                                    <div>
+                                      <div className="manager-title-line">
+                                        <span>${ad.name || "Anúncio sem nome"}</span>
+                                        <span className=${`manager-status ${statusText(ad) === "ACTIVE" ? "is-active" : "is-paused"}`}>${statusText(ad)}</span>
+                                      </div>
+                                      <span className="muted small">ID ${ad.id}</span>
+                                    </div>
+                                  </div>
+                                  <span className="manager-more-static" aria-hidden="true">•••</span>
+                                </div>
+                              `)}
                             </div>
+
+                            ${modelingAdsetId === adset.id
+                              ? html`<div className="manager-model-panel">
+                                  <div className="manager-model-head">
+                                    <div>
+                                      <strong>Montar novo conjunto pelo modelo</strong>
+                                      <p className="muted small">O próximo CJ será aplicado automaticamente. Escolha os anúncios e, se quiser, troque a imagem.</p>
+                                    </div>
+                                    <button className="ghost small" onClick=${() => setModelingAdsetId("")}>Fechar</button>
+                                  </div>
+                                  ${(adset.ads || []).length === 0
+                                    ? html`<div className="manager-empty compact"><span>Este conjunto não possui anúncios. Você ainda pode copiar somente o conjunto.</span></div>`
+                                    : html`<div className="manager-model-ads">
+                                        ${(adset.ads || []).map((ad) => html`
+                                          <div className=${`manager-model-ad ${modelSelections[ad.id] ? "is-selected" : ""}`} key=${ad.id}>
+                                            <label className="manager-model-select">
+                                              <input
+                                                type="checkbox"
+                                                checked=${!!modelSelections[ad.id]}
+                                                onChange=${(event) => setModelSelections({ ...modelSelections, [ad.id]: event.target.checked })}
+                                              />
+                                              ${ad.thumbnail_url ? html`<img src=${ad.thumbnail_url} alt="" loading="lazy" />` : html`<span className="manager-model-placeholder"><${ManagerLevelIcon} level="ad" /></span>`}
+                                              <span><strong>${ad.name}</strong><small>${modelCreativeOverrides[ad.id]?.key ? "Nova imagem selecionada" : "Manter imagem atual"}</small></span>
+                                            </label>
+                                            ${modelSelections[ad.id]
+                                              ? html`<${CampaignMediaPicker}
+                                                  accountId=${accountId}
+                                                  type="image"
+                                                  selectedKey=${modelCreativeOverrides[ad.id]?.key || ""}
+                                                  onSelect=${(item) => setModelCreativeOverrides({ ...modelCreativeOverrides, [ad.id]: item })}
+                                                />`
+                                              : null}
+                                          </div>
+                                        `)}
+                                      </div>`}
+                                  <div className="manager-create-actions">
+                                    <span className="muted small">${Object.values(modelSelections).filter(Boolean).length} anúncio(s) selecionado(s)</span>
+                                    <button className="primary" onClick=${() => confirmModel(campaign, adset)}>Adicionar ao rascunho</button>
+                                  </div>
+                                </div>`
+                              : null}
                           </div>
                         `)}
                   </div>
@@ -4978,9 +5092,17 @@ function GerenciarView({
                   <summary>Revisar anúncios (${(draft.ads || []).filter((ad) => !ad.removed).length}/${(draft.ads || []).length})</summary>
                   <div className="manager-draft-ad-list">
                     ${(draft.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed ? "is-removed" : ""}`} key=${ad.id}>
-                      <span>${ad.name}</span>
+                      <div><span>${ad.name}</span>${ad.replacement_image_hash ? html`<small className="manager-creative-changed">Imagem alterada</small>` : null}</div>
                       <input value=${ad.new_name} disabled=${ad.removed} onChange=${(e) => onUpdateDraftAd(draft.id, ad.id, { new_name: e.target.value })} />
                       <button className="ghost small" onClick=${() => onToggleDraftAd(draft.id, ad.id)}>${ad.removed ? "Restaurar" : "Remover"}</button>
+                      ${!ad.removed ? html`<div className="manager-draft-creative">
+                        <${CampaignMediaPicker}
+                          accountId=${accountId}
+                          type="image"
+                          selectedKey=${ad.replacement_image_hash || ""}
+                          onSelect=${(item) => onUpdateDraftAd(draft.id, ad.id, { replacement_image_hash: item.key, replacement_image_url: item.url || "" })}
+                        />
+                      </div>` : null}
                     </div>`)}
                   </div>
                 </details>
@@ -7580,6 +7702,8 @@ function CampaignMediaPicker({ accountId, type, selectedKey, onSelect }) {
   const [labels, setLabels] = useState({});
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef(null);
 
   const load = async (force = false) => {
     if (!accountId) { setError("Configure a conta Meta antes de abrir a biblioteca."); return; }
@@ -7607,6 +7731,30 @@ function CampaignMediaPicker({ accountId, type, selectedKey, onSelect }) {
     setOpen(true);
     if (!items.length) load(false);
   };
+  const uploadAndSelect = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !accountId) return;
+    setUploading(true);
+    setError("");
+    try {
+      const form = new FormData();
+      form.append("account_id", accountId);
+      form.append("folder", "geral");
+      form.append("file", file, file.name);
+      const response = await fetch("/api/meta-media", { method: "POST", body: form });
+      const data = await response.json();
+      const item = data.data?.uploaded?.[0];
+      if (!response.ok || !item) throw new Error(data.data?.failures?.[0]?.error || data.error || "Falha no envio do criativo.");
+      setItems((current) => [item, ...current.filter((existing) => existing.key !== item.key)]);
+      onSelect(item);
+      setOpen(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+    }
+  };
   const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
   const visibleItems = normalizedSearch
     ? items.filter((item) => `${labels[item.key]?.label || item.name || ""} ${item.key}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch))
@@ -7614,7 +7762,20 @@ function CampaignMediaPicker({ accountId, type, selectedKey, onSelect }) {
 
   return html`
     <div className="campaign-media-picker-wrap">
-      <button type="button" className="ghost" onClick=${openLibrary}>Escolher da Biblioteca de Mídia</button>
+      <div className="campaign-media-picker-actions">
+        <button type="button" className="ghost" onClick=${openLibrary}>Escolher da Biblioteca de Mídia</button>
+        <button type="button" className="ghost" onClick=${() => uploadInputRef.current?.click()} disabled=${uploading}>
+          ${uploading ? "Enviando..." : type === "video" ? "Enviar novo vídeo" : "Enviar nova imagem"}
+        </button>
+        <input
+          ref=${uploadInputRef}
+          type="file"
+          accept=${type === "video" ? "video/mp4,video/quicktime" : "image/jpeg,image/png"}
+          hidden
+          onChange=${uploadAndSelect}
+        />
+      </div>
+      ${error && !open ? html`<span className="campaign-media-error">${error}</span>` : null}
       ${selectedKey ? html`<span className="campaign-media-selected">Selecionado na Meta: <code>${selectedKey}</code></span>` : null}
       ${open ? html`
         <div className="campaign-media-picker">
@@ -12653,22 +12814,30 @@ function App() {
     setCopyCounts((prev) => ({ ...prev, [adsetId]: value }));
   };
 
-  const addDraftFromAdset = (campaign, adset, countRaw) => {
+  const addDraftFromAdset = (campaign, adset, countRaw, options = {}) => {
     const count = Math.max(1, Number(countRaw) || 1);
+    const names = buildModelDraftNames(campaign, adset);
+    const selectedAdIds = Array.isArray(options.selectedAdIds)
+      ? new Set(options.selectedAdIds)
+      : null;
+    const creativeOverrides = options.creativeOverrides || {};
     const created = {
       id: `${adset.id}-${Date.now()}`,
       campaign_id: campaign.id,
       campaign_name: campaign.name,
       source_adset_id: adset.id,
       source_adset_name: adset.name,
-      adset_new_name: adset.name,
+      adset_new_name: names.adsetName,
+      cj_token: names.cjToken,
       daily_budget_brl: "",
       copies: count,
       ads: (adset.ads || []).map((ad) => ({
         id: ad.id,
         name: ad.name,
-        new_name: ad.name,
-        removed: false,
+        new_name: names.adNames.get(ad.id) || ad.name,
+        removed: selectedAdIds ? !selectedAdIds.has(ad.id) : false,
+        replacement_image_hash: creativeOverrides[ad.id]?.key || "",
+        replacement_image_url: creativeOverrides[ad.id]?.url || "",
       })),
     };
     setDrafts((prev) => [created, ...prev]);
@@ -13159,12 +13328,15 @@ function App() {
     const remaining = [];
     for (const draft of drafts) {
       let step = "copy";
-      let manualCopyAds = forceUtmCopy;
-      let adCopyMode = forceUtmCopy ? "create" : "copy";
+      const replacesCreative = (draft.ads || []).some(
+        (ad) => !ad.removed && ad.replacement_image_hash
+      );
+      let manualCopyAds = forceUtmCopy || replacesCreative;
+      let adCopyMode = forceUtmCopy || replacesCreative ? "create" : "copy";
       try {
         step = "copy";
         let copyRes;
-        if (forceUtmCopy) {
+        if (forceUtmCopy || replacesCreative) {
           copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
             method: "POST",
             body: JSON.stringify({
@@ -13250,14 +13422,15 @@ function App() {
 
         for (let i = 0; i < adsetIds.length; i += 1) {
           const newAdsetId = adsetIds[i];
+          const copyAdsetName = shiftCjName(draft.adset_new_name || "", i).trim();
 
-          if (draft.adset_new_name && draft.adset_new_name.trim()) {
+          if (copyAdsetName) {
             step = "rename-adset";
             await fetchJson(`${API_BASE}/meta-rename`, {
               method: "POST",
               body: JSON.stringify({
                 object_id: newAdsetId,
-                name: draft.adset_new_name.trim(),
+                name: copyAdsetName,
               }),
             });
           }
@@ -13315,9 +13488,10 @@ function App() {
                       body: JSON.stringify({
                         ad_id: ad.id,
                         adset_id: newAdsetId,
-                        name: ad.new_name || ad.name,
+                        name: shiftCjName(ad.new_name || ad.name, i),
                         status: DUPLICATE_STATUS,
                         sanitize_video_placements: true,
+                        replacement_image_hash: ad.replacement_image_hash || "",
                       }),
                     })
                   );
@@ -13369,9 +13543,10 @@ function App() {
                           body: JSON.stringify({
                             ad_id: ad.id,
                             adset_id: newAdsetId,
-                            name: ad.new_name || ad.name,
+                            name: shiftCjName(ad.new_name || ad.name, i),
                             status: DUPLICATE_STATUS,
                             sanitize_video_placements: true,
+                            replacement_image_hash: ad.replacement_image_hash || "",
                           }),
                         })
                       );
@@ -13434,7 +13609,7 @@ function App() {
               continue;
             }
             if (ad.removed) continue;
-            const nextName = (ad.new_name || "").trim();
+            const nextName = shiftCjName(ad.new_name || "", i).trim();
             if (nextName && nextName !== ad.name) {
               step = "rename-ad";
               await fetchJson(`${API_BASE}/meta-rename`, {

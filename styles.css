@@ -1242,6 +1242,239 @@ button.ghost.danger {
 .manager-advanced-content > main {
   margin-top: 0;
 }
+.manager-campaign {
+  border-radius: 8px;
+  background: var(--card);
+}
+.manager-campaign-header {
+  padding: 11px 14px;
+  border-left: 3px solid #1683d8;
+  background: color-mix(in srgb, #1683d8 12%, var(--card));
+}
+.manager-level-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.manager-level-copy > div:last-child {
+  min-width: 0;
+}
+.manager-level-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  color: var(--muted);
+}
+.manager-level-icon.campaign {
+  width: 19px;
+  height: 19px;
+  flex-basis: 19px;
+  fill: #1683d8;
+  stroke: #1683d8;
+}
+.manager-adsets {
+  padding: 0;
+}
+.manager-adset-group {
+  border-bottom: 1px solid var(--border-light);
+}
+.manager-adset-group:last-child {
+  border-bottom: 0;
+}
+.manager-adset {
+  min-height: 54px;
+  padding: 10px 14px 10px 30px;
+  border-bottom: 0;
+}
+.manager-adset .manager-level-copy {
+  position: relative;
+}
+.manager-adset .manager-level-copy::before {
+  content: "";
+  position: absolute;
+  left: -17px;
+  top: -18px;
+  bottom: -18px;
+  border-left: 1px solid var(--border);
+}
+.manager-ads {
+  margin-left: 45px;
+  border-left: 1px solid var(--border);
+}
+.manager-ad-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 15px;
+  border-top: 1px solid var(--border-light);
+  background: var(--surface);
+}
+.manager-ad-row .manager-title-line > span:first-child {
+  overflow-wrap: anywhere;
+}
+.manager-ad-thumb {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.manager-more,
+.manager-more-static {
+  position: relative;
+  flex: 0 0 auto;
+}
+.manager-more > summary,
+.manager-more-static {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 30px;
+  border-radius: 7px;
+  color: var(--ink);
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+  list-style: none;
+}
+.manager-more > summary::-webkit-details-marker {
+  display: none;
+}
+.manager-more > summary:hover {
+  background: var(--surface);
+}
+.manager-more-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 5px);
+  right: 0;
+  display: grid;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+.manager-more-menu button {
+  border: 0;
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.manager-more-menu button:hover:not(:disabled) {
+  background: var(--surface);
+}
+.manager-more-menu button.danger {
+  color: var(--neg);
+}
+.manager-model-panel {
+  margin: 0 14px 14px 44px;
+  padding: 15px;
+  border: 1px solid color-mix(in srgb, #1683d8 36%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, #1683d8 6%, var(--card));
+}
+.manager-model-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.manager-model-head p {
+  margin: 4px 0 0;
+}
+.manager-model-ads {
+  display: grid;
+  gap: 9px;
+  margin-top: 13px;
+}
+.manager-model-ad {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  background: var(--card);
+  opacity: 0.68;
+}
+.manager-model-ad.is-selected {
+  border-color: color-mix(in srgb, #1683d8 45%, var(--border));
+  opacity: 1;
+}
+.manager-model-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+.manager-model-select > input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+}
+.manager-model-select > img,
+.manager-model-placeholder {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: cover;
+}
+.manager-model-placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+}
+.manager-model-select > span:last-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.manager-model-select strong {
+  overflow-wrap: anywhere;
+}
+.manager-model-select small,
+.manager-creative-changed,
+.campaign-media-error {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+.manager-creative-changed {
+  display: block;
+  margin-top: 3px;
+  color: var(--accent);
+  font-weight: 700;
+}
+.campaign-media-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.campaign-media-picker-actions .ghost {
+  padding: 7px 9px;
+  font-size: 0.77rem;
+}
+.manager-draft-creative {
+  grid-column: 1 / -1;
+  padding: 8px 0 2px;
+  border-top: 1px dashed var(--border);
+}
 
 @media (max-width: 960px) {
   .topbar {
@@ -1508,7 +1741,7 @@ button.ghost.danger {
     justify-content: flex-start;
   }
   .manager-adsets {
-    padding-inline: 12px;
+    padding-inline: 0;
   }
   .manager-create-panel {
     padding: 13px 12px;
@@ -1526,6 +1759,46 @@ button.ghost.danger {
   }
   .manager-template-list {
     grid-template-columns: 1fr;
+  }
+  .manager-adset {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-left: 24px;
+  }
+  .manager-adset .manager-row-actions {
+    justify-content: flex-start;
+  }
+  .manager-ads {
+    margin-left: 35px;
+  }
+  .manager-ad-row {
+    padding-inline: 10px;
+  }
+  .manager-ad-row .manager-status,
+  .manager-ad-row .muted.small {
+    display: none;
+  }
+  .manager-model-panel {
+    margin: 0 8px 10px 24px;
+    padding: 12px;
+  }
+  .manager-model-head,
+  .manager-model-ad {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+  .manager-model-ad {
+    align-items: stretch;
+  }
+  .manager-model-ad .campaign-media-picker-actions button {
+    flex: 1;
+  }
+  .manager-more-menu {
+    position: fixed;
+    top: auto;
+    right: 14px;
+    bottom: 14px;
+    left: 14px;
+    min-width: 0;
   }
 
   .token-grid {
