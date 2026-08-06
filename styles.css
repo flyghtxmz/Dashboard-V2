@@ -1395,6 +1395,10 @@ button.ghost.danger {
 .manager-model-head p {
   margin: 4px 0 0;
 }
+.manager-model-adset-name {
+  margin-top: 13px;
+  max-width: 620px;
+}
 .manager-model-ads {
   display: grid;
   gap: 9px;
@@ -1427,6 +1431,15 @@ button.ghost.danger {
   height: 17px;
   flex: 0 0 17px;
 }
+.manager-model-checkbox {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.manager-model-checkbox input {
+  width: 17px;
+  height: 17px;
+}
 .manager-model-select > img,
 .manager-model-placeholder {
   width: 44px;
@@ -1445,6 +1458,29 @@ button.ghost.danger {
   display: grid;
   gap: 3px;
   min-width: 0;
+}
+.manager-model-name-label {
+  display: grid;
+  gap: 4px;
+}
+.manager-model-name {
+  width: 100%;
+  min-width: 180px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+.manager-model-name:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.manager-model-creative-actions {
+  display: grid;
+  gap: 6px;
 }
 .manager-model-select strong {
   overflow-wrap: anywhere;
@@ -1474,6 +1510,20 @@ button.ghost.danger {
   grid-column: 1 / -1;
   padding: 8px 0 2px;
   border-top: 1px dashed var(--border);
+}
+.manager-draft-ad-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.manager-draft-ad-source img {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: cover;
 }
 
 @media (max-width: 960px) {
@@ -4363,8 +4413,19 @@ button.ghost.danger {
 }
 
 .campaign-media-selected {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: var(--pos);
   font-size: 0.76rem;
+}
+
+.campaign-media-selected img {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  object-fit: cover;
 }
 
 .campaign-media-selected code {

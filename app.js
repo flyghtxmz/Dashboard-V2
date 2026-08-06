@@ -10,8 +10,8 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=158";
-import { buildModelDraftNames, shiftCjName } from "./campaign-manager.mjs?v=158";
+} from "./campaign-builder.mjs?v=159";
+import { buildModelDraftNames, shiftCjName } from "./campaign-manager.mjs?v=159";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 158;
+const APP_VERSION_BUILD = 159;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4680,6 +4680,8 @@ function GerenciarView({
   const [modelingAdsetId, setModelingAdsetId] = useState("");
   const [modelSelections, setModelSelections] = useState({});
   const [modelCreativeOverrides, setModelCreativeOverrides] = useState({});
+  const [modelAdNames, setModelAdNames] = useState({});
+  const [modelAdsetName, setModelAdsetName] = useState("");
   const [form, setForm] = useState({
     name: "",
     daily_budget_brl: "20.00",
@@ -4754,12 +4756,15 @@ function GerenciarView({
     setCreatingFor(creatingFor === campaign.id ? "" : campaign.id);
     if (!(pixels || []).length && accountId) onLoadPixels?.(accountId);
   };
-  const beginModel = (adset) => {
+  const beginModel = (campaign, adset) => {
     const ads = adset?.ads || [];
+    const generatedNames = buildModelDraftNames(campaign, adset);
     const willOpen = modelingAdsetId !== adset.id;
     setModelingAdsetId(willOpen ? adset.id : "");
     setModelSelections(Object.fromEntries(ads.map((ad) => [ad.id, true])));
     setModelCreativeOverrides({});
+    setModelAdNames(Object.fromEntries(ads.map((ad) => [ad.id, generatedNames.adNames.get(ad.id) || ad.name])));
+    setModelAdsetName(generatedNames.adsetName);
     if (willOpen && typeof window !== "undefined") {
       window.setTimeout(() => {
         document.querySelector(`[data-manager-adset="${adset.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -4773,6 +4778,8 @@ function GerenciarView({
     onAddDraft?.(campaign, adset, 1, {
       selectedAdIds,
       creativeOverrides: modelCreativeOverrides,
+      adNames: modelAdNames,
+      adsetName: modelAdsetName,
     });
     setModelingAdsetId("");
     setCreatingFor("");
@@ -4892,7 +4899,7 @@ function GerenciarView({
                           ${(campaign.adsets || []).length
                             ? html`<div className="manager-template-list">
                                 ${(campaign.adsets || []).map((adset) => html`
-                                  <button className="ghost" onClick=${() => beginModel(adset)}>
+                                  <button className="ghost" onClick=${() => beginModel(campaign, adset)}>
                                     <span>${adset.name}</span><strong>Usar modelo</strong>
                                   </button>
                                 `)}
@@ -4990,7 +4997,7 @@ function GerenciarView({
                               <details className="manager-more">
                                 <summary aria-label="Ações do conjunto">•••</summary>
                                 <div className="manager-more-menu">
-                                  <button onClick=${() => beginModel(adset)}>Usar como modelo</button>
+                                  <button onClick=${() => beginModel(campaign, adset)}>Usar como modelo</button>
                                   <button disabled=${!!togglingStatus?.[adset.id]} onClick=${() => onToggleAdsetStatus?.(adset.id, statusText(adset))}>
                                     ${statusText(adset) === "ACTIVE" ? "Pausar conjunto" : "Ativar conjunto"}
                                   </button>
@@ -5029,34 +5036,66 @@ function GerenciarView({
                                     </div>
                                     <button className="ghost small" onClick=${() => setModelingAdsetId("")}>Fechar</button>
                                   </div>
+                                  <label className="field manager-model-adset-name">
+                                    <span>Novo nome do conjunto</span>
+                                    <input value=${modelAdsetName} onInput=${(event) => setModelAdsetName(event.target.value)} />
+                                  </label>
                                   ${(adset.ads || []).length === 0
                                     ? html`<div className="manager-empty compact"><span>Este conjunto não possui anúncios. Você ainda pode copiar somente o conjunto.</span></div>`
                                     : html`<div className="manager-model-ads">
                                         ${(adset.ads || []).map((ad) => html`
                                           <div className=${`manager-model-ad ${modelSelections[ad.id] ? "is-selected" : ""}`} key=${ad.id}>
-                                            <label className="manager-model-select">
-                                              <input
-                                                type="checkbox"
-                                                checked=${!!modelSelections[ad.id]}
-                                                onChange=${(event) => setModelSelections({ ...modelSelections, [ad.id]: event.target.checked })}
-                                              />
-                                              ${ad.thumbnail_url ? html`<img src=${ad.thumbnail_url} alt="" loading="lazy" />` : html`<span className="manager-model-placeholder"><${ManagerLevelIcon} level="ad" /></span>`}
-                                              <span><strong>${ad.name}</strong><small>${modelCreativeOverrides[ad.id]?.key ? "Nova imagem selecionada" : "Manter imagem atual"}</small></span>
-                                            </label>
+                                            <div className="manager-model-select">
+                                              <label className="manager-model-checkbox" title="Incluir este anúncio">
+                                                <input
+                                                  type="checkbox"
+                                                  checked=${!!modelSelections[ad.id]}
+                                                  onChange=${(event) => setModelSelections({ ...modelSelections, [ad.id]: event.target.checked })}
+                                                />
+                                              </label>
+                                              ${modelCreativeOverrides[ad.id]?.url || ad.thumbnail_url
+                                                ? html`<img src=${modelCreativeOverrides[ad.id]?.url || ad.thumbnail_url} alt="Preview do criativo" loading="lazy" />`
+                                                : html`<span className="manager-model-placeholder"><${ManagerLevelIcon} level="ad" /></span>`}
+                                              <span>
+                                                <label className="manager-model-name-label">
+                                                  <small>Novo nome do anúncio</small>
+                                                  <input
+                                                    className="manager-model-name"
+                                                    value=${modelAdNames[ad.id] || ""}
+                                                    disabled=${!modelSelections[ad.id]}
+                                                    onInput=${(event) => setModelAdNames({ ...modelAdNames, [ad.id]: event.target.value })}
+                                                  />
+                                                </label>
+                                                <small>${modelCreativeOverrides[ad.id]?.key ? "Preview da nova imagem" : `Imagem atual • modelo: ${ad.name}`}</small>
+                                              </span>
+                                            </div>
                                             ${modelSelections[ad.id]
-                                              ? html`<${CampaignMediaPicker}
-                                                  accountId=${accountId}
-                                                  type="image"
-                                                  selectedKey=${modelCreativeOverrides[ad.id]?.key || ""}
-                                                  onSelect=${(item) => setModelCreativeOverrides({ ...modelCreativeOverrides, [ad.id]: item })}
-                                                />`
+                                              ? html`<div className="manager-model-creative-actions">
+                                                  <${CampaignMediaPicker}
+                                                    accountId=${accountId}
+                                                    type="image"
+                                                    selectedKey=${modelCreativeOverrides[ad.id]?.key || ""}
+                                                    onSelect=${(item) => setModelCreativeOverrides({ ...modelCreativeOverrides, [ad.id]: item })}
+                                                  />
+                                                  ${modelCreativeOverrides[ad.id]?.key
+                                                    ? html`<button className="ghost small" onClick=${() => {
+                                                        const next = { ...modelCreativeOverrides };
+                                                        delete next[ad.id];
+                                                        setModelCreativeOverrides(next);
+                                                      }}>Usar imagem original</button>`
+                                                    : null}
+                                                </div>`
                                               : null}
                                           </div>
                                         `)}
                                       </div>`}
                                   <div className="manager-create-actions">
                                     <span className="muted small">${Object.values(modelSelections).filter(Boolean).length} anúncio(s) selecionado(s)</span>
-                                    <button className="primary" onClick=${() => confirmModel(campaign, adset)}>Adicionar ao rascunho</button>
+                                    <button
+                                      className="primary"
+                                      disabled=${!modelAdsetName.trim() || (adset.ads || []).some((ad) => modelSelections[ad.id] && !String(modelAdNames[ad.id] || "").trim())}
+                                      onClick=${() => confirmModel(campaign, adset)}
+                                    >Adicionar ao rascunho</button>
                                   </div>
                                 </div>`
                               : null}
@@ -5092,7 +5131,10 @@ function GerenciarView({
                   <summary>Revisar anúncios (${(draft.ads || []).filter((ad) => !ad.removed).length}/${(draft.ads || []).length})</summary>
                   <div className="manager-draft-ad-list">
                     ${(draft.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed ? "is-removed" : ""}`} key=${ad.id}>
-                      <div><span>${ad.name}</span>${ad.replacement_image_hash ? html`<small className="manager-creative-changed">Imagem alterada</small>` : null}</div>
+                      <div className="manager-draft-ad-source">
+                        ${ad.replacement_image_url ? html`<img src=${ad.replacement_image_url} alt="Preview da nova imagem" loading="lazy" />` : null}
+                        <span>${ad.name}${ad.replacement_image_hash ? html`<small className="manager-creative-changed">Preview da nova imagem</small>` : null}</span>
+                      </div>
                       <input value=${ad.new_name} disabled=${ad.removed} onChange=${(e) => onUpdateDraftAd(draft.id, ad.id, { new_name: e.target.value })} />
                       <button className="ghost small" onClick=${() => onToggleDraftAd(draft.id, ad.id)}>${ad.removed ? "Restaurar" : "Remover"}</button>
                       ${!ad.removed ? html`<div className="manager-draft-creative">
@@ -5102,6 +5144,7 @@ function GerenciarView({
                           selectedKey=${ad.replacement_image_hash || ""}
                           onSelect=${(item) => onUpdateDraftAd(draft.id, ad.id, { replacement_image_hash: item.key, replacement_image_url: item.url || "" })}
                         />
+                        ${ad.replacement_image_hash ? html`<button className="ghost small" onClick=${() => onUpdateDraftAd(draft.id, ad.id, { replacement_image_hash: "", replacement_image_url: "" })}>Usar imagem original</button>` : null}
                       </div>` : null}
                     </div>`)}
                   </div>
@@ -7759,6 +7802,7 @@ function CampaignMediaPicker({ accountId, type, selectedKey, onSelect }) {
   const visibleItems = normalizedSearch
     ? items.filter((item) => `${labels[item.key]?.label || item.name || ""} ${item.key}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch))
     : items;
+  const selectedItem = items.find((item) => item.key === selectedKey);
 
   return html`
     <div className="campaign-media-picker-wrap">
@@ -7776,7 +7820,10 @@ function CampaignMediaPicker({ accountId, type, selectedKey, onSelect }) {
         />
       </div>
       ${error && !open ? html`<span className="campaign-media-error">${error}</span>` : null}
-      ${selectedKey ? html`<span className="campaign-media-selected">Selecionado na Meta: <code>${selectedKey}</code></span>` : null}
+      ${selectedKey ? html`<span className="campaign-media-selected">
+        ${selectedItem?.url ? html`<img src=${selectedItem.url} alt="Criativo selecionado" loading="lazy" />` : null}
+        <span>Selecionado na Meta: <code>${selectedKey}</code></span>
+      </span>` : null}
       ${open ? html`
         <div className="campaign-media-picker">
           <div className="campaign-media-picker-head">
@@ -12821,20 +12868,21 @@ function App() {
       ? new Set(options.selectedAdIds)
       : null;
     const creativeOverrides = options.creativeOverrides || {};
+    const customAdNames = options.adNames || {};
     const created = {
       id: `${adset.id}-${Date.now()}`,
       campaign_id: campaign.id,
       campaign_name: campaign.name,
       source_adset_id: adset.id,
       source_adset_name: adset.name,
-      adset_new_name: names.adsetName,
+      adset_new_name: String(options.adsetName || names.adsetName).trim(),
       cj_token: names.cjToken,
       daily_budget_brl: "",
       copies: count,
       ads: (adset.ads || []).map((ad) => ({
         id: ad.id,
         name: ad.name,
-        new_name: names.adNames.get(ad.id) || ad.name,
+        new_name: String(customAdNames[ad.id] || names.adNames.get(ad.id) || ad.name).trim(),
         removed: selectedAdIds ? !selectedAdIds.has(ad.id) : false,
         replacement_image_hash: creativeOverrides[ad.id]?.key || "",
         replacement_image_url: creativeOverrides[ad.id]?.url || "",
