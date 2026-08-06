@@ -10,18 +10,17 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=162";
-import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=162";
+} from "./campaign-builder.mjs?v=163";
+import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=163";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
 const DEFAULT_UTM_TAGS = SITE_URL_TAGS;
-const DUPLICATE_STATUS = "PAUSED";
 const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 162;
+const APP_VERSION_BUILD = 163;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4710,22 +4709,49 @@ function GerenciarView({
   }, [managerToast]);
 
   useEffect(() => {
+    const closeAllMenus = () => {
+      document.querySelectorAll(".manager-more[open]").forEach((details) => details.removeAttribute("open"));
+    };
     const closeMenus = (event) => {
       const currentMenu = event.target.closest?.(".manager-more");
       document.querySelectorAll(".manager-more[open]").forEach((details) => {
         if (!currentMenu || details !== currentMenu) details.removeAttribute("open");
       });
     };
-    const closeAfterAction = (event) => {
+    const handleMenuClick = (event) => {
+      const summary = event.target.closest?.(".manager-more > summary");
+      if (summary) {
+        window.requestAnimationFrame(() => {
+          const details = summary.closest(".manager-more");
+          const menu = details?.querySelector(".manager-more-menu");
+          if (!details?.open || !menu || window.innerWidth <= 600) return;
+          const anchor = summary.getBoundingClientRect();
+          const menuRect = menu.getBoundingClientRect();
+          const width = Math.max(190, menuRect.width || 190);
+          const height = Math.max(48, menuRect.height || 48);
+          const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.right - width));
+          const preferredTop = anchor.bottom + 6;
+          const top = preferredTop + height <= window.innerHeight - 12
+            ? preferredTop
+            : Math.max(12, anchor.top - height - 6);
+          menu.style.left = `${left}px`;
+          menu.style.top = `${top}px`;
+          menu.style.right = "auto";
+          menu.style.bottom = "auto";
+          menu.style.visibility = "visible";
+        });
+      }
       const action = event.target.closest?.(".manager-more-menu button");
       if (!action) return;
       window.setTimeout(() => action.closest(".manager-more")?.removeAttribute("open"), 0);
     };
     document.addEventListener("pointerdown", closeMenus);
-    document.addEventListener("click", closeAfterAction);
+    document.addEventListener("click", handleMenuClick);
+    window.addEventListener("scroll", closeAllMenus, true);
     return () => {
       document.removeEventListener("pointerdown", closeMenus);
-      document.removeEventListener("click", closeAfterAction);
+      document.removeEventListener("click", handleMenuClick);
+      window.removeEventListener("scroll", closeAllMenus, true);
     };
   }, []);
 
@@ -4882,7 +4908,7 @@ function GerenciarView({
       setManagerToast({
         type: "success",
         title: "Publicado com sucesso",
-        message: `${result.publishedItems} item(ns) enviado(s) para o Gerenciador de Anúncios.`,
+        message: `${result.publishedItems} item(ns) enviado(s) como ativo(s) para o Gerenciador de Anúncios.`,
       });
     } else if (result.failedDrafts > 0) {
       setManagerToast({
@@ -4950,7 +4976,7 @@ function GerenciarView({
           <strong>${filteredCampaigns.length}</strong>
           <span>${filteredCampaigns.length === 1 ? "campanha encontrada" : "campanhas encontradas"}</span>
           <span className="manager-summary-divider">•</span>
-          <span>Conjuntos ficam pausados; novos anúncios são publicados ativos</span>
+          <span>Itens publicados pelo rascunho são enviados ativos</span>
         </div>
 
         <div className="manager-campaigns">
@@ -5138,7 +5164,7 @@ function GerenciarView({
                                       <p className="muted small">
                                         ${modelMode === "ad_only"
                                           ? "O CJ será mantido. Somente o AN será incrementado e o novo anúncio será publicado ativo."
-                                          : "O próximo CJ será aplicado automaticamente. Escolha os anúncios e, se quiser, troque a imagem."}
+                                          : "O próximo CJ será aplicado automaticamente. O conjunto e os anúncios serão publicados ativos."}
                                       </p>
                                     </div>
                                     <button className="ghost small" onClick=${() => setModelingAdsetId("")}>Fechar</button>
@@ -13542,6 +13568,7 @@ function App() {
     if (!drafts.length) return;
     setPublishing(true);
     const forceUtmCopy = false;
+    const managerPublishStatus = "ACTIVE";
     const remaining = [];
     let publishedItems = 0;
     let publishedDrafts = 0;
@@ -13563,7 +13590,7 @@ function App() {
           for (const ad of adsToCreate) {
             step = "create-ad-in-existing-adset";
             const sourceAdId = ad.source_ad_id || ad.id;
-            await retryOnSubcode33(() =>
+            const createResult = await retryOnSubcode33(() =>
               fetchJson(`${API_BASE}/meta-ad-create`, {
                 method: "POST",
                 body: JSON.stringify({
@@ -13576,6 +13603,14 @@ function App() {
                 }),
               })
             );
+            const createdAdId = createResult?.new_ad_id || createResult?.data?.id;
+            if (createdAdId) {
+              step = "activate-ad-in-existing-adset";
+              await fetchJson(`${API_BASE}/meta-ad-status`, {
+                method: "POST",
+                body: JSON.stringify({ ad_id: createdAdId, status: "ACTIVE" }),
+              });
+            }
           }
           pushLog("gerenciar-anuncio", {
             message: `${adsToCreate.length} anúncio(s) ativo(s) criado(s) em ${draft.source_adset_name}, sem alterar o CJ.`,
@@ -13591,7 +13626,7 @@ function App() {
             method: "POST",
             body: JSON.stringify({
               adset_id: draft.source_adset_id,
-              status_option: DUPLICATE_STATUS,
+              status_option: managerPublishStatus,
               rename_strategy: "DEEP_RENAME",
               rename_options: { prefix: "Copia - ", suffix: "" },
               number_of_copies: draft.copies || 1,
@@ -13605,7 +13640,7 @@ function App() {
               method: "POST",
               body: JSON.stringify({
                 adset_id: draft.source_adset_id,
-                status_option: DUPLICATE_STATUS,
+                status_option: managerPublishStatus,
                 rename_strategy: "DEEP_RENAME",
                 rename_options: { prefix: "Copia - ", suffix: "" },
                 number_of_copies: draft.copies || 1,
@@ -13627,7 +13662,7 @@ function App() {
                 method: "POST",
                 body: JSON.stringify({
                   adset_id: draft.source_adset_id,
-                  status_option: DUPLICATE_STATUS,
+                  status_option: managerPublishStatus,
                   rename_strategy: "DEEP_RENAME",
                   rename_options: { prefix: "Copia - ", suffix: "" },
                   number_of_copies: draft.copies || 1,
@@ -13646,7 +13681,7 @@ function App() {
                 method: "POST",
                 body: JSON.stringify({
                   adset_id: draft.source_adset_id,
-                  status_option: DUPLICATE_STATUS,
+                  status_option: managerPublishStatus,
                   rename_strategy: "DEEP_RENAME",
                   rename_options: { prefix: "Copia - ", suffix: "" },
                   number_of_copies: draft.copies || 1,
@@ -13696,6 +13731,12 @@ function App() {
             });
           }
 
+          step = "activate-adset";
+          await fetchJson(`${API_BASE}/meta-adset-status`, {
+            method: "POST",
+            body: JSON.stringify({ adset_id: newAdsetId, status: managerPublishStatus }),
+          });
+
           let newAds = adIdsMatrix[i] || [];
           let adMappings = [];
 
@@ -13740,7 +13781,7 @@ function App() {
                         ad_id: sourceAdId,
                         adset_id: newAdsetId,
                         name: shiftCjName(ad.new_name || ad.name, i),
-                        status: DUPLICATE_STATUS,
+                        status: managerPublishStatus,
                         sanitize_video_placements: true,
                         replacement_image_hash: ad.replacement_image_hash || "",
                       }),
@@ -13770,7 +13811,7 @@ function App() {
                       body: JSON.stringify({
                         ad_id: sourceAdId,
                         adset_id: newAdsetId,
-                        status_option: DUPLICATE_STATUS,
+                        status_option: managerPublishStatus,
                         rename_strategy: "DEEP_RENAME",
                         rename_options: { prefix: "Copia - ", suffix: "" },
                       }),
@@ -13795,7 +13836,7 @@ function App() {
                             ad_id: sourceAdId,
                             adset_id: newAdsetId,
                             name: shiftCjName(ad.new_name || ad.name, i),
-                            status: DUPLICATE_STATUS,
+                            status: managerPublishStatus,
                             sanitize_video_placements: true,
                             replacement_image_hash: ad.replacement_image_hash || "",
                           }),
@@ -13871,6 +13912,11 @@ function App() {
                 }),
               });
             }
+            step = "activate-ad";
+            await fetchJson(`${API_BASE}/meta-ad-status`, {
+              method: "POST",
+              body: JSON.stringify({ ad_id: targetId, status: managerPublishStatus }),
+            });
           }
         }
 

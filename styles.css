@@ -1242,7 +1242,7 @@ button.ghost.danger {
 .manager-advanced-content > main {
   margin-top: 0;
 }
-.manager-campaign {
+.manager-grid .manager-campaign {
   overflow: visible;
   border-radius: 8px;
   background: var(--card);
@@ -1333,7 +1333,7 @@ button.ghost.danger {
   flex: 0 0 auto;
 }
 .manager-more[open] {
-  z-index: 80;
+  z-index: 10001;
 }
 .manager-more > summary,
 .manager-more-static {
@@ -1356,10 +1356,12 @@ button.ghost.danger {
   background: var(--surface);
 }
 .manager-more-menu {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 5px);
-  right: 0;
+  position: fixed;
+  z-index: 10000;
+  visibility: hidden;
+  top: 0;
+  right: auto;
+  left: 0;
   display: grid;
   min-width: 190px;
   padding: 6px;
@@ -1948,11 +1950,12 @@ button.ghost.danger {
   }
   .manager-more-menu {
     position: fixed;
-    top: auto;
-    right: 14px;
-    bottom: 14px;
-    left: 14px;
+    top: auto !important;
+    right: 14px !important;
+    bottom: 14px !important;
+    left: 14px !important;
     min-width: 0;
+    visibility: visible !important;
   }
   .manager-toast {
     top: 14px;
