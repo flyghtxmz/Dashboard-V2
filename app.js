@@ -401,6 +401,30 @@ function messageMetricsServerVariant({ pageId, adsetFilter, taxSignature, hidden
   ].join(":");
 }
 
+function salesDashboardStorageKey({ domain, startDate, endDate, metaAccountId, adsetFilter, taxSignature, hiddenSignature }) {
+  const scope = typeof window !== "undefined" ? window.__cd_session_scope__ || "anon" : "anon";
+  return [
+    "__sales_dashboard_refresh_v1__",
+    scope,
+    domain || "sem-dominio",
+    startDate || "sem-inicio",
+    endDate || "sem-fim",
+    metaAccountId || "sem-conta",
+    normalizeKey(adsetFilter || "sem-filtro"),
+    taxSignature || "imposto-padrao",
+    hiddenSignature || "nenhuma-oculta",
+  ].join(":");
+}
+
+function salesDashboardServerVariant({ adsetFilter, taxSignature, hiddenSignature }) {
+  return [
+    "sales-dashboard-refresh-v1",
+    normalizeKey(adsetFilter || "sem-filtro"),
+    taxSignature || "imposto-padrao",
+    hiddenSignature || "nenhuma-oculta",
+  ].join(":");
+}
+
 function isJoinadsDateFinalized(dateString, finalHour = 10) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateString || ""))) return false;
   const parts = Object.fromEntries(
@@ -789,7 +813,7 @@ function formatStatusLabel(status) {
   return statusLabelMap[status] || status;
 }
 
-function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = false, scopeLabel = "JoinAds" }) {
+function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = false, scopeLabel = "JoinAds", comparisonTotals = null }) {
   const unitLabel = performanceUnitLabel(usePmLabels);
   const revenueClientBrl =
     usdToBrl && totals.revenueClient != null
@@ -803,6 +827,9 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
     revenueClientBrl != null && metaSpendBrl > 0
       ? revenueClientBrl / metaSpendBrl
       : null;
+  const previousRoiPct = comparisonTotals?.spend_brl > 0
+    ? comparisonTotals.profit_brl / comparisonTotals.spend_brl * 100
+    : null;
 
   const items = [
     {
@@ -810,6 +837,9 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
       value: currencyUSD.format(totals.revenueClient || 0),
       helper: "Valor líquido informado pela API (após revshare; sem novo desconto)",
       tone: "primary",
+      current: totals.revenueClient || 0,
+      previous: comparisonTotals?.revenue_usd,
+      format: "usd",
     },
     {
       label: "Receita cliente (BRL)",
@@ -818,53 +848,81 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
         ? `Conversão USD->BRL${fxDateLabel ? ` (${fxDateLabel})` : ""}`
         : "Aguardando cotação",
       tone: "primary",
+      current: revenueClientBrl,
+      previous: comparisonTotals?.revenue_brl,
+      format: "brl",
     },
     {
       label: "Valor gasto (Meta)",
       value: currencyBRL.format(metaSpendBrl || 0),
       helper: "Gasto total do período",
+      current: metaSpendBrl || 0,
+      previous: comparisonTotals?.spend_brl,
+      format: "brl",
     },
     {
       label: "ROI (BRL)",
       value: roiPct != null ? `${roiPct.toFixed(1)}%` : "-",
       helper: "((Receita BRL - gasto) / gasto)",
       tone: "primary",
+      current: roiPct,
+      previous: previousRoiPct,
+      format: "percent",
     },
     {
       label: "ROAS (BRL)",
       value: roas != null ? `${roas.toFixed(2)}x` : "-",
       helper: "Receita BRL / gasto",
       tone: "primary",
+      current: roas,
+      previous: comparisonTotals?.roas,
+      format: "roas",
     },
     {
       label: "Receita bruta",
       value: currencyUSD.format(totals.revenue || 0),
       helper: "Valor total",
+      current: totals.revenue || 0,
+      previous: comparisonTotals?.gross_revenue_usd,
+      format: "usd",
     },
     {
       label: "Impressoes",
       value: number.format(totals.impressions || 0),
       helper: "Volume exibido",
+      current: totals.impressions || 0,
+      previous: comparisonTotals?.joinads_impressions,
     },
     {
       label: "Cliques",
       value: number.format(totals.clicks || 0),
       helper: "Interações",
+      current: totals.clicks || 0,
+      previous: comparisonTotals?.joinads_clicks,
     },
     {
       label: "CTR",
       value: `${(totals.ctr || 0).toFixed(2)}%`,
       helper: "Cliques / Impressoes",
+      current: totals.ctr || 0,
+      previous: comparisonTotals?.joinads_ctr,
+      format: "percent",
     },
     {
       label: `${unitLabel} cliente`,
       value: currencyUSD.format(totals.ecpmClient || 0),
       helper: usePmLabels ? "Ganho por mil" : "Receita por mil",
+      current: totals.ecpmClient || 0,
+      previous: comparisonTotals?.ecpm,
+      format: "usd",
     },
     {
       label: `${unitLabel} bruto`,
       value: currencyUSD.format(totals.ecpm || 0),
       helper: usePmLabels ? "Ganho por mil antes do revshare" : "Antes do revshare",
+      current: totals.ecpm || 0,
+      previous: comparisonTotals?.gross_ecpm,
+      format: "usd",
     },
     {
       label: "Active view",
@@ -888,6 +946,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
             <div className="metric-card" data-tone=${item.tone || ""} key=${item.label}>
               <div className="metric-label">${item.label}</div>
               <div className="metric-value">${item.value}</div>
+              <${RefreshDelta} current=${item.current} previous=${item.previous} format=${item.format || "number"} />
               <div className="metric-helper">${item.helper}</div>
             </div>
           `
@@ -5475,6 +5534,70 @@ function consolidateMetaJoinRows(rows) {
   });
 }
 
+function buildSalesDashboardSnapshot(rows) {
+  const consolidated = consolidateMetaJoinRows(rows);
+  const createBucket = () => ({
+    spend_brl: 0,
+    results: 0,
+    meta_impressions: 0,
+    meta_clicks: 0,
+    gross_revenue_usd: 0,
+    revenue_usd: 0,
+    revenue_brl: 0,
+    joinads_impressions: 0,
+    joinads_clicks: 0,
+  });
+  const addRow = (bucket, row) => {
+    bucket.spend_brl += toNumber(row.spend_value);
+    bucket.results += toNumber(row.results_meta);
+    bucket.meta_impressions += toNumber(row.meta_impressions_value);
+    bucket.meta_clicks += toNumber(row.meta_clicks_value);
+    if (row.joinads_matched) {
+      bucket.gross_revenue_usd += toNumber(row.revenue_joinads_value);
+      bucket.revenue_usd += toNumber(row.revenue_client_value);
+      bucket.revenue_brl += toNumber(row.revenue_client_brl_value);
+      bucket.joinads_impressions += toNumber(row.impressions_joinads);
+      bucket.joinads_clicks += toNumber(row.clicks_joinads);
+    }
+  };
+  const finish = (bucket) => ({
+    ...bucket,
+    cpa_brl: bucket.results > 0 ? bucket.spend_brl / bucket.results : null,
+    meta_ctr: bucket.meta_impressions > 0 ? bucket.meta_clicks / bucket.meta_impressions * 100 : null,
+    ecpm: bucket.joinads_impressions > 0 ? bucket.revenue_usd / bucket.joinads_impressions * 1000 : null,
+    gross_ecpm: bucket.joinads_impressions > 0 ? bucket.gross_revenue_usd / bucket.joinads_impressions * 1000 : null,
+    joinads_ctr: bucket.joinads_impressions > 0 ? bucket.joinads_clicks / bucket.joinads_impressions * 100 : null,
+    roas: bucket.spend_brl > 0 ? bucket.revenue_brl / bucket.spend_brl : null,
+    profit_brl: bucket.revenue_brl - bucket.spend_brl,
+  });
+  const campaignBuckets = new Map();
+  const adsetBuckets = new Map();
+  const ads = {};
+  const totalsBucket = createBucket();
+
+  consolidated.forEach((row, index) => {
+    const campaignKey = String(row.campaign_id || row.campaign_name || `campaign:${index}`);
+    const adsetKey = String(row.adset_id || `${campaignKey}:${row.adset_name || index}`);
+    const adKey = String(row.ad_id || `${adsetKey}:${row.ad_name || index}`);
+    if (!campaignBuckets.has(campaignKey)) campaignBuckets.set(campaignKey, createBucket());
+    if (!adsetBuckets.has(adsetKey)) adsetBuckets.set(adsetKey, createBucket());
+    addRow(campaignBuckets.get(campaignKey), row);
+    addRow(adsetBuckets.get(adsetKey), row);
+    const adBucket = createBucket();
+    addRow(adBucket, row);
+    ads[adKey] = finish(adBucket);
+    addRow(totalsBucket, row);
+  });
+
+  return {
+    schema: "sales-dashboard-refresh-v1",
+    campaigns: Object.fromEntries(Array.from(campaignBuckets, ([key, value]) => [key, finish(value)])),
+    adsets: Object.fromEntries(Array.from(adsetBuckets, ([key, value]) => [key, finish(value)])),
+    ads,
+    totals: finish(totalsBucket),
+  };
+}
+
 function MetaJoinTable({
   rows,
   adsetFilter,
@@ -5488,6 +5611,9 @@ function MetaJoinTable({
   isMultiDay,
   allowCampaignOps = true,
   usePmLabels = false,
+  comparisonSnapshot = null,
+  comparisonStatus = "idle",
+  comparisonError = "",
 }) {
   const unitLabel = performanceUnitLabel(usePmLabels);
   const [sort, setSort] = useState({ key: "spend_value", direction: "desc" });
@@ -5526,6 +5652,7 @@ function MetaJoinTable({
   }, { spend: 0, results: 0, metaImpressions: 0, metaClicks: 0, revenueUsd: 0, revenueBrl: 0, joinImpressions: 0, joinClicks: 0 });
   const totalRoas = totals.spend > 0 ? totals.revenueBrl / totals.spend : null;
   const totalProfit = totals.revenueBrl - totals.spend;
+  const previousTotals = comparisonSnapshot?.totals || null;
   const campaignCount = new Set(consolidated.map((row) => row.campaign_id || row.campaign_name)).size;
   const adsetCount = new Set(consolidated.map((row) => row.adset_id || row.adset_name)).size;
   const attributedCount = consolidated.filter((row) => row.joinads_matched).length;
@@ -5592,6 +5719,15 @@ function MetaJoinTable({
         <span className=${`chip ${attributedCount === consolidated.length ? "good" : "warn"}`}>
           ${attributedCount}/${consolidated.length} atribuidos
         </span>
+        ${comparisonSnapshot
+          ? html`<span className="chip good">Comparando com atualização anterior</span>`
+          : comparisonStatus === "syncing"
+          ? html`<span className="chip neutral">Sincronizando referência...</span>`
+          : comparisonStatus === "seeded"
+          ? html`<span className="chip neutral">Base criada agora</span>`
+          : comparisonStatus === "local" || comparisonStatus === "error"
+          ? html`<span className="chip danger" title=${comparisonError || "Não foi possível sincronizar a referência."}>Referência apenas local</span>`
+          : null}
         ${isMultiDay ? html`<span className="chip neutral">Periodo consolidado</span>` : null}
       </div>
     </div>
@@ -5602,10 +5738,10 @@ function MetaJoinTable({
       </label>
     </div>
     <div className="meta-join-kpis">
-      <div><span>Investimento Meta</span><strong>${currencyBRL.format(totals.spend)}</strong></div>
-      <div><span>Receita atribuida</span><strong>${currencyBRL.format(totals.revenueBrl)}</strong><small>${currencyUSD.format(totals.revenueUsd)}</small></div>
-      <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></div>
-      <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></div>
+      <div><span>Investimento Meta</span><strong>${currencyBRL.format(totals.spend)}</strong><${RefreshDelta} current=${totals.spend} previous=${previousTotals?.spend_brl} format="brl" /></div>
+      <div><span>Receita atribuida</span><strong>${currencyBRL.format(totals.revenueBrl)}</strong><${RefreshDelta} current=${totals.revenueBrl} previous=${previousTotals?.revenue_brl} format="brl" /><small>${currencyUSD.format(totals.revenueUsd)}</small></div>
+      <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong><${RefreshDelta} current=${totalRoas} previous=${previousTotals?.roas} format="roas" /></div>
+      <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong><${RefreshDelta} current=${totalProfit} previous=${previousTotals?.profit_brl} format="brl" /></div>
     </div>
     <div className="mobile-table-hint" aria-hidden="true">Deslize a tabela para os lados para ver todas as métricas →</div>
     <div className="table-wrapper scroll-x meta-join-table-wrap">
@@ -5641,22 +5777,24 @@ function MetaJoinTable({
                 const metaCtr = row.meta_impressions_value > 0
                   ? toNumber(row.meta_clicks_value) / row.meta_impressions_value * 100
                   : null;
+                const rowKey = String(row.ad_id || `${row.adset_id || row.adset_name}:${row.ad_name || ""}`);
+                const previous = comparisonSnapshot?.ads?.[rowKey] || null;
                 return html`<tr key=${row.ad_id || `${row.adset_name}-${row.ad_name}`}>
                   <td className="identity-cell campaign-identity"><strong>${row.campaign_name || "Campanha sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)}</span></td>
                   <td className="identity-cell"><strong>${row.adset_name || "Sem nome"}</strong><span className="metric-id">${row.adset_id || "Sem ID"}</span></td>
                   <td className="identity-cell">${row.asset_url ? html`<a href=${row.asset_url} target="_blank" rel="noopener noreferrer">${row.ad_name || "Sem nome"}</a>` : html`<strong>${row.ad_name || "Sem nome"}</strong>`}<span className="metric-id">${row.ad_id || "Sem ID"}</span></td>
                   <td>${row.date_label}</td>
                   <td><div className="metric-stack compact-stack"><span className=${`status-badge ${statusToneMap[status] || "neutral"}`}>${formatStatusLabel(status)}</span>${row.ad_id && canToggle && allowCampaignOps ? html`<button className=${`toggle ${active ? "on" : "off"}`} disabled=${statusLoading?.[row.ad_id]} onClick=${() => onToggleAd(row.ad_id, active ? "PAUSED" : "ACTIVE")}>${statusLoading?.[row.ad_id] ? "..." : active ? "Ligado" : "Desligado"}</button>` : null}</div></td>
-                  <td><strong>${currencyBRL.format(row.spend_value)}</strong></td>
-                  <td>${row.results_observed ? number.format(row.results_meta) : "-"}</td>
-                  <td>${row.cost_per_result_value != null ? currencyBRL.format(row.cost_per_result_value) : "-"}</td>
-                  <td>${number.format(row.meta_impressions_value)}</td><td>${number.format(row.meta_clicks_value)}</td><td>${metaCtr != null ? `${metaCtr.toFixed(2)}%` : "-"}</td>
-                  <td><strong>${row.joinads_matched ? currencyUSD.format(row.revenue_client_value) : "-"}</strong></td>
-                  <td><strong>${row.joinads_matched && row.revenue_client_brl_value != null ? currencyBRL.format(row.revenue_client_brl_value) : "-"}</strong></td>
-                  <td>${row.joinads_matched ? number.format(row.impressions_joinads) : "-"}</td><td>${row.joinads_matched ? number.format(row.clicks_joinads) : "-"}</td>
-                  <td>${ecpm != null ? currencyUSD.format(ecpm) : "-"}</td><td>${joinCtr != null ? `${joinCtr.toFixed(2)}%` : "-"}</td>
-                  <td><strong className=${row.roas_joinads_value != null && row.roas_joinads_value >= 1 ? "positive" : row.roas_joinads_value != null ? "negative" : ""}>${row.roas_joinads_value != null ? `${row.roas_joinads_value.toFixed(2)}x` : "-"}</strong></td>
-                  <td><strong className=${row.lucro_op_brl_value != null && row.lucro_op_brl_value >= 0 ? "positive" : row.lucro_op_brl_value != null ? "negative" : ""}>${row.lucro_op_brl_value != null ? currencyBRL.format(row.lucro_op_brl_value) : "-"}</strong></td>
+                  <td><strong>${currencyBRL.format(row.spend_value)}</strong><${RefreshDelta} current=${row.spend_value} previous=${previous?.spend_brl} format="brl" /></td>
+                  <td>${row.results_observed ? number.format(row.results_meta) : "-"}<${RefreshDelta} current=${row.results_meta} previous=${previous?.results} /></td>
+                  <td>${row.cost_per_result_value != null ? currencyBRL.format(row.cost_per_result_value) : "-"}<${RefreshDelta} current=${row.cost_per_result_value} previous=${previous?.cpa_brl} format="brl" /></td>
+                  <td>${number.format(row.meta_impressions_value)}<${RefreshDelta} current=${row.meta_impressions_value} previous=${previous?.meta_impressions} /></td><td>${number.format(row.meta_clicks_value)}<${RefreshDelta} current=${row.meta_clicks_value} previous=${previous?.meta_clicks} /></td><td>${metaCtr != null ? `${metaCtr.toFixed(2)}%` : "-"}<${RefreshDelta} current=${metaCtr} previous=${previous?.meta_ctr} format="percent" /></td>
+                  <td><strong>${row.joinads_matched ? currencyUSD.format(row.revenue_client_value) : "-"}</strong><${RefreshDelta} current=${row.joinads_matched ? row.revenue_client_value : null} previous=${previous?.revenue_usd} format="usd" /></td>
+                  <td><strong>${row.joinads_matched && row.revenue_client_brl_value != null ? currencyBRL.format(row.revenue_client_brl_value) : "-"}</strong><${RefreshDelta} current=${row.revenue_client_brl_value} previous=${previous?.revenue_brl} format="brl" /></td>
+                  <td>${row.joinads_matched ? number.format(row.impressions_joinads) : "-"}<${RefreshDelta} current=${row.joinads_matched ? row.impressions_joinads : null} previous=${previous?.joinads_impressions} /></td><td>${row.joinads_matched ? number.format(row.clicks_joinads) : "-"}<${RefreshDelta} current=${row.joinads_matched ? row.clicks_joinads : null} previous=${previous?.joinads_clicks} /></td>
+                  <td>${ecpm != null ? currencyUSD.format(ecpm) : "-"}<${RefreshDelta} current=${ecpm} previous=${previous?.ecpm} format="usd" /></td><td>${joinCtr != null ? `${joinCtr.toFixed(2)}%` : "-"}<${RefreshDelta} current=${joinCtr} previous=${previous?.joinads_ctr} format="percent" /></td>
+                  <td><strong className=${row.roas_joinads_value != null && row.roas_joinads_value >= 1 ? "positive" : row.roas_joinads_value != null ? "negative" : ""}>${row.roas_joinads_value != null ? `${row.roas_joinads_value.toFixed(2)}x` : "-"}</strong><${RefreshDelta} current=${row.roas_joinads_value} previous=${previous?.roas} format="roas" /></td>
+                  <td><strong className=${row.lucro_op_brl_value != null && row.lucro_op_brl_value >= 0 ? "positive" : row.lucro_op_brl_value != null ? "negative" : ""}>${row.lucro_op_brl_value != null ? currencyBRL.format(row.lucro_op_brl_value) : "-"}</strong><${RefreshDelta} current=${row.lucro_op_brl_value} previous=${previous?.profit_brl} format="brl" /></td>
                   <td><div className="attribution-cell" title=${attribution.detail}><span className=${`chip ${attribution.tone}`}>${attribution.label}</span><span className="muted small">${attribution.detail}</span></div></td>
                   <td>${controls(row)}</td>
                 </tr>`;
@@ -6404,7 +6542,7 @@ function SemUtmAttribution({ semUtmRow, joinadsRows, metaRows, brlRate, usePmLab
   `;
 }
 
-function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false }) {
+function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false, comparisonSnapshot = null }) {
   const unitLabel = performanceUnitLabel(usePmLabels);
   const [sort, setSort] = useState({ key: "spend", direction: "desc" });
   const grouped = useMemo(() => {
@@ -6540,6 +6678,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
   }, { spend: 0, results: 0, metaImpressions: 0, metaClicks: 0, revenueUsd: 0, revenueBrl: 0, joinImpressions: 0, joinClicks: 0 });
   const totalRoas = totals.spend > 0 ? totals.revenueBrl / totals.spend : null;
   const totalProfit = totals.revenueBrl - totals.spend;
+  const previousTotals = comparisonSnapshot?.totals || null;
   const attributionView = (value) => {
     if (value === "utm_term_id") return { label: "Conjunto por ID", tone: "good", detail: "utm_term = adset_id" };
     if (value === "utm_term_name") return { label: "Conjunto por nome", tone: "warn", detail: "UTM legada, aceita porque o nome e unico" };
@@ -6551,13 +6690,13 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
   return html`<section className="card wide meta-join-card adset-summary-card">
     <div className="card-head">
       <div><span className="eyebrow">Meta x JoinAds</span><h2 className="section-title">Vendas para o site (por conjunto)</h2><p className="section-subtitle">Consolidação por conjunto apenas das campanhas com objetivo Vendas.</p></div>
-      <div className="chip-group"><span className="chip neutral">${grouped.length} conjuntos</span><span className=${`chip ${grouped.every((row) => row.revenueUsd != null) ? "good" : "warn"}`}>${grouped.filter((row) => row.revenueUsd != null).length}/${grouped.length} atribuidos</span></div>
+      <div className="chip-group"><span className="chip neutral">${grouped.length} conjuntos</span><span className=${`chip ${grouped.every((row) => row.revenueUsd != null) ? "good" : "warn"}`}>${grouped.filter((row) => row.revenueUsd != null).length}/${grouped.length} atribuidos</span>${comparisonSnapshot ? html`<span className="chip good">Comparando com atualização anterior</span>` : null}</div>
     </div>
     <div className="meta-join-kpis compact-kpis">
-      <div><span>Investimento Meta</span><strong>${currencyBRL.format(totals.spend)}</strong></div>
-      <div><span>Receita atribuida</span><strong>${currencyBRL.format(totals.revenueBrl)}</strong><small>${currencyUSD.format(totals.revenueUsd)}</small></div>
-      <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></div>
-      <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></div>
+      <div><span>Investimento Meta</span><strong>${currencyBRL.format(totals.spend)}</strong><${RefreshDelta} current=${totals.spend} previous=${previousTotals?.spend_brl} format="brl" /></div>
+      <div><span>Receita atribuida</span><strong>${currencyBRL.format(totals.revenueBrl)}</strong><${RefreshDelta} current=${totals.revenueBrl} previous=${previousTotals?.revenue_brl} format="brl" /><small>${currencyUSD.format(totals.revenueUsd)}</small></div>
+      <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong><${RefreshDelta} current=${totalRoas} previous=${previousTotals?.roas} format="roas" /></div>
+      <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong><${RefreshDelta} current=${totalProfit} previous=${previousTotals?.profit_brl} format="brl" /></div>
     </div>
     <div className="mobile-table-hint" aria-hidden="true">Deslize a tabela para os lados para ver todas as métricas →</div>
     <div className="table-wrapper scroll-x meta-join-table-wrap"><table className="meta-join-table flat-metrics-table adset-summary-table">
@@ -6573,13 +6712,15 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
         ? html`<tr><td colSpan="17" className="muted empty-table">Sem conjuntos para o periodo.</td></tr>`
         : sorted.map((row) => {
             const attribution = attributionView(row.attribution);
+            const rowKey = String(row.adset_id || `${row.campaign_id || row.campaign_name}:${row.adset_name || ""}`);
+            const previous = comparisonSnapshot?.adsets?.[rowKey] || null;
             return html`<tr key=${row.adset_id || `${row.campaign_name}-${row.adset_name}`}>
               <td className="identity-cell"><span className="identity-level">Campanha</span><strong>${row.campaign_name || "Sem nome"}</strong><span className="metric-id">${row.campaign_id || "Sem ID"}</span><span className="identity-level">Conjunto</span><b>${row.adset_name || "Sem nome"}</b><span className="metric-id">${row.adset_id || "Sem ID"}</span><span className="objective-label">${formatObjective(row.objective)}</span></td>
-              <td>${number.format(row.ads)}</td><td><strong>${currencyBRL.format(row.spend)}</strong></td><td>${row.resultsObserved ? number.format(row.results) : "-"}</td><td>${row.cpa != null ? currencyBRL.format(row.cpa) : "-"}</td>
-              <td>${number.format(row.metaImpressions)}</td><td>${number.format(row.metaClicks)}</td><td>${row.metaCtr != null ? `${row.metaCtr.toFixed(2)}%` : "-"}</td>
-              <td><strong>${row.revenueUsd != null ? currencyUSD.format(row.revenueUsd) : "-"}</strong></td><td><strong>${row.revenueBrl != null ? currencyBRL.format(row.revenueBrl) : "-"}</strong></td>
-              <td>${row.impressions != null ? number.format(row.impressions) : "-"}</td><td>${row.clicks != null ? number.format(row.clicks) : "-"}</td><td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}</td><td>${row.joinCtr != null ? `${row.joinCtr.toFixed(2)}%` : "-"}</td>
-              <td><strong className=${row.roas != null && row.roas >= 1 ? "positive" : row.roas != null ? "negative" : ""}>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</strong></td><td><strong className=${row.profit != null && row.profit >= 0 ? "positive" : row.profit != null ? "negative" : ""}>${row.profit != null ? currencyBRL.format(row.profit) : "-"}</strong></td>
+              <td>${number.format(row.ads)}</td><td><strong>${currencyBRL.format(row.spend)}</strong><${RefreshDelta} current=${row.spend} previous=${previous?.spend_brl} format="brl" /></td><td>${row.resultsObserved ? number.format(row.results) : "-"}<${RefreshDelta} current=${row.results} previous=${previous?.results} /></td><td>${row.cpa != null ? currencyBRL.format(row.cpa) : "-"}<${RefreshDelta} current=${row.cpa} previous=${previous?.cpa_brl} format="brl" /></td>
+              <td>${number.format(row.metaImpressions)}<${RefreshDelta} current=${row.metaImpressions} previous=${previous?.meta_impressions} /></td><td>${number.format(row.metaClicks)}<${RefreshDelta} current=${row.metaClicks} previous=${previous?.meta_clicks} /></td><td>${row.metaCtr != null ? `${row.metaCtr.toFixed(2)}%` : "-"}<${RefreshDelta} current=${row.metaCtr} previous=${previous?.meta_ctr} format="percent" /></td>
+              <td><strong>${row.revenueUsd != null ? currencyUSD.format(row.revenueUsd) : "-"}</strong><${RefreshDelta} current=${row.revenueUsd} previous=${previous?.revenue_usd} format="usd" /></td><td><strong>${row.revenueBrl != null ? currencyBRL.format(row.revenueBrl) : "-"}</strong><${RefreshDelta} current=${row.revenueBrl} previous=${previous?.revenue_brl} format="brl" /></td>
+              <td>${row.impressions != null ? number.format(row.impressions) : "-"}<${RefreshDelta} current=${row.impressions} previous=${previous?.joinads_impressions} /></td><td>${row.clicks != null ? number.format(row.clicks) : "-"}<${RefreshDelta} current=${row.clicks} previous=${previous?.joinads_clicks} /></td><td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}<${RefreshDelta} current=${row.ecpm} previous=${previous?.ecpm} format="usd" /></td><td>${row.joinCtr != null ? `${row.joinCtr.toFixed(2)}%` : "-"}<${RefreshDelta} current=${row.joinCtr} previous=${previous?.joinads_ctr} format="percent" /></td>
+              <td><strong className=${row.roas != null && row.roas >= 1 ? "positive" : row.roas != null ? "negative" : ""}>${row.roas != null ? `${row.roas.toFixed(2)}x` : "-"}</strong><${RefreshDelta} current=${row.roas} previous=${previous?.roas} format="roas" /></td><td><strong className=${row.profit != null && row.profit >= 0 ? "positive" : row.profit != null ? "negative" : ""}>${row.profit != null ? currencyBRL.format(row.profit) : "-"}</strong><${RefreshDelta} current=${row.profit} previous=${previous?.profit_brl} format="brl" /></td>
               <td><div className="attribution-cell" title=${attribution.detail}><span className=${`chip ${attribution.tone}`}>${attribution.label}</span><span className="muted small">${attribution.detail}</span></div></td>
             </tr>`;
           })}</tbody>
@@ -9961,6 +10102,9 @@ function App() {
   const [messageRefreshComparison, setMessageRefreshComparison] = useState(null);
   const [messageRefreshSyncStatus, setMessageRefreshSyncStatus] = useState("idle");
   const [messageRefreshSyncError, setMessageRefreshSyncError] = useState("");
+  const [salesRefreshComparison, setSalesRefreshComparison] = useState(null);
+  const [salesRefreshSyncStatus, setSalesRefreshSyncStatus] = useState("idle");
+  const [salesRefreshSyncError, setSalesRefreshSyncError] = useState("");
   const [dateComparisonSnapshot, setDateComparisonSnapshot] = useState(null);
   const [dateComparisonError, setDateComparisonError] = useState("");
   const [loadHealth, setLoadHealth] = useState({});
@@ -10048,6 +10192,9 @@ function App() {
     setMessageRefreshComparison(null);
     setMessageRefreshSyncStatus("idle");
     setMessageRefreshSyncError("");
+    setSalesRefreshComparison(null);
+    setSalesRefreshSyncStatus("idle");
+    setSalesRefreshSyncError("");
     setDateComparisonSnapshot(null);
     setDateComparisonError("");
     setLoadHealth({});
@@ -13476,6 +13623,87 @@ function App() {
     }));
   }, [metaDomainFiltered, appliedFilters, filters.domain]);
   const totals = useTotalsFromEarnings(directTrafficJoinadsRows, []);
+  const activeSalesFilters = appliedFilters || filters;
+  const salesRefreshComparisonKey = salesDashboardStorageKey({
+    domain: activeSalesFilters.domain,
+    startDate: activeSalesFilters.startDate,
+    endDate: activeSalesFilters.endDate,
+    metaAccountId: activeSalesFilters.metaAccountId,
+    adsetFilter: activeSalesFilters.adsetFilter,
+    taxSignature: messageTaxSignature,
+    hiddenSignature: messageHiddenSignature,
+  });
+  const salesRefreshServerVariant = salesDashboardServerVariant({
+    adsetFilter: activeSalesFilters.adsetFilter,
+    taxSignature: messageTaxSignature,
+    hiddenSignature: messageHiddenSignature,
+  });
+
+  useEffect(() => {
+    if (!lastRefreshed || !snapshotEligible) {
+      setSalesRefreshComparison(null);
+      setSalesRefreshSyncStatus("idle");
+      setSalesRefreshSyncError("");
+      return;
+    }
+    const currentSnapshot = buildSalesDashboardSnapshot(filteredMeta);
+    if (!Object.keys(currentSnapshot.campaigns).length) {
+      setSalesRefreshComparison(null);
+      setSalesRefreshSyncStatus("idle");
+      return;
+    }
+    const refreshToken = lastRefreshed instanceof Date ? lastRefreshed.toISOString() : String(lastRefreshed);
+    let cancelled = false;
+    let previous = null;
+    try {
+      const stored = JSON.parse(localStorage.getItem(salesRefreshComparisonKey) || "null");
+      const storedCurrent = stored?.current?.campaigns ? stored.current : null;
+      const sameRefresh = stored?.lastRefreshToken === refreshToken;
+      previous = sameRefresh && stored?.previous?.campaigns ? stored.previous : sameRefresh ? null : storedCurrent;
+      if (!sameRefresh) {
+        localStorage.setItem(salesRefreshComparisonKey, JSON.stringify({
+          schema: 1,
+          lastRefreshToken: refreshToken,
+          current: currentSnapshot,
+          previous: previous?.campaigns ? previous : null,
+        }));
+      }
+      setSalesRefreshComparison(previous?.campaigns ? previous : null);
+    } catch (_) {
+      setSalesRefreshComparison(null);
+    }
+
+    setSalesRefreshSyncStatus("syncing");
+    setSalesRefreshSyncError("");
+    fetchJson(`${API_BASE}/message-refresh-snapshot`, {
+      method: "POST",
+      body: JSON.stringify({
+        domain: activeSalesFilters.domain,
+        account_id: activeSalesFilters.metaAccountId,
+        start_date: activeSalesFilters.startDate,
+        end_date: activeSalesFilters.endDate,
+        refresh_id: refreshToken,
+        variant: salesRefreshServerVariant,
+        snapshot: currentSnapshot,
+        previous_snapshot: previous?.campaigns ? previous : null,
+      }),
+    }).then((response) => {
+      if (cancelled) return;
+      if (response?.previous?.campaigns) setSalesRefreshComparison(response.previous);
+      setSalesRefreshSyncStatus(response?.previous?.campaigns || previous?.campaigns ? "synced" : "seeded");
+    }).catch((error) => {
+      if (cancelled) return;
+      setSalesRefreshSyncError(formatError(error));
+      setSalesRefreshSyncStatus(previous?.campaigns ? "local" : "error");
+    });
+    return () => { cancelled = true; };
+  }, [
+    lastRefreshed,
+    snapshotEligible,
+    filteredMeta,
+    salesRefreshComparisonKey,
+    salesRefreshServerVariant,
+  ]);
 
   const dupNameMap = useMemo(() => {
     const map = new Map();
@@ -14096,6 +14324,7 @@ function App() {
                 fxDateLabel=${fxInfo?.effectiveDate ? formatFxDate(fxInfo.effectiveDate) : ""}
                 usePmLabels=${usePmLabels}
                 scopeLabel="Vendas → site"
+                comparisonTotals=${salesRefreshComparison?.totals}
               />`}
               ${html`
                 <${MetaJoinTable}
@@ -14111,9 +14340,12 @@ function App() {
                   bidLoading=${bidLoading}
                   isMultiDay=${isMultiDay}
                   usePmLabels=${usePmLabels}
+                  comparisonSnapshot=${salesRefreshComparison}
+                  comparisonStatus=${salesRefreshSyncStatus}
+                  comparisonError=${salesRefreshSyncError}
                 />
               `}
-              ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} usePmLabels=${usePmLabels} />`}
+              ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} usePmLabels=${usePmLabels} comparisonSnapshot=${salesRefreshComparison} />`}
               ${html`<${EarningsTable}
                 rows=${directTrafficJoinadsRows}
                 usePmLabels=${usePmLabels}
