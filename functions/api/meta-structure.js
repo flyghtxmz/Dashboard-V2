@@ -72,9 +72,18 @@ export async function onRequest({ request, env }) {
       if (cached) {
         const parsed = JSON.parse(cached);
         const age = Date.now() - (parsed._cachedAt || 0);
-        if (age < CACHE_TTL_MS) {
+        // Caches anteriores nao continham a arvore canonica. Ignora esse formato para
+        // evitar que a nova tela pareca vazia logo apos o deploy.
+        if (age < CACHE_TTL_MS && Array.isArray(parsed.structure)) {
           delete parsed._cachedAt;
-          return jsonResponse(200, { code: "success", cached: true, data: parsed.rows, campaigns: parsed.campaigns || [] });
+          return jsonResponse(200, {
+            code: "success",
+            cached: true,
+            data: parsed.rows,
+            campaigns: parsed.campaigns || [],
+            adsets: parsed.adsets || [],
+            structure: parsed.structure || [],
+          });
         }
       }
     } catch { /* fall through */ }
@@ -85,8 +94,8 @@ export async function onRequest({ request, env }) {
 
   try {
     // ── 3 parallel paginated fetches — NO nested loops ────
-    const campFields = "id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining";
-    const adsetFields = "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id";
+    const campFields = "id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining";
+    const adsetFields = "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,promoted_object,start_time,end_time";
     const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}";
     const insightFields = "ad_id,spend,ctr,cpc,cpm,frequency,impressions,video_thruplay_watched_actions";
 
@@ -158,18 +167,48 @@ export async function onRequest({ request, env }) {
       };
     });
 
+    // Estrutura canônica: preserva campanhas e conjuntos mesmo quando ainda não têm anúncios.
+    const adsByAdset = new Map();
+    ads.forEach((ad) => {
+      if (!adsByAdset.has(ad.adset_id)) adsByAdset.set(ad.adset_id, []);
+      const spec = ad?.creative?.object_story_spec || {};
+      adsByAdset.get(ad.adset_id).push({
+        id: ad.id,
+        name: ad.name,
+        status: ad.status,
+        effective_status: ad.effective_status,
+        campaign_id: ad.campaign_id,
+        adset_id: ad.adset_id,
+        url_tags: ad?.creative?.url_tags || "",
+        destination_url: ad?.creative?.link_url || ad?.creative?.object_url || extractUrl(spec) || "",
+        object_story_id: ad?.creative?.effective_object_story_id || ad?.creative?.object_story_id || "",
+      });
+    });
+    const adsetsByCampaign = new Map();
+    adsets.forEach((adset) => {
+      if (!adsetsByCampaign.has(adset.campaign_id)) adsetsByCampaign.set(adset.campaign_id, []);
+      adsetsByCampaign.get(adset.campaign_id).push({
+        ...adset,
+        ads: adsByAdset.get(adset.id) || [],
+      });
+    });
+    const structure = campaigns.map((campaign) => ({
+      ...campaign,
+      adsets: adsetsByCampaign.get(campaign.id) || [],
+    }));
+
     // ── KV cache write ────────────────────────────────────
     if (kv) {
       try {
         await kv.put(
           cacheKey,
-          JSON.stringify({ rows, campaigns, _cachedAt: Date.now() }),
+          JSON.stringify({ rows, campaigns, adsets, structure, _cachedAt: Date.now() }),
           { expirationTtl: Math.ceil((CACHE_TTL_MS * 2) / 1000) }
         );
       } catch { /* non-fatal */ }
     }
 
-    return jsonResponse(200, { code: "success", cached: false, data: rows, campaigns });
+    return jsonResponse(200, { code: "success", cached: false, data: rows, campaigns, adsets, structure });
   } catch (error) {
     return jsonResponse(500, {
       error: "Erro ao consultar Meta",

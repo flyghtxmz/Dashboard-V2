@@ -987,6 +987,262 @@ tbody tr:last-child td {
   color: var(--ink);
 }
 
+.manager-grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+.manager-head {
+  align-items: flex-start;
+}
+.manager-head .section-title {
+  margin-bottom: 4px;
+}
+.manager-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) minmax(150px, auto);
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 12px;
+}
+.manager-toolbar > input,
+.manager-toolbar > select {
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+}
+.manager-type-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.manager-type-switch button {
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 13px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.manager-type-switch button.active {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 2px 8px rgba(31, 122, 109, 0.2);
+}
+.manager-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 2px 14px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.manager-summary strong {
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+.manager-summary-divider {
+  margin: 0 3px;
+}
+.manager-campaigns {
+  display: grid;
+  gap: 14px;
+}
+.manager-campaign {
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 15px;
+  background: var(--surface);
+}
+.manager-campaign-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--card);
+}
+.manager-title-block,
+.manager-adset-main {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.manager-title-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.manager-title-line strong {
+  overflow-wrap: anywhere;
+}
+.manager-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.67rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+}
+.manager-status.is-active {
+  color: var(--pos);
+  border-color: var(--pos);
+  background: var(--pos-wash);
+}
+.manager-status.is-paused {
+  color: var(--muted);
+  background: var(--card);
+}
+.manager-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+button.ghost.danger {
+  color: var(--neg);
+}
+.manager-adsets {
+  padding: 0 16px;
+}
+.manager-adset {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.manager-adset:last-child {
+  border-bottom: 0;
+}
+.manager-empty {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 34px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+.manager-empty.compact {
+  margin: 12px 0;
+  padding: 16px;
+}
+.manager-create-panel {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--accent-wash);
+}
+.manager-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 12px;
+}
+.manager-field-wide {
+  grid-column: span 2;
+}
+.manager-field-wide + .field {
+  grid-column: span 2;
+}
+.manager-create-panel .field small {
+  color: var(--muted);
+}
+.manager-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+  font-size: 0.88rem;
+}
+.manager-create-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.manager-template-panel p {
+  margin: 5px 0 12px;
+}
+.manager-template-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+.manager-template-list button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+.manager-template-list button span {
+  overflow-wrap: anywhere;
+}
+.manager-draft-ads {
+  border-top: 1px dashed var(--border);
+  padding-top: 9px;
+}
+.manager-draft-ads summary,
+.manager-advanced > summary {
+  cursor: pointer;
+}
+.manager-draft-ad-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.manager-draft-ad {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+.manager-draft-ad input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+}
+.manager-draft-ad.is-removed {
+  opacity: 0.58;
+}
+.manager-advanced > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  list-style-position: inside;
+}
+.manager-advanced-content {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-light);
+}
+.manager-advanced-content > main {
+  margin-top: 0;
+}
+
 @media (max-width: 960px) {
   .topbar {
     grid-template-columns: 1fr;
@@ -1216,6 +1472,59 @@ tbody tr:last-child td {
   }
 
   .draft-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .manager-field-wide,
+  .manager-field-wide + .field {
+    grid-column: auto;
+  }
+  .manager-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .manager-type-switch,
+  .manager-toolbar > input,
+  .manager-toolbar > select {
+    grid-column: 1;
+    width: 100%;
+  }
+  .manager-type-switch button {
+    padding-inline: 8px;
+    white-space: normal;
+  }
+  .manager-campaign-header,
+  .manager-adset {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .manager-campaign-header {
+    flex-direction: column;
+  }
+  .manager-campaign-header .manager-row-actions,
+  .manager-adset .manager-row-actions {
+    justify-content: flex-start;
+  }
+  .manager-adsets {
+    padding-inline: 12px;
+  }
+  .manager-create-panel {
+    padding: 13px 12px;
+  }
+  .manager-create-actions,
+  .manager-advanced > summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .manager-create-actions .primary {
+    width: 100%;
+  }
+  .manager-draft-ad {
+    grid-template-columns: 1fr;
+  }
+  .manager-template-list {
     grid-template-columns: 1fr;
   }
 

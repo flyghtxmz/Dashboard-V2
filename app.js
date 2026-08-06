@@ -20,7 +20,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 156;
+const APP_VERSION_BUILD = 157;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -275,7 +275,7 @@ const formatFxLabel = (fxInfo, fxStatus) => {
 };
 
 const ROLE_TABS = {
-  admin: ["dashboard", "metricas_mensagens", "duplicar", "editar", "urls", "meta", "diag", "token", "pages", "configuracoes", "criar"],
+  admin: ["dashboard", "metricas_mensagens", "urls", "meta", "diag", "token", "pages", "configuracoes", "gerenciar", "criar"],
   gestor: ["dashboard", "metricas_mensagens", "criar"],
   editor: [],
 };
@@ -283,8 +283,7 @@ const ROLE_TABS = {
 const TAB_LABELS = {
   dashboard: "Dashboard",
   metricas_mensagens: "Metricas Mensagens",
-  duplicar: "Duplicar",
-  editar: "Editar",
+  gerenciar: "Gerenciar",
   urls: "URLs com Parametros",
   meta: "Fontes",
   diag: "Diagnostico JoinAds",
@@ -4631,6 +4630,370 @@ function buildAdsetGrouped(rows, joinadsRows, brlRate) {
     .sort((a, b) => (b.revenue_usd || 0) - (a.revenue_usd || 0));
 
   return grouped;
+}
+
+function GerenciarView({
+  campaigns,
+  loading,
+  error,
+  onLoad,
+  onRefreshStatus,
+  statusLoading,
+  onAddDraft,
+  drafts,
+  onRemoveDraft,
+  onUpdateDraft,
+  onUpdateDraftAd,
+  onToggleDraftAd,
+  onPublish,
+  publishing,
+  onCreateAdset,
+  pixels,
+  pixelsLoading,
+  onLoadPixels,
+  accountId,
+  onToggleAdsetStatus,
+  onDeleteAdset,
+  onToggleCampaignStatus,
+  togglingStatus,
+  deleting,
+  advancedEditor,
+}) {
+  const [trafficType, setTrafficType] = useState("sales");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [creatingFor, setCreatingFor] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+  const [form, setForm] = useState({
+    name: "",
+    daily_budget_brl: "20.00",
+    countries: "BR",
+    age_min: 18,
+    age_max: 65,
+    genders: "all",
+    locale_id: "5",
+    optimization_goal: "OFFSITE_CONVERSIONS",
+    pixel_id: "",
+    conversion_event: "PURCHASE",
+    advantage_audience: true,
+  });
+
+  useEffect(() => {
+    onLoad?.();
+  }, []);
+
+  const campaignIsMessages = (campaign) => {
+    if (isMessageMetricsRow(campaign)) return true;
+    return (campaign.adsets || []).some(
+      (adset) =>
+        isMessageMetricsRow({ ...adset, campaign_name: campaign.name, objective: campaign.objective }) ||
+        (adset.ads || []).some((ad) =>
+          isMessageMetricsRow({
+            ...ad,
+            campaign_name: campaign.name,
+            adset_name: adset.name,
+            objective: campaign.objective,
+          })
+        )
+    );
+  };
+  const filteredCampaigns = (campaigns || []).filter((campaign) => {
+    const isMessages = campaignIsMessages(campaign);
+    const typeMatches = trafficType === "messages" ? isMessages : !isMessages;
+    if (!typeMatches) return false;
+    const status = String(campaign.effective_status || campaign.status || "").toUpperCase();
+    if (statusFilter !== "ALL" && status !== statusFilter) return false;
+    const haystack = [
+      campaign.name,
+      campaign.id,
+      ...(campaign.adsets || []).flatMap((adset) => [
+        adset.name,
+        adset.id,
+        ...(adset.ads || []).flatMap((ad) => [ad.name, ad.id]),
+      ]),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return !query.trim() || haystack.includes(query.trim().toLowerCase());
+  });
+
+  const statusText = (item) => String(item?.effective_status || item?.status || "-").toUpperCase();
+  const isCbo = (campaign) => Number(campaign?.daily_budget || campaign?.lifetime_budget || 0) > 0;
+  const requiresPixel = form.optimization_goal === "OFFSITE_CONVERSIONS";
+  const budgetText = (item) => {
+    if (item?.daily_budget != null) return `${currencyBRL.format(Number(item.daily_budget) / 100)}/dia`;
+    if (item?.lifetime_budget != null) return `${currencyBRL.format(Number(item.lifetime_budget) / 100)} total`;
+    return "Sem orçamento próprio";
+  };
+  const openCreate = (campaign) => {
+    setCreateError("");
+    setCreateSuccess("");
+    if (trafficType === "messages") {
+      setCreatingFor(creatingFor === campaign.id ? "" : campaign.id);
+      return;
+    }
+    setForm((prev) => ({ ...prev, name: `Novo conjunto - ${campaign.name || "Vendas"}` }));
+    setCreatingFor(creatingFor === campaign.id ? "" : campaign.id);
+    if (!(pixels || []).length && accountId) onLoadPixels?.(accountId);
+  };
+  const submitCreate = async (campaign) => {
+    setCreateBusy(true);
+    setCreateError("");
+    setCreateSuccess("");
+    try {
+      await onCreateAdset?.(campaign, form);
+      setCreateSuccess("Conjunto criado pausado com sucesso.");
+      setCreatingFor("");
+      setForm((prev) => ({ ...prev, name: "" }));
+    } catch (err) {
+      setCreateError(formatError(err));
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
+  return html`
+    <main className="manager-grid">
+      <section className="card wide manager-hero">
+        <div className="card-head manager-head">
+          <div>
+            <span className="eyebrow">Gerenciar</span>
+            <h2 className="section-title">Campanhas, conjuntos e anúncios</h2>
+            <p className="muted small">Crie, duplique e edite sem sair desta área.</p>
+          </div>
+          <div className="chip-group">
+            <button className="ghost" onClick=${() => onLoad?.(true)} disabled=${loading}>
+              ${loading ? "Carregando..." : "Atualizar lista"}
+            </button>
+            <button className="ghost" onClick=${onRefreshStatus} disabled=${statusLoading || !(campaigns || []).length}>
+              ${statusLoading ? "Atualizando..." : "Atualizar status"}
+            </button>
+          </div>
+        </div>
+
+        <div className="manager-toolbar">
+          <div className="manager-type-switch" role="tablist" aria-label="Tipo de campanha">
+            <button
+              className=${trafficType === "sales" ? "active" : ""}
+              onClick=${() => { setTrafficType("sales"); setCreatingFor(""); }}
+            >Tráfego Vendas</button>
+            <button
+              className=${trafficType === "messages" ? "active" : ""}
+              onClick=${() => { setTrafficType("messages"); setCreatingFor(""); }}
+            >Métricas Mensagens</button>
+          </div>
+          <input
+            className="manager-search"
+            type="search"
+            placeholder="Buscar campanha, conjunto ou anúncio"
+            value=${query}
+            onChange=${(event) => setQuery(event.target.value)}
+          />
+          <select value=${statusFilter} onChange=${(event) => setStatusFilter(event.target.value)}>
+            <option value="ALL">Todos os status</option>
+            <option value="ACTIVE">Ativos</option>
+            <option value="PAUSED">Pausados</option>
+          </select>
+        </div>
+
+        ${error ? html`<div className="status error"><strong>Erro:</strong> ${error}</div>` : null}
+        ${createError ? html`<div className="status error">${createError}</div>` : null}
+        ${createSuccess ? html`<div className="status ok">${createSuccess}</div>` : null}
+
+        <div className="manager-summary">
+          <strong>${filteredCampaigns.length}</strong>
+          <span>${filteredCampaigns.length === 1 ? "campanha encontrada" : "campanhas encontradas"}</span>
+          <span className="manager-summary-divider">•</span>
+          <span>Novos itens são criados pausados</span>
+        </div>
+
+        <div className="manager-campaigns">
+          ${filteredCampaigns.length === 0
+            ? html`<div className="manager-empty">
+                <strong>Nenhuma campanha neste filtro.</strong>
+                <span>Atualize a lista ou confira o tipo e o status selecionados.</span>
+              </div>`
+            : filteredCampaigns.map((campaign) => html`
+                <article className="manager-campaign" key=${campaign.id}>
+                  <header className="manager-campaign-header">
+                    <div className="manager-title-block">
+                      <div className="manager-title-line">
+                        <strong>${campaign.name || "Campanha sem nome"}</strong>
+                        <span className=${`manager-status ${statusText(campaign) === "ACTIVE" ? "is-active" : "is-paused"}`}>
+                          ${statusText(campaign)}
+                        </span>
+                      </div>
+                      <span className="muted small">ID ${campaign.id} • ${(campaign.adsets || []).length} conjunto(s)</span>
+                    </div>
+                    <div className="manager-row-actions">
+                      <button
+                        className="ghost small"
+                        disabled=${!!togglingStatus?.[campaign.id]}
+                        onClick=${() => onToggleCampaignStatus?.(campaign.id, statusText(campaign))}
+                      >${statusText(campaign) === "ACTIVE" ? "Pausar" : "Ativar"}</button>
+                      <button className="primary small" onClick=${() => openCreate(campaign)}>
+                        ${creatingFor === campaign.id ? "Fechar" : "+ Novo conjunto"}
+                      </button>
+                    </div>
+                  </header>
+
+                  ${creatingFor === campaign.id
+                    ? trafficType === "messages"
+                      ? html`<div className="manager-create-panel manager-template-panel">
+                          <strong>Escolha um conjunto como modelo</strong>
+                          <p className="muted small">A configuração de mensagens será preservada. Depois, ajuste o nome, orçamento e anúncios no rascunho.</p>
+                          ${(campaign.adsets || []).length
+                            ? html`<div className="manager-template-list">
+                                ${(campaign.adsets || []).map((adset) => html`
+                                  <button className="ghost" onClick=${() => { onAddDraft?.(campaign, adset, 1); setCreatingFor(""); }}>
+                                    <span>${adset.name}</span><strong>Usar modelo</strong>
+                                  </button>
+                                `)}
+                              </div>`
+                            : html`<p className="status neutral">Esta campanha ainda não possui conjunto para servir de modelo.</p>`}
+                        </div>`
+                      : html`<div className="manager-create-panel">
+                          <div className="manager-form-grid">
+                            <label className="field manager-field-wide">
+                              <span>Nome do novo conjunto</span>
+                              <input value=${form.name} onChange=${(e) => setForm({ ...form, name: e.target.value })} />
+                            </label>
+                            <label className="field">
+                              <span>Orçamento diário (R$)</span>
+                              <input type="number" min="1" step="0.01" disabled=${isCbo(campaign)} value=${form.daily_budget_brl} onChange=${(e) => setForm({ ...form, daily_budget_brl: e.target.value })} />
+                              ${isCbo(campaign) ? html`<small>Esta campanha usa orçamento na campanha (CBO).</small>` : null}
+                            </label>
+                            <label className="field">
+                              <span>Países (siglas)</span>
+                              <input value=${form.countries} placeholder="BR, US" onChange=${(e) => setForm({ ...form, countries: e.target.value.toUpperCase() })} />
+                            </label>
+                            <label className="field">
+                              <span>Idade mínima</span>
+                              <input type="number" min="18" max="65" value=${form.age_min} onChange=${(e) => setForm({ ...form, age_min: e.target.value })} />
+                            </label>
+                            <label className="field">
+                              <span>Idade máxima</span>
+                              <input type="number" min="18" max="65" value=${form.age_max} onChange=${(e) => setForm({ ...form, age_max: e.target.value })} />
+                            </label>
+                            <label className="field">
+                              <span>Gênero</span>
+                              <select value=${form.genders} onChange=${(e) => setForm({ ...form, genders: e.target.value })}>
+                                <option value="all">Todos</option><option value="1">Homens</option><option value="2">Mulheres</option>
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>Idioma</span>
+                              <select value=${form.locale_id} onChange=${(e) => setForm({ ...form, locale_id: e.target.value })}>
+                                <option value="">Todos os idiomas</option>
+                                ${LANGUAGE_FALLBACK_LIST.map((language) => html`<option value=${String(language.id)}>${language.label}</option>`)}
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>Otimização</span>
+                              <select value=${form.optimization_goal} onChange=${(e) => setForm({ ...form, optimization_goal: e.target.value })}>
+                                <option value="OFFSITE_CONVERSIONS">Conversões</option>
+                                <option value="LANDING_PAGE_VIEWS">Visualizações da página</option>
+                                <option value="LINK_CLICKS">Cliques no link</option>
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>Pixel ${pixelsLoading ? "(carregando...)" : ""}</span>
+                              <select value=${form.pixel_id} onChange=${(e) => setForm({ ...form, pixel_id: e.target.value })}>
+                                <option value="">Sem pixel</option>
+                                ${(pixels || []).map((pixel) => html`<option value=${pixel.id}>${pixel.name || pixel.id}</option>`)}
+                              </select>
+                              ${requiresPixel && !form.pixel_id ? html`<small>Selecione o pixel para otimizar por conversões.</small>` : null}
+                            </label>
+                            <label className="field">
+                              <span>Evento de conversão</span>
+                              <select disabled=${!form.pixel_id} value=${form.conversion_event} onChange=${(e) => setForm({ ...form, conversion_event: e.target.value })}>
+                                <option value="PURCHASE">Compra</option><option value="LEAD">Lead</option><option value="COMPLETE_REGISTRATION">Cadastro concluído</option><option value="VIEW_CONTENT">Visualização de conteúdo</option>
+                              </select>
+                            </label>
+                          </div>
+                          <label className="manager-check">
+                            <input type="checkbox" checked=${form.advantage_audience} onChange=${(e) => setForm({ ...form, advantage_audience: e.target.checked })} />
+                            Público Advantage+
+                          </label>
+                          <div className="manager-create-actions">
+                            <span className="muted small">O conjunto ficará pausado até você ativá-lo.</span>
+                            <button className="primary" disabled=${createBusy || !form.name.trim() || (requiresPixel && !form.pixel_id)} onClick=${() => submitCreate(campaign)}>
+                              ${createBusy ? "Criando..." : "Criar conjunto pausado"}
+                            </button>
+                          </div>
+                        </div>`
+                    : null}
+
+                  <div className="manager-adsets">
+                    ${(campaign.adsets || []).length === 0
+                      ? html`<div className="manager-empty compact"><span>Esta campanha ainda não possui conjuntos.</span></div>`
+                      : (campaign.adsets || []).map((adset) => html`
+                          <div className="manager-adset" key=${adset.id}>
+                            <div className="manager-adset-main">
+                              <div className="manager-title-line">
+                                <strong>${adset.name || "Conjunto sem nome"}</strong>
+                                <span className=${`manager-status ${statusText(adset) === "ACTIVE" ? "is-active" : "is-paused"}`}>${statusText(adset)}</span>
+                              </div>
+                              <span className="muted small">${budgetText(adset)} • ${(adset.ads || []).length} anúncio(s) • ID ${adset.id}</span>
+                            </div>
+                            <div className="manager-row-actions">
+                              <button className="ghost small" onClick=${() => onAddDraft?.(campaign, adset, 1)}>Usar como modelo</button>
+                              <button className="ghost small" disabled=${!!togglingStatus?.[adset.id]} onClick=${() => onToggleAdsetStatus?.(adset.id, statusText(adset))}>
+                                ${statusText(adset) === "ACTIVE" ? "Pausar" : "Ativar"}
+                              </button>
+                              <button className="ghost small danger" disabled=${!!deleting?.[adset.id]} onClick=${() => onDeleteAdset?.(adset.id, adset.name)}>Excluir</button>
+                            </div>
+                          </div>
+                        `)}
+                  </div>
+                </article>
+              `)}
+        </div>
+      </section>
+
+      <section className="card wide manager-drafts">
+        <div className="card-head">
+          <div><span className="eyebrow">Rascunho</span><h2 className="section-title">Novos conjuntos por modelo</h2></div>
+          <button className="primary" onClick=${onPublish} disabled=${publishing || !drafts.length}>
+            ${publishing ? "Publicando..." : `Publicar ${drafts.length || ""}`}
+          </button>
+        </div>
+        ${!drafts.length
+          ? html`<div className="manager-empty compact"><span>Use “Usar como modelo” em um conjunto para preparar uma cópia.</span></div>`
+          : html`<div className="draft-list">
+              ${drafts.map((draft) => html`<div className="draft-card" key=${draft.id}>
+                <div className="draft-head">
+                  <div><strong>${draft.campaign_name}</strong><div className="muted small">Modelo: ${draft.source_adset_name}</div></div>
+                  <button className="ghost small" onClick=${() => onRemoveDraft(draft.id)}>Remover</button>
+                </div>
+                <div className="draft-fields">
+                  <label className="field"><span>Novo nome do conjunto</span><input value=${draft.adset_new_name} onChange=${(e) => onUpdateDraft(draft.id, { adset_new_name: e.target.value })} /></label>
+                  <label className="field"><span>Número de cópias</span><input type="number" min="1" value=${draft.copies || 1} onChange=${(e) => onUpdateDraft(draft.id, { copies: Math.max(1, Number(e.target.value) || 1) })} /></label>
+                  <label className="field"><span>Orçamento diário (R$)</span><input type="number" min="0" step="0.01" value=${draft.daily_budget_brl} onChange=${(e) => onUpdateDraft(draft.id, { daily_budget_brl: e.target.value })} /></label>
+                </div>
+                <details className="manager-draft-ads">
+                  <summary>Revisar anúncios (${(draft.ads || []).filter((ad) => !ad.removed).length}/${(draft.ads || []).length})</summary>
+                  <div className="manager-draft-ad-list">
+                    ${(draft.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed ? "is-removed" : ""}`} key=${ad.id}>
+                      <span>${ad.name}</span>
+                      <input value=${ad.new_name} disabled=${ad.removed} onChange=${(e) => onUpdateDraftAd(draft.id, ad.id, { new_name: e.target.value })} />
+                      <button className="ghost small" onClick=${() => onToggleDraftAd(draft.id, ad.id)}>${ad.removed ? "Restaurar" : "Remover"}</button>
+                    </div>`)}
+                  </div>
+                </details>
+              </div>`)}
+            </div>`}
+      </section>
+
+      <details className="card wide manager-advanced">
+        <summary><strong>Edição avançada</strong><span className="muted small">Renomear, editar URLs, verificar ou excluir anúncios</span></summary>
+        <div className="manager-advanced-content">${advancedEditor}</div>
+      </details>
+    </main>
+  `;
 }
 
 function DuplicarView({
@@ -11620,12 +11983,12 @@ function App() {
           force,
         }
       );
-      setDupCampaigns(res.data || []);
+      setDupCampaigns(res.structure || []);
       try {
         const payload = {
           time: Date.now(),
           account: filters.metaAccountId.trim(),
-          data: res.data || [],
+          data: res.structure || [],
         };
         localStorage.setItem("__cd_dup_campaigns__", JSON.stringify(payload));
       } catch (e) {
@@ -11803,6 +12166,7 @@ function App() {
       });
       setEditAds(rows);
       setEditCampaigns(res.campaigns || []);
+      setDupCampaigns(res.structure || []);
     } catch (err) {
       setEditError(formatError(err));
       pushLog("meta-structure", err);
@@ -11861,6 +12225,42 @@ function App() {
     } finally {
       setPixelsLoading(false);
     }
+  };
+
+  const handleCreateManagedAdset = async (campaign, form) => {
+    const countries = String(form?.countries || "")
+      .split(/[\s,;]+/)
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean);
+    const genderValue = Number(form?.genders);
+    const campaignUsesCbo = Number(campaign?.daily_budget || campaign?.lifetime_budget || 0) > 0;
+    const response = await fetchJson(`${API_BASE}/meta-adset-create`, {
+      method: "POST",
+      body: JSON.stringify({
+        account_id: filters.metaAccountId.trim(),
+        campaign_id: campaign.id,
+        is_cbo: campaignUsesCbo,
+        adset: {
+          name: String(form?.name || "").trim(),
+          status: "PAUSED",
+          daily_budget: Math.round(Number(form?.daily_budget_brl || 0) * 100),
+          countries,
+          age_min: Number(form?.age_min) || 18,
+          age_max: Number(form?.age_max) || 65,
+          genders: genderValue === 1 || genderValue === 2 ? [genderValue] : [],
+          locales: form?.locale_id ? [Number(form.locale_id)] : [],
+          optimization_goal: form?.optimization_goal || "OFFSITE_CONVERSIONS",
+          pixel_id: form?.pixel_id || "",
+          conversion_event: form?.conversion_event || "PURCHASE",
+          advantage_audience: form?.advantage_audience ? 1 : 0,
+        },
+      }),
+    });
+    pushLog("meta-adset-create", {
+      message: `Conjunto criado pausado: ${response?.adset_id || form?.name}`,
+    });
+    await handleLoadEditar(true);
+    return response;
   };
 
   const handleSaveEditAd = async (row) => {
@@ -11999,12 +12399,31 @@ function App() {
             row.adset_id === objectId ? { ...row, adset_name: name } : row
           )
         );
+        setDupCampaigns((prev) =>
+          (prev || []).map((campaign) => ({
+            ...campaign,
+            adsets: (campaign.adsets || []).map((adset) =>
+              adset.id === objectId ? { ...adset, name } : adset
+            ),
+          }))
+        );
       }
       if (key.startsWith("ad:")) {
         setEditAds((prev) =>
           (prev || []).map((row) =>
             row.id === objectId ? { ...row, name } : row
           )
+        );
+        setDupCampaigns((prev) =>
+          (prev || []).map((campaign) => ({
+            ...campaign,
+            adsets: (campaign.adsets || []).map((adset) => ({
+              ...adset,
+              ads: (adset.ads || []).map((ad) =>
+                ad.id === objectId ? { ...ad, name } : ad
+              ),
+            })),
+          }))
         );
       }
       pushLog("meta-rename", { message: `Renomeado: ${name}` });
@@ -12081,6 +12500,15 @@ function App() {
         body: JSON.stringify({ ad_id: row.id }),
       });
       setEditAds((prev) => (prev || []).filter((r) => r.id !== row.id));
+      setDupCampaigns((prev) =>
+        (prev || []).map((campaign) => ({
+          ...campaign,
+          adsets: (campaign.adsets || []).map((adset) => ({
+            ...adset,
+            ads: (adset.ads || []).filter((ad) => ad.id !== row.id),
+          })),
+        }))
+      );
       pushLog("meta-delete-ad", { message: `Anúncio apagado: ${row.id}` });
     } catch (err) {
       pushLog("meta-delete-ad", err);
@@ -12102,6 +12530,16 @@ function App() {
         (prev || []).map((r) =>
           r.adset_id === adsetId ? { ...r, adset_status: next } : r
         )
+      );
+      setDupCampaigns((prev) =>
+        (prev || []).map((campaign) => ({
+          ...campaign,
+          adsets: (campaign.adsets || []).map((adset) =>
+            adset.id === adsetId
+              ? { ...adset, status: next, effective_status: next }
+              : adset
+          ),
+        }))
       );
       pushLog("meta-adset-status", { message: `Conjunto ${adsetId} → ${next}` });
     } catch (err) {
@@ -12135,6 +12573,9 @@ function App() {
       const deletedSet = new Set(deleted);
       setEditAds((prev) => (prev || []).filter((r) => !deletedSet.has(r.campaign_id)));
       setEditCampaigns((prev) => (prev || []).filter((c) => !deletedSet.has(c.id)));
+      setDupCampaigns((prev) =>
+        (prev || []).filter((campaign) => !deletedSet.has(campaign.id))
+      );
     }
     setEditDeleting((prev) => { const n = { ...prev }; ids.forEach((id) => delete n[id]); return n; });
     onDone?.();
@@ -12150,6 +12591,12 @@ function App() {
         body: JSON.stringify({ adset_id: adsetId }),
       });
       setEditAds((prev) => (prev || []).filter((r) => r.adset_id !== adsetId));
+      setDupCampaigns((prev) =>
+        (prev || []).map((campaign) => ({
+          ...campaign,
+          adsets: (campaign.adsets || []).filter((adset) => adset.id !== adsetId),
+        }))
+      );
       pushLog("meta-adset-delete", { message: `Conjunto apagado: ${adsetId}` });
     } catch (err) {
       pushLog("meta-adset-delete", err);
@@ -12170,6 +12617,13 @@ function App() {
       setEditAds((prev) =>
         (prev || []).map((r) =>
           r.campaign_id === campaignId ? { ...r, campaign_status: next } : r
+        )
+      );
+      setDupCampaigns((prev) =>
+        (prev || []).map((campaign) =>
+          campaign.id === campaignId
+            ? { ...campaign, status: next, effective_status: next }
+            : campaign
         )
       );
       pushLog("meta-campaign-status", { message: `Campanha ${campaignId} → ${next}` });
@@ -14219,20 +14673,6 @@ function App() {
           Metricas Mensagens
         </button>
         <button
-          hidden=${!availableTabs.includes("duplicar")}
-          className=${`tab ${activeTab === "duplicar" ? "active" : ""}`}
-          onClick=${() => setActiveTab("duplicar")}
-        >
-          Duplicar
-        </button>
-        <button
-          hidden=${!availableTabs.includes("editar")}
-          className=${`tab ${activeTab === "editar" ? "active" : ""}`}
-          onClick=${() => setActiveTab("editar")}
-        >
-          Editar
-        </button>
-        <button
           hidden=${!availableTabs.includes("urls")}
           className=${`tab ${activeTab === "urls" ? "active" : ""}`}
           onClick=${() => setActiveTab("urls")}
@@ -14273,6 +14713,13 @@ function App() {
           onClick=${() => setActiveTab("configuracoes")}
         >
           ⚙ Configurações
+        </button>
+        <button
+          hidden=${!availableTabs.includes("gerenciar")}
+          className=${`tab ${activeTab === "gerenciar" ? "active" : ""}`}
+          onClick=${() => setActiveTab("gerenciar")}
+        >
+          Gerenciar
         </button>
         <button
           hidden=${!availableTabs.includes("criar")}
@@ -14401,17 +14848,15 @@ function App() {
               messageSourceRowsCount: metaMessageFiltered.length,
             }}
           />`
-        : activeTab === "duplicar"
+        : activeTab === "gerenciar"
         ? html`
-            <${DuplicarView}
+            <${GerenciarView}
               campaigns=${dupCampaigns}
-              loading=${dupLoading}
-              error=${dupError}
-              onLoad=${handleLoadDuplicar}
+              loading=${editLoading}
+              error=${editError}
+              onLoad=${handleLoadEditar}
               onRefreshStatus=${handleRefreshDuplicarStatus}
               statusLoading=${dupStatusLoading}
-              copyCounts=${copyCounts}
-              setCopyCount=${setCopyCount}
               onAddDraft=${addDraftFromAdset}
               drafts=${drafts}
               onRemoveDraft=${removeDraft}
@@ -14420,46 +14865,52 @@ function App() {
               onToggleDraftAd=${toggleDraftAd}
               onPublish=${handlePublishDrafts}
               publishing=${publishing}
-              selectedAdsets=${selectedAdsets}
-              onToggleAdset=${toggleSelectAdset}
-              onDeleteAdsets=${handleDeleteAdsets}
-            />
-          `
-        : activeTab === "editar"
-        ? html`
-            <${EditarView}
-              ads=${filteredEditAds}
-              allAds=${editAds}
-              campaigns=${editCampaigns}
-              loading=${editLoading}
-              error=${editError}
-              onLoad=${handleLoadEditar}
-              onUpdateField=${updateEditAdField}
-              onSave=${handleSaveEditAd}
-              saving=${editSaving}
-              campaignFilter=${editCampaignFilter}
-              onCampaignFilter=${setEditCampaignFilter}
-              onCleanParams=${handleCleanParams}
-              onVerify=${handleVerifyEditAd}
-              verifying=${editVerifying}
-              onRenameAd=${(id, name, key) => handleRenameObject(id, name, key)}
-              onRenameAdset=${(id, name, key) => handleRenameObject(id, name, key)}
-              editRenaming=${editRenaming}
-              onResolveDestination=${handleResolveDestination}
-              onToggleAdStatus=${handleToggleAdStatus}
-              onDeleteAd=${handleDeleteEditAd}
+              onCreateAdset=${handleCreateManagedAdset}
+              pixels=${pixelsList}
+              pixelsLoading=${pixelsLoading}
+              onLoadPixels=${handleLoadPixels}
+              accountId=${filters.metaAccountId.trim()}
               onToggleAdsetStatus=${handleToggleAdsetStatus}
               onDeleteAdset=${handleDeleteEditAdset}
               onToggleCampaignStatus=${handleToggleCampaignStatus}
-              onDeleteCampaigns=${handleDeleteCampaigns}
               deleting=${editDeleting}
               togglingStatus=${editTogglingStatus}
-              hiddenCampaigns=${hiddenCampaigns}
-              onHideCampaign=${handleHideCampaign}
-              onUnhideCampaign=${handleUnhideCampaign}
-              dateStart=${editDateStart}
-              dateEnd=${editDateEnd}
-              onDateChange=${(s, e) => { setEditDateStart(s); setEditDateEnd(e); }}
+              advancedEditor=${html`
+                <${EditarView}
+                  ads=${filteredEditAds}
+                  allAds=${editAds}
+                  campaigns=${editCampaigns}
+                  loading=${editLoading}
+                  error=${editError}
+                  onLoad=${handleLoadEditar}
+                  onUpdateField=${updateEditAdField}
+                  onSave=${handleSaveEditAd}
+                  saving=${editSaving}
+                  campaignFilter=${editCampaignFilter}
+                  onCampaignFilter=${setEditCampaignFilter}
+                  onCleanParams=${handleCleanParams}
+                  onVerify=${handleVerifyEditAd}
+                  verifying=${editVerifying}
+                  onRenameAd=${(id, name, key) => handleRenameObject(id, name, key)}
+                  onRenameAdset=${(id, name, key) => handleRenameObject(id, name, key)}
+                  editRenaming=${editRenaming}
+                  onResolveDestination=${handleResolveDestination}
+                  onToggleAdStatus=${handleToggleAdStatus}
+                  onDeleteAd=${handleDeleteEditAd}
+                  onToggleAdsetStatus=${handleToggleAdsetStatus}
+                  onDeleteAdset=${handleDeleteEditAdset}
+                  onToggleCampaignStatus=${handleToggleCampaignStatus}
+                  onDeleteCampaigns=${handleDeleteCampaigns}
+                  deleting=${editDeleting}
+                  togglingStatus=${editTogglingStatus}
+                  hiddenCampaigns=${hiddenCampaigns}
+                  onHideCampaign=${handleHideCampaign}
+                  onUnhideCampaign=${handleUnhideCampaign}
+                  dateStart=${editDateStart}
+                  dateEnd=${editDateEnd}
+                  onDateChange=${(s, e) => { setEditDateStart(s); setEditDateEnd(e); }}
+                />
+              `}
             />
           `
         : activeTab === "urls"
