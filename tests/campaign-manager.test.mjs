@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildModelDraftNames, nextCampaignCjToken, replaceCjToken, shiftCjName } from "../campaign-manager.mjs";
+import { buildModelDraftNames, nextAnName, nextCampaignCjToken, replaceCjToken, shiftCjName } from "../campaign-manager.mjs";
 
 test("incrementa CJ usando o maior conjunto existente na campanha", () => {
   const campaign = {
@@ -10,6 +10,14 @@ test("incrementa CJ usando o maior conjunto existente na campanha", () => {
     ],
   };
   assert.equal(nextCampaignCjToken(campaign, campaign.adsets[0]), "cj04");
+});
+
+test("gera o proximo AN para uma nova copia dentro do conjunto", () => {
+  assert.equal(
+    nextAnName("aplicativos-cj02-an01", ["aplicativos-cj02-an01", "aplicativos-cj02-an02"]),
+    "aplicativos-cj02-an03"
+  );
+  assert.equal(nextAnName("criativo-cj01", []), "criativo-cj01-an01");
 });
 
 test("aplica o novo CJ no conjunto e em todos os anuncios", () => {

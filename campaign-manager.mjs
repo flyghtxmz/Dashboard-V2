@@ -35,6 +35,20 @@ export function shiftCjName(value, offset = 0) {
   });
 }
 
+export function nextAnName(sourceName, existingNames = []) {
+  const names = [sourceName, ...(existingNames || [])].map((value) => String(value || ""));
+  const matches = names.flatMap((name) =>
+    [...name.matchAll(/an(\d+)/gi)].map((match) => ({ number: Number(match[1]), width: match[1].length }))
+  );
+  const highest = matches.reduce((max, item) => Math.max(max, item.number || 0), 0);
+  const width = Math.max(2, ...matches.map((item) => item.width));
+  const token = `an${String(highest + 1).padStart(width, "0")}`;
+  const normalizedSource = String(sourceName || "Anuncio").trim();
+  return /an\d+/i.test(normalizedSource)
+    ? normalizedSource.replace(/an\d+/gi, token)
+    : `${normalizedSource}-${token}`;
+}
+
 export function buildModelDraftNames(campaign, adset) {
   const cjToken = nextCampaignCjToken(campaign, adset);
   return {

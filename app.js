@@ -10,8 +10,8 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=159";
-import { buildModelDraftNames, shiftCjName } from "./campaign-manager.mjs?v=159";
+} from "./campaign-builder.mjs?v=160";
+import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=160";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 159;
+const APP_VERSION_BUILD = 160;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4682,6 +4682,7 @@ function GerenciarView({
   const [modelCreativeOverrides, setModelCreativeOverrides] = useState({});
   const [modelAdNames, setModelAdNames] = useState({});
   const [modelAdsetName, setModelAdsetName] = useState("");
+  const [modelAdditionalAds, setModelAdditionalAds] = useState([]);
   const [form, setForm] = useState({
     name: "",
     daily_budget_brl: "20.00",
@@ -4765,7 +4766,49 @@ function GerenciarView({
     setModelCreativeOverrides({});
     setModelAdNames(Object.fromEntries(ads.map((ad) => [ad.id, generatedNames.adNames.get(ad.id) || ad.name])));
     setModelAdsetName(generatedNames.adsetName);
+    setModelAdditionalAds([]);
     if (willOpen && typeof window !== "undefined") {
+      window.setTimeout(() => {
+        document.querySelector(`[data-manager-adset="${adset.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 0);
+    }
+  };
+  const buildAdditionalModelAd = (campaign, adset, ad, existingNames = []) => {
+    const generatedNames = buildModelDraftNames(campaign, adset);
+    const baseName = generatedNames.adNames.get(ad.id) || ad.name || "Anúncio";
+    const allNames = [
+      ...generatedNames.adNames.values(),
+      ...existingNames,
+    ];
+    return {
+      draft_id: `extra-${ad.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      source_ad_id: ad.id,
+      source_name: ad.name,
+      name: nextAnName(baseName, allNames),
+      thumbnail_url: ad.thumbnail_url || "",
+      creative_override: null,
+    };
+  };
+  const addModelAdCopy = (campaign, adset, ad) => {
+    const existingNames = [
+      ...Object.values(modelAdNames),
+      ...modelAdditionalAds.map((item) => item.name),
+    ];
+    setModelAdditionalAds((current) => [
+      ...current,
+      buildAdditionalModelAd(campaign, adset, ad, existingNames),
+    ]);
+  };
+  const beginModelWithAdCopy = (campaign, adset, ad) => {
+    const generatedNames = buildModelDraftNames(campaign, adset);
+    const ads = adset?.ads || [];
+    setModelingAdsetId(adset.id);
+    setModelSelections(Object.fromEntries(ads.map((item) => [item.id, true])));
+    setModelCreativeOverrides({});
+    setModelAdNames(Object.fromEntries(ads.map((item) => [item.id, generatedNames.adNames.get(item.id) || item.name])));
+    setModelAdsetName(generatedNames.adsetName);
+    setModelAdditionalAds([buildAdditionalModelAd(campaign, adset, ad)]);
+    if (typeof window !== "undefined") {
       window.setTimeout(() => {
         document.querySelector(`[data-manager-adset="${adset.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 0);
@@ -4780,6 +4823,7 @@ function GerenciarView({
       creativeOverrides: modelCreativeOverrides,
       adNames: modelAdNames,
       adsetName: modelAdsetName,
+      additionalAds: modelAdditionalAds,
     });
     setModelingAdsetId("");
     setCreatingFor("");
@@ -5022,7 +5066,12 @@ function GerenciarView({
                                       <span className="muted small">ID ${ad.id}</span>
                                     </div>
                                   </div>
-                                  <span className="manager-more-static" aria-hidden="true">•••</span>
+                                  <details className="manager-more">
+                                    <summary aria-label="Ações do anúncio">•••</summary>
+                                    <div className="manager-more-menu">
+                                      <button onClick=${() => beginModelWithAdCopy(campaign, adset, ad)}>Usar anúncio como modelo</button>
+                                    </div>
+                                  </details>
                                 </div>
                               `)}
                             </div>
@@ -5084,16 +5133,49 @@ function GerenciarView({
                                                         setModelCreativeOverrides(next);
                                                       }}>Usar imagem original</button>`
                                                     : null}
+                                                  <button className="ghost small manager-use-ad-model" onClick=${() => addModelAdCopy(campaign, adset, ad)}>
+                                                    + Usar este anúncio como modelo
+                                                  </button>
                                                 </div>`
                                               : null}
                                           </div>
                                         `)}
+                                        ${modelAdditionalAds.map((item, index) => html`
+                                          <div className="manager-model-ad is-selected is-additional" key=${item.draft_id}>
+                                            <div className="manager-model-select">
+                                              <span className="manager-model-copy-number">+${index + 1}</span>
+                                              ${item.creative_override?.url || item.thumbnail_url
+                                                ? html`<img src=${item.creative_override?.url || item.thumbnail_url} alt="Preview do novo anúncio" loading="lazy" />`
+                                                : html`<span className="manager-model-placeholder"><${ManagerLevelIcon} level="ad" /></span>`}
+                                              <span>
+                                                <label className="manager-model-name-label">
+                                                  <small>Novo anúncio baseado em ${item.source_name}</small>
+                                                  <input
+                                                    className="manager-model-name"
+                                                    value=${item.name}
+                                                    onInput=${(event) => setModelAdditionalAds((current) => current.map((currentItem) => currentItem.draft_id === item.draft_id ? { ...currentItem, name: event.target.value } : currentItem))}
+                                                  />
+                                                </label>
+                                                <small>${item.creative_override?.key ? "Preview da nova imagem" : "Imagem do anúncio-modelo"}</small>
+                                              </span>
+                                            </div>
+                                            <div className="manager-model-creative-actions">
+                                              <${CampaignMediaPicker}
+                                                accountId=${accountId}
+                                                type="image"
+                                                selectedKey=${item.creative_override?.key || ""}
+                                                onSelect=${(creative) => setModelAdditionalAds((current) => current.map((currentItem) => currentItem.draft_id === item.draft_id ? { ...currentItem, creative_override: creative } : currentItem))}
+                                              />
+                                              <button className="ghost small danger" onClick=${() => setModelAdditionalAds((current) => current.filter((currentItem) => currentItem.draft_id !== item.draft_id))}>Remover novo anúncio</button>
+                                            </div>
+                                          </div>
+                                        `)}
                                       </div>`}
                                   <div className="manager-create-actions">
-                                    <span className="muted small">${Object.values(modelSelections).filter(Boolean).length} anúncio(s) selecionado(s)</span>
+                                    <span className="muted small">${Object.values(modelSelections).filter(Boolean).length + modelAdditionalAds.length} anúncio(s) no novo conjunto</span>
                                     <button
                                       className="primary"
-                                      disabled=${!modelAdsetName.trim() || (adset.ads || []).some((ad) => modelSelections[ad.id] && !String(modelAdNames[ad.id] || "").trim())}
+                                      disabled=${!modelAdsetName.trim() || (adset.ads || []).some((ad) => modelSelections[ad.id] && !String(modelAdNames[ad.id] || "").trim()) || modelAdditionalAds.some((item) => !String(item.name || "").trim())}
                                       onClick=${() => confirmModel(campaign, adset)}
                                     >Adicionar ao rascunho</button>
                                   </div>
@@ -5133,7 +5215,7 @@ function GerenciarView({
                     ${(draft.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed ? "is-removed" : ""}`} key=${ad.id}>
                       <div className="manager-draft-ad-source">
                         ${ad.replacement_image_url ? html`<img src=${ad.replacement_image_url} alt="Preview da nova imagem" loading="lazy" />` : null}
-                        <span>${ad.name}${ad.replacement_image_hash ? html`<small className="manager-creative-changed">Preview da nova imagem</small>` : null}</span>
+                        <span>${ad.name}${ad.is_additional ? html`<small className="manager-new-ad-badge">Novo anúncio pelo modelo</small>` : null}${ad.replacement_image_hash ? html`<small className="manager-creative-changed">Preview da nova imagem</small>` : null}</span>
                       </div>
                       <input value=${ad.new_name} disabled=${ad.removed} onChange=${(e) => onUpdateDraftAd(draft.id, ad.id, { new_name: e.target.value })} />
                       <button className="ghost small" onClick=${() => onToggleDraftAd(draft.id, ad.id)}>${ad.removed ? "Restaurar" : "Remover"}</button>
@@ -12869,6 +12951,7 @@ function App() {
       : null;
     const creativeOverrides = options.creativeOverrides || {};
     const customAdNames = options.adNames || {};
+    const additionalAds = Array.isArray(options.additionalAds) ? options.additionalAds : [];
     const created = {
       id: `${adset.id}-${Date.now()}`,
       campaign_id: campaign.id,
@@ -12879,14 +12962,27 @@ function App() {
       cj_token: names.cjToken,
       daily_budget_brl: "",
       copies: count,
-      ads: (adset.ads || []).map((ad) => ({
-        id: ad.id,
-        name: ad.name,
-        new_name: String(customAdNames[ad.id] || names.adNames.get(ad.id) || ad.name).trim(),
-        removed: selectedAdIds ? !selectedAdIds.has(ad.id) : false,
-        replacement_image_hash: creativeOverrides[ad.id]?.key || "",
-        replacement_image_url: creativeOverrides[ad.id]?.url || "",
-      })),
+      ads: [
+        ...(adset.ads || []).map((ad) => ({
+          id: ad.id,
+          source_ad_id: ad.id,
+          name: ad.name,
+          new_name: String(customAdNames[ad.id] || names.adNames.get(ad.id) || ad.name).trim(),
+          removed: selectedAdIds ? !selectedAdIds.has(ad.id) : false,
+          replacement_image_hash: creativeOverrides[ad.id]?.key || "",
+          replacement_image_url: creativeOverrides[ad.id]?.url || "",
+        })),
+        ...additionalAds.map((ad) => ({
+          id: ad.draft_id,
+          source_ad_id: ad.source_ad_id,
+          name: ad.source_name || ad.name,
+          new_name: String(ad.name || "").trim(),
+          removed: false,
+          is_additional: true,
+          replacement_image_hash: ad.creative_override?.key || "",
+          replacement_image_url: ad.creative_override?.url || ad.thumbnail_url || "",
+        })),
+      ],
     };
     setDrafts((prev) => [created, ...prev]);
   };
@@ -13379,12 +13475,14 @@ function App() {
       const replacesCreative = (draft.ads || []).some(
         (ad) => !ad.removed && ad.replacement_image_hash
       );
-      let manualCopyAds = forceUtmCopy || replacesCreative;
-      let adCopyMode = forceUtmCopy || replacesCreative ? "create" : "copy";
+      const hasAdditionalAds = (draft.ads || []).some((ad) => !ad.removed && ad.is_additional);
+      const requiresManualAds = forceUtmCopy || replacesCreative || hasAdditionalAds;
+      let manualCopyAds = requiresManualAds;
+      let adCopyMode = requiresManualAds ? "create" : "copy";
       try {
         step = "copy";
         let copyRes;
-        if (forceUtmCopy || replacesCreative) {
+        if (requiresManualAds) {
           copyRes = await fetchJson(`${API_BASE}/meta-adset-copy`, {
             method: "POST",
             body: JSON.stringify({
@@ -13511,9 +13609,9 @@ function App() {
               );
               const before = sourceAds.length;
               sourceAds = sourceAds
-                .filter((ad) => liveMap.has(ad.id))
+                .filter((ad) => liveMap.has(ad.source_ad_id || ad.id))
                 .map((ad) => {
-                  const live = liveMap.get(ad.id);
+                  const live = liveMap.get(ad.source_ad_id || ad.id);
                   return live ? { ...ad, name: live.name } : ad;
                 });
               if (before !== sourceAds.length) {
@@ -13526,6 +13624,7 @@ function App() {
             }
             for (let a = 0; a < sourceAds.length; a += 1) {
               const ad = sourceAds[a];
+              const sourceAdId = ad.source_ad_id || ad.id;
               let newAdId = null;
               if (adCopyMode === "create") {
                 step = "create-ad";
@@ -13534,7 +13633,7 @@ function App() {
                     fetchJson(`${API_BASE}/meta-ad-create`, {
                       method: "POST",
                       body: JSON.stringify({
-                        ad_id: ad.id,
+                        ad_id: sourceAdId,
                         adset_id: newAdsetId,
                         name: shiftCjName(ad.new_name || ad.name, i),
                         status: DUPLICATE_STATUS,
@@ -13550,7 +13649,7 @@ function App() {
                     err?.data?.details?.error_subcode;
                   if (subcode === 33) {
                     pushLog("duplicar-create", {
-                      message: `Anuncio nao encontrado ou sem permissao: ${ad.id}`,
+                      message: `Anuncio nao encontrado ou sem permissao: ${sourceAdId}`,
                       detail: err?.data?.details || err?.data,
                     });
                     newAdId = null;
@@ -13565,7 +13664,7 @@ function App() {
                     fetchJson(`${API_BASE}/meta-ad-copy`, {
                       method: "POST",
                       body: JSON.stringify({
-                        ad_id: ad.id,
+                        ad_id: sourceAdId,
                         adset_id: newAdsetId,
                         status_option: DUPLICATE_STATUS,
                         rename_strategy: "DEEP_RENAME",
@@ -13589,7 +13688,7 @@ function App() {
                         fetchJson(`${API_BASE}/meta-ad-create`, {
                           method: "POST",
                           body: JSON.stringify({
-                            ad_id: ad.id,
+                            ad_id: sourceAdId,
                             adset_id: newAdsetId,
                             name: shiftCjName(ad.new_name || ad.name, i),
                             status: DUPLICATE_STATUS,
@@ -13606,7 +13705,7 @@ function App() {
                         errCreate?.data?.details?.error_subcode;
                       if (subcodeCreate === 33) {
                         pushLog("duplicar-create", {
-                          message: `Anuncio nao encontrado ou sem permissao: ${ad.id}`,
+                          message: `Anuncio nao encontrado ou sem permissao: ${sourceAdId}`,
                           detail: errCreate?.data?.details || errCreate?.data,
                         });
                         newAdId = null;
@@ -13616,7 +13715,7 @@ function App() {
                     }
                   } else if (subcode === 33) {
                     pushLog("duplicar-copy", {
-                      message: `Anuncio nao encontrado ou sem permissao: ${ad.id}`,
+                      message: `Anuncio nao encontrado ou sem permissao: ${sourceAdId}`,
                       detail: err?.data?.details || err?.data,
                     });
                     newAdId = null;
