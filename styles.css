@@ -2050,6 +2050,22 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 
+/* O flex diretamente no <td> quebra o algoritmo de colunas da tabela. */
+.flat-metrics-table td.identity-cell {
+  display: table-cell;
+  text-align: left;
+  vertical-align: top;
+}
+
+.flat-metrics-table td.identity-cell > strong,
+.flat-metrics-table td.identity-cell > b,
+.flat-metrics-table td.identity-cell > a,
+.flat-metrics-table td.identity-cell > .metric-id,
+.flat-metrics-table td.identity-cell > .identity-level {
+  display: block;
+  margin-bottom: 4px;
+}
+
 .flat-metrics-table th:first-child,
 .flat-metrics-table td:first-child {
   width: 250px !important;
