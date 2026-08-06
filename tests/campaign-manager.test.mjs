@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildModelDraftNames, nextAnName, nextCampaignCjToken, replaceCjToken, shiftCjName } from "../campaign-manager.mjs";
+import { buildModelDraftNames, nextAnName, nextCampaignCjToken, replaceCjToken, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
 
 test("incrementa CJ usando o maior conjunto existente na campanha", () => {
   const campaign = {
@@ -31,4 +31,16 @@ test("aplica o novo CJ no conjunto e em todos os anuncios", () => {
   assert.equal(names.adNames.get("ad-1"), "aplicativos-mx-cj02-an01");
   assert.equal(replaceCjToken("aplicativos-an01", "cj02"), "aplicativos-cj02-an01");
   assert.equal(shiftCjName("aplicativos-cj02-an01", 2), "aplicativos-cj04-an01");
+});
+
+test("Gerenciar aplica UTM oficial em vendas e preserva a origem em mensagens", () => {
+  const siteTags = "utm_medium=paid_social&utm_campaign={{campaign.id}}";
+  assert.equal(
+    resolveManagedUrlTags({ trafficType: "sales", sourceUrlTags: "", siteUrlTags: siteTags }),
+    siteTags
+  );
+  assert.equal(
+    resolveManagedUrlTags({ trafficType: "messages", sourceUrlTags: "?utm_campaign=src_abc", siteUrlTags: siteTags }),
+    "utm_campaign=src_abc"
+  );
 });

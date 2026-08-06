@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyReplacementImageHash, collectCreativeImageHashes } from "../functions/api/meta-ad-create.js";
+import { applyReplacementImageHash, collectCreativeImageHashes, resolveCreativeUrlTags } from "../functions/api/meta-ad-create.js";
 
 test("troca a imagem do criativo modelo sem alterar o objeto original", () => {
   const original = {
@@ -39,4 +39,22 @@ test("substitui imagens de carrossel e asset feed sem perder rotulos", () => {
     image_hash: "new-hash",
     asset_feed_spec: result.assetFeedSpec,
   }), ["new-hash"]);
+});
+
+test("preserva os parametros do criativo modelo quando nao ha sobrescrita", () => {
+  assert.equal(
+    resolveCreativeUrlTags({}, { url_tags: "utm_campaign={{campaign.id}}&utm_content={{ad.id}}" }),
+    "utm_campaign={{campaign.id}}&utm_content={{ad.id}}"
+  );
+});
+
+test("aplica os parametros enviados pelo Gerenciar e remove o ponto de interrogacao inicial", () => {
+  assert.equal(
+    resolveCreativeUrlTags(
+      { utm_tags: "?utm_medium=paid_social&utm_campaign={{campaign.id}}" },
+      { url_tags: "utm_medium=antigo" }
+    ),
+    "utm_medium=paid_social&utm_campaign={{campaign.id}}"
+  );
+  assert.equal(resolveCreativeUrlTags({ utm_tags: "" }, { url_tags: "utm_medium=antigo" }), "");
 });

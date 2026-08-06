@@ -141,6 +141,12 @@ export function collectCreativeImageHashes(value, key = "") {
   return [...new Set(hashes)];
 }
 
+export function resolveCreativeUrlTags(body, creative) {
+  const hasOverride = !!body && Object.prototype.hasOwnProperty.call(body, "utm_tags");
+  const value = hasOverride ? body?.utm_tags : creative?.url_tags;
+  return String(value ?? "").trim().replace(/^\?/, "");
+}
+
 function isEmptyObject(value) {
   return (
     value &&
@@ -329,7 +335,6 @@ export async function onRequest({ request, env }) {
     adset_id,
     name,
     status,
-    utm_tags,
     sanitize_video_placements,
     replacement_image_hash,
   } = body || {};
@@ -341,7 +346,7 @@ export async function onRequest({ request, env }) {
     const adRes = await fetch(
       `${API_BASE}/${encodeURIComponent(
         ad_id
-      )}?fields=name,account_id,creative{object_story_spec,asset_feed_spec,effective_object_story_id,object_story_id,actor_id,instagram_actor_id}&access_token=${token}`
+      )}?fields=name,account_id,creative{object_story_spec,asset_feed_spec,effective_object_story_id,object_story_id,actor_id,instagram_actor_id,url_tags}&access_token=${token}`
     );
     const adJson = await safeJson(adRes);
     if (!adRes.ok) {
@@ -357,6 +362,7 @@ export async function onRequest({ request, env }) {
     }
 
     const creative = adJson?.creative || {};
+    const resolvedUtmTags = resolveCreativeUrlTags(body, creative);
     let objectStorySpec = creative.object_story_spec
       ? stripEnhancements(creative.object_story_spec)
       : null;
@@ -445,8 +451,8 @@ export async function onRequest({ request, env }) {
     if (assetFeedSpec) {
       creativeParams.set("asset_feed_spec", JSON.stringify(assetFeedSpec));
     }
-    if (utm_tags && typeof utm_tags === "string") {
-      creativeParams.set("url_tags", utm_tags);
+    if (resolvedUtmTags) {
+      creativeParams.set("url_tags", resolvedUtmTags);
     }
     creativeParams.set("access_token", token);
 
@@ -493,6 +499,7 @@ export async function onRequest({ request, env }) {
       new_ad_id: data?.id || null,
       placement_adjusted: placementAdjust?.adjusted || false,
       placement_ratio: placementAdjust?.ratio || null,
+      url_tags: resolvedUtmTags,
     });
   } catch (error) {
     return jsonResponse(500, {

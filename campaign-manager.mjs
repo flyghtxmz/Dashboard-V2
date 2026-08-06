@@ -59,3 +59,8 @@ export function buildModelDraftNames(campaign, adset) {
     ),
   };
 }
+
+export function resolveManagedUrlTags({ trafficType, sourceUrlTags = "", siteUrlTags = "" } = {}) {
+  const value = trafficType === "messages" ? sourceUrlTags : siteUrlTags;
+  return String(value || "").trim().replace(/^\?/, "");
+}

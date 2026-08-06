@@ -10,9 +10,9 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=168";
-import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=168";
-import { buildDirectSalesCampaignRows } from "./sales-attribution.mjs?v=168";
+} from "./campaign-builder.mjs?v=169";
+import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=169";
+import { buildDirectSalesCampaignRows } from "./sales-attribution.mjs?v=169";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 168;
+const APP_VERSION_BUILD = 169;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4854,6 +4854,7 @@ function GerenciarView({
       source_name: ad.name,
       name: nextAnName(baseName, allNames),
       thumbnail_url: ad.thumbnail_url || "",
+      url_tags: ad.url_tags || "",
       creative_override: null,
     };
   };
@@ -4893,6 +4894,7 @@ function GerenciarView({
       adsetName: modelAdsetName,
       additionalAds: modelAdditionalAds,
       mode: modelMode,
+      trafficType,
     });
     setModelingAdsetId("");
     setCreatingFor("");
@@ -13228,6 +13230,7 @@ function App() {
       id: `${adset.id}-${Date.now()}`,
       campaign_id: campaign.id,
       campaign_name: campaign.name,
+      traffic_type: options.trafficType === "messages" ? "messages" : "sales",
       source_adset_id: adset.id,
       source_adset_name: adset.name,
       mode: options.mode === "ad_only" ? "ad_only" : "adset",
@@ -13245,6 +13248,7 @@ function App() {
           removed: selectedAdIds ? !selectedAdIds.has(ad.id) : false,
           replacement_image_hash: creativeOverrides[ad.id]?.key || "",
           replacement_image_url: creativeOverrides[ad.id]?.url || "",
+          url_tags: ad.url_tags || "",
         }))),
         ...additionalAds.map((ad) => ({
           id: ad.draft_id,
@@ -13255,6 +13259,7 @@ function App() {
           is_additional: true,
           replacement_image_hash: ad.creative_override?.key || "",
           replacement_image_url: ad.creative_override?.url || ad.thumbnail_url || "",
+          url_tags: ad.url_tags || "",
         })),
       ],
     };
@@ -13742,18 +13747,23 @@ function App() {
   const handlePublishDrafts = async () => {
     if (!drafts.length) return;
     setPublishing(true);
-    const forceUtmCopy = false;
     const managerPublishStatus = "ACTIVE";
     const remaining = [];
     let publishedItems = 0;
     let publishedDrafts = 0;
     for (const draft of drafts) {
       let step = "copy";
+      const isSalesDraft = draft.traffic_type !== "messages";
+      const urlTagsForAd = (ad) => resolveManagedUrlTags({
+        trafficType: draft.traffic_type,
+        sourceUrlTags: ad?.url_tags || "",
+        siteUrlTags: DEFAULT_UTM_TAGS,
+      });
       const replacesCreative = (draft.ads || []).some(
         (ad) => !ad.removed && ad.replacement_image_hash
       );
       const hasAdditionalAds = (draft.ads || []).some((ad) => !ad.removed && ad.is_additional);
-      const requiresManualAds = forceUtmCopy || replacesCreative || hasAdditionalAds;
+      const requiresManualAds = isSalesDraft || replacesCreative || hasAdditionalAds;
       let manualCopyAds = requiresManualAds;
       let adCopyMode = requiresManualAds ? "create" : "copy";
       try {
@@ -13775,6 +13785,7 @@ function App() {
                   status: "ACTIVE",
                   sanitize_video_placements: true,
                   replacement_image_hash: ad.replacement_image_hash || "",
+                  utm_tags: urlTagsForAd(ad),
                 }),
               })
             );
@@ -13959,6 +13970,7 @@ function App() {
                         status: managerPublishStatus,
                         sanitize_video_placements: true,
                         replacement_image_hash: ad.replacement_image_hash || "",
+                        utm_tags: urlTagsForAd(ad),
                       }),
                     })
                   );
@@ -14014,6 +14026,7 @@ function App() {
                             status: managerPublishStatus,
                             sanitize_video_placements: true,
                             replacement_image_hash: ad.replacement_image_hash || "",
+                            utm_tags: urlTagsForAd(ad),
                           }),
                         })
                       );
