@@ -2361,6 +2361,10 @@ tbody tr:last-child td {
   margin: -4px 0 0;
 }
 
+.mobile-table-hint {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .meta-join-kpis {
     grid-template-columns: repeat(2, minmax(140px, 1fr));
@@ -2368,6 +2372,17 @@ tbody tr:last-child td {
 
   .meta-join-table-wrap {
     max-height: none;
+  }
+
+  .meta-join-table thead th:first-child {
+    left: auto;
+    z-index: 1;
+  }
+
+  .meta-join-table tbody td:first-child,
+  .meta-join-table tfoot td:first-child {
+    position: static;
+    box-shadow: none;
   }
 }
 
@@ -2383,6 +2398,25 @@ tbody tr:last-child td {
 
   .meta-join-kpis strong {
     font-size: 0.95rem;
+  }
+
+  .meta-join-card {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .mobile-table-hint {
+    display: block;
+    margin: -2px 0 -6px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-align: right;
+  }
+
+  .meta-join-table-wrap {
+    width: 100%;
+    border-radius: 10px;
+    overscroll-behavior-x: auto;
   }
 
   .meta-join-table {
@@ -2410,16 +2444,16 @@ tbody tr:last-child td {
 
   .flat-metrics-table th:first-child,
   .flat-metrics-table td:first-child {
-    width: 210px !important;
-    min-width: 210px;
+    width: 180px !important;
+    min-width: 180px;
   }
 
   .campaign-metrics-table th:nth-child(2),
   .campaign-metrics-table td:nth-child(2),
   .campaign-metrics-table th:nth-child(3),
   .campaign-metrics-table td:nth-child(3) {
-    width: 175px !important;
-    min-width: 175px;
+    width: 160px !important;
+    min-width: 160px;
   }
 }
 

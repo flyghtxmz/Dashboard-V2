@@ -5664,6 +5664,7 @@ function MetaJoinTable({
       <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></div>
       <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></div>
     </div>
+    <div className="mobile-table-hint" aria-hidden="true">Deslize a tabela para os lados para ver todas as métricas →</div>
     <div className="table-wrapper scroll-x meta-join-table-wrap">
       <table className="meta-join-table flat-metrics-table campaign-metrics-table">
         <thead><tr>
@@ -6615,6 +6616,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
       <div><span>ROAS atribuido</span><strong className=${totalRoas != null && totalRoas >= 1 ? "positive" : "negative"}>${totalRoas != null ? `${totalRoas.toFixed(2)}x` : "-"}</strong></div>
       <div><span>Lucro operacional</span><strong className=${totalProfit >= 0 ? "positive" : "negative"}>${currencyBRL.format(totalProfit)}</strong></div>
     </div>
+    <div className="mobile-table-hint" aria-hidden="true">Deslize a tabela para os lados para ver todas as métricas →</div>
     <div className="table-wrapper scroll-x meta-join-table-wrap"><table className="meta-join-table flat-metrics-table adset-summary-table">
       <thead><tr>
         <th><button className="table-sort" onClick=${() => setSorting("campaign_name")}>Campanha / conjunto${mark("campaign_name")}</button></th>
