@@ -10,8 +10,8 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=165";
-import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=165";
+} from "./campaign-builder.mjs?v=166";
+import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=166";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -20,7 +20,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 165;
+const APP_VERSION_BUILD = 166;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4664,6 +4664,8 @@ function GerenciarView({
   accountId,
   onToggleAdsetStatus,
   onDeleteAdset,
+  onDeleteAd,
+  onDeleteCampaigns,
   onToggleCampaignStatus,
   togglingStatus,
   deleting,
@@ -5010,6 +5012,7 @@ function GerenciarView({
                           <button disabled=${!!togglingStatus?.[campaign.id]} onClick=${() => onToggleCampaignStatus?.(campaign.id, statusText(campaign))}>
                             ${statusText(campaign) === "ACTIVE" ? "Pausar campanha" : "Ativar campanha"}
                           </button>
+                          <button className="danger" disabled=${!!deleting?.[campaign.id]} onClick=${() => onDeleteCampaigns?.([campaign.id])}>Excluir campanha</button>
                         </div>
                       </details>
                     </div>
@@ -5150,6 +5153,7 @@ function GerenciarView({
                                     <summary aria-label="Ações do anúncio">•••</summary>
                                     <div className="manager-more-menu">
                                       <button onClick=${() => beginModelWithAdCopy(campaign, adset, ad)}>Usar anúncio como modelo</button>
+                                      <button className="danger" disabled=${!!deleting?.[ad.id]} onClick=${() => onDeleteAd?.(ad)}>Excluir anúncio</button>
                                     </div>
                                   </details>
                                 </div>
@@ -15358,6 +15362,8 @@ function App() {
               accountId=${filters.metaAccountId.trim()}
               onToggleAdsetStatus=${handleToggleAdsetStatus}
               onDeleteAdset=${handleDeleteEditAdset}
+              onDeleteAd=${handleDeleteEditAd}
+              onDeleteCampaigns=${handleDeleteCampaigns}
               onToggleCampaignStatus=${handleToggleCampaignStatus}
               deleting=${editDeleting}
               togglingStatus=${editTogglingStatus}
