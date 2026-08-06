@@ -789,7 +789,7 @@ function formatStatusLabel(status) {
   return statusLabelMap[status] || status;
 }
 
-function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = false }) {
+function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = false, scopeLabel = "JoinAds" }) {
   const unitLabel = performanceUnitLabel(usePmLabels);
   const revenueClientBrl =
     usdToBrl && totals.revenueClient != null
@@ -880,7 +880,7 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
           <span className="eyebrow">Performance</span>
           <h2 className="section-title">Visão geral</h2>
         </div>
-        <span className="chip neutral">JoinAds</span>
+        <span className="chip neutral">${scopeLabel}</span>
       </div>
       <div className="metrics-grid">
         ${items.map(
@@ -973,6 +973,11 @@ function hasMessengerSignal(row) {
 
 function isMessageMetricsRow(row) {
   return isEngagementObjective(row?.objective) || hasMessengerSignal(row);
+}
+
+function isDirectWebsiteSalesRow(row) {
+  const objective = String(row?.objective || "").toUpperCase();
+  return (objective === "OUTCOME_SALES" || objective === "SALES") && !isMessageMetricsRow(row);
 }
 
 function isMessagingConversationAction(actionType) {
@@ -1302,7 +1307,6 @@ function buildMessageRefreshSnapshot(rows, reportFilters = {}) {
 
 function MetricasMensagensView({
   rows = [],
-  earningsRows = [],
   joinadsDetailRows = [],
   advertiserRows = [],
   advertiserDiagnostics = {},
@@ -1339,20 +1343,6 @@ function MetricasMensagensView({
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const safeRows = Array.isArray(rows) ? rows : [];
-  const isTodayOnly =
-    reportFilters.startDate === formatDate(new Date()) &&
-    reportFilters.endDate === formatDate(new Date());
-  const domainTotalsWithoutUtmFilter = (Array.isArray(earningsRows) ? earningsRows : []).reduce(
-    (acc, row) => {
-      acc.revenueUsd += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
-      acc.grossRevenueUsd += toNumber(row.revenue ?? row.earnings ?? 0);
-      acc.impressions += toNumber(row.impressions);
-      acc.clicks += toNumber(row.clicks);
-      return acc;
-    },
-    { revenueUsd: 0, grossRevenueUsd: 0, impressions: 0, clicks: 0 }
-  );
-  const earningsCacheDiagnostics = diagnostics?.joinadsSuperFilterDiagnostics?.earnings?.cache || {};
   const cacheDiagnostics = [
     diagnostics?.joinadsSuperFilterDiagnostics?.earnings?.cache,
     diagnostics?.joinadsSuperFilterDiagnostics?.earningsAll?.cache,
@@ -1394,9 +1384,6 @@ function MetricasMensagensView({
         className: "danger",
         title: "Os endpoints nao informaram a procedencia dos dados desta carga.",
       };
-  const earningsUsedSameDayFallback = (earningsCacheDiagnostics.sameDayFallbackDays || []).includes(
-    reportFilters.endDate
-  );
   const selectedLtvExtraDays = OPTIONAL_LTV_DAYS.filter((day) =>
     (Array.isArray(ltvExtraDays) ? ltvExtraDays : []).map(Number).includes(day)
   );
@@ -2229,9 +2216,7 @@ function MetricasMensagensView({
     return summary;
   };
   let messengerMedium = buildMediumSummary("messenger", totalsRow.spend_brl || 0);
-  let organicMedium = buildMediumSummary("organic", 0);
   const messengerMediumRows = messengerMedium.rows;
-  const organicMediumRows = organicMedium.rows;
   // Com filtro de Pagina ativo, a receita por utm_medium e global (todas as paginas) e vazaria
   // ROAS/lucro/eCPM de outras paginas. Nesse caso usamos os totais ja escopados por pagina
   // (atribuicao por campanha) e zeramos o organico, que nao e atribuivel a uma pagina.
@@ -2246,17 +2231,6 @@ function MetricasMensagensView({
       profit_brl: totalsRow.profit_brl || 0,
       roas: totalsRow.roas,
       ecpm: totalsRow.ecpm,
-    };
-    organicMedium = {
-      ...organicMedium,
-      impressions: 0,
-      clicks: 0,
-      revenue_usd: 0,
-      revenue_brl: 0,
-      spend_brl: 0,
-      profit_brl: 0,
-      roas: null,
-      ecpm: null,
     };
   }
   const campaignOriginTotals = (Array.isArray(joinadsDetailRows) ? joinadsDetailRows : []).reduce((acc, row) => {
@@ -3523,7 +3497,6 @@ function MetricasMensagensView({
           </div>
           <div className="chip-group">
             <span className="chip neutral">${messengerMediumRows.length} messenger</span>
-            <span className="chip neutral">${organicMediumRows.length} organic</span>
           </div>
         </div>
         <p className="muted small">
@@ -3533,34 +3506,7 @@ function MetricasMensagensView({
             : html`Reconcilia <code>utm_medium</code> com <code>utm_campaign</code>. Somente
                 <code>src_</code> recebe gasto Meta e impostos; <code>organic_</code> permanece com custo zero.`}
         </p>
-        ${isTodayOnly
-          ? html`<div className=${`alert ${domainTotalsWithoutUtmFilter.revenueUsd > 0 && messengerMedium.revenue_usd <= 0 ? "warn" : "info"}`} style=${{ marginBottom: "14px" }}>
-              <strong>Atualização de hoje:</strong>
-              <code>/earnings</code> retornou ${currencyUSD.format(domainTotalsWithoutUtmFilter.revenueUsd)} de receita cliente total do domínio;
-              a visão segmentada por <code>utm_medium=messenger</code> retornou ${currencyUSD.format(messengerMedium.revenue_usd || 0)}.
-              ${domainTotalsWithoutUtmFilter.revenueUsd > 0 && messengerMedium.revenue_usd <= 0
-                ? " A JoinAds já publicou o total, mas ainda não publicou a segmentação UTM. O valor provisório não entra no ROAS das campanhas."
-                : domainTotalsWithoutUtmFilter.revenueUsd <= 0
-                ? " A própria resposta ao vivo da JoinAds ainda não trouxe receita para hoje."
-                : " Os dois relatórios já possuem dados; diferenças podem representar outras origens do domínio."}
-              ${earningsUsedSameDayFallback
-                ? " A resposta ao vivo voltou vazia e o Dashboard preservou o último resultado positivo deste mesmo dia."
-                : ""}
-            </div>`
-          : null}
         <div className="metrics-grid">
-          <div className="metric-card">
-            <div className="metric-label">Receita cliente do domínio (sem filtro UTM)</div>
-            <${MetricInfo} text="Total retornado pelo endpoint /earnings para o domínio e período selecionados, sem filtrar utm_source, utm_medium ou utm_campaign. Inclui acessos com UTM, sem UTM, Messenger, orgânico e outras origens. É uma visão econômica do domínio e não entra automaticamente no ROAS por campanha." />
-            <div className="metric-helper">${number.format(domainTotalsWithoutUtmFilter.impressions)} impressoes · ${number.format(domainTotalsWithoutUtmFilter.clicks)} cliques</div>
-            <div className="metric-value">${currencyUSD.format(domainTotalsWithoutUtmFilter.revenueUsd)}</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-label">Receita bruta do domínio (sem filtro UTM)</div>
-            <${MetricInfo} text="Receita bruta total retornada em revenue/earnings pelo endpoint /earnings, antes do revshare da JoinAds, sem qualquer filtro UTM. É exibida apenas para auditoria e comparação; não entra no ROAS, lucro ou receita a receber." />
-            <div className="metric-helper">Antes do revshare · somente auditoria</div>
-            <div className="metric-value">${currencyUSD.format(domainTotalsWithoutUtmFilter.grossRevenueUsd)}</div>
-          </div>
           <div className="metric-card">
             <div className="metric-label">Impressoes JoinAds</div>
             <${MetricInfo} text="Total de impressoes de anuncios JoinAds registradas com utm_medium=messenger no dominio e periodo. Inclui trafego atribuido, sem classificacao e organic_ do Evo." />
@@ -3576,12 +3522,6 @@ function MetricasMensagensView({
             <div className="metric-helper">Total utm_medium=messenger, antes da reconciliação</div>
             <${MetricInfo} text="Receita cliente em USD informada pela JoinAds para todo utm_medium=messenger, antes de separar src_, unknown_messenger e organic_. Usa revenue_client/earnings_client e nao aplica outro desconto de revshare." />
             <div className="metric-value">${currencyUSD.format(messengerMedium.revenue_usd || 0)}</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-label">Receita orgânica externa USD</div>
-            <div className="metric-helper">(utm_medium=organic)</div>
-            <${MetricInfo} text="Receita cliente em USD das linhas cujo utm_medium e organic. Nao recebe gasto nem imposto Meta. E diferente do organic_ declarado pelo Evo dentro do Messenger." />
-            <div className="metric-value">${currencyUSD.format(organicMedium.revenue_usd || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita BRL</div>
@@ -3844,14 +3784,14 @@ function getHostname(value) {
   }
 }
 
-function EarningsTable({ rows, usePmLabels = false }) {
+function EarningsTable({ rows, usePmLabels = false, groupedByMedium = false, dimensionLabel = "Origem (utm_medium)", title = "Relatório de ganhos" }) {
   const unitLabel = performanceUnitLabel(usePmLabels);
   return html`
     <section className="card wide">
       <div className="card-head">
         <div>
           <span className="eyebrow">Earnings</span>
-          <h2 className="section-title">Relatório de ganhos</h2>
+          <h2 className="section-title">${title}</h2>
         </div>
         <span className="chip neutral">${rows.length} linhas</span>
       </div>
@@ -3859,7 +3799,7 @@ function EarningsTable({ rows, usePmLabels = false }) {
         <table>
           <thead>
             <tr>
-              <th>Data</th>
+              <th>${groupedByMedium ? dimensionLabel : "Data"}</th>
               <th>Dominio</th>
               <th>Impressoes</th>
               <th>Cliques</th>
@@ -3879,7 +3819,7 @@ function EarningsTable({ rows, usePmLabels = false }) {
               : rows.map(
                   (row, idx) => html`
                     <tr key=${row.date || idx}>
-                      <td>${row.date || "-"}</td>
+                      <td>${groupedByMedium ? row.custom_value || "-" : row.date || "-"}</td>
                       <td>${row.domain || "-"}</td>
                       <td>${number.format(row.impressions || 0)}</td>
                       <td>${number.format(row.clicks || 0)}</td>
@@ -5493,6 +5433,9 @@ function consolidateMetaJoinRows(rows) {
       item.data_level = row.data_level;
       item.joinads_source_value = row.joinads_source_value;
       item.revenue_client_value = toNumber(row.revenue_client_value);
+      item.revenue_joinads_value = row.revenue_joinads_value != null
+        ? toNumber(row.revenue_joinads_value)
+        : null;
       item.revenue_client_brl_value = row.revenue_client_brl_value != null
         ? toNumber(row.revenue_client_brl_value)
         : null;
@@ -5639,8 +5582,8 @@ function MetaJoinTable({
     <div className="card-head">
       <div>
         <span className="eyebrow">Meta x JoinAds</span>
-        <h2 className="section-title">Campanhas</h2>
-        <p className="section-subtitle">Uma linha por anuncio, com Meta e JoinAds consolidados sem duplicar o periodo.</p>
+        <h2 className="section-title">Campanhas de vendas para o site</h2>
+        <p className="section-subtitle">Somente campanhas com objetivo Vendas que levam diretamente ao site; campanhas de mensagens ficam em Métricas Mensagens.</p>
       </div>
       <div className="chip-group">
         <span className="chip neutral">${campaignCount} campanhas</span>
@@ -6607,7 +6550,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false })
 
   return html`<section className="card wide meta-join-card adset-summary-card">
     <div className="card-head">
-      <div><span className="eyebrow">Meta x JoinAds</span><h2 className="section-title">Resumo agrupado (por conjunto)</h2><p className="section-subtitle">Consolidacao por ID do conjunto, pronta para Messenger e trafego direto ao site.</p></div>
+      <div><span className="eyebrow">Meta x JoinAds</span><h2 className="section-title">Vendas para o site (por conjunto)</h2><p className="section-subtitle">Consolidação por conjunto apenas das campanhas com objetivo Vendas.</p></div>
       <div className="chip-group"><span className="chip neutral">${grouped.length} conjuntos</span><span className=${`chip ${grouped.every((row) => row.revenueUsd != null) ? "good" : "warn"}`}>${grouped.filter((row) => row.revenueUsd != null).length}/${grouped.length} atribuidos</span></div>
     </div>
     <div className="meta-join-kpis compact-kpis">
@@ -10320,7 +10263,6 @@ function App() {
   }, [filters.domain, mergedDomains, session]);
   // ─────────────────────────────────────────────────────────
 
-  const totals = useTotalsFromEarnings(earnings, superFilter);
   const fxTargetDate =
     appliedFilters?.endDate || filters.endDate || formatDate(new Date());
   const brlRate = fxInfo?.rate || 0;
@@ -13124,6 +13066,12 @@ function App() {
         fromCustom.revenue_client ??
         fromCustom.earnings_client ??
         null;
+      const explicitGrossRevenue =
+        fromKv.revenue ??
+        fromKv.earnings ??
+        fromCustom.revenue ??
+        fromCustom.earnings ??
+        null;
 
       const ecpmClient =
         fromKv.ecpm_client ??
@@ -13220,6 +13168,7 @@ function App() {
             ? currencyUSD.format(Number(revenueClientRaw))
             : "-",
         revenue_client_value: revenueClientRaw ?? 0,
+        revenue_joinads_value: explicitGrossRevenue != null ? Number(explicitGrossRevenue) : null,
         roas_joinads_value: roas,
         roas_joinads: roas != null ? `${roas.toFixed(2)}x` : null,
         impressions_joinads: impressionsJoin || null,
@@ -13292,6 +13241,7 @@ function App() {
     const domainKey = normalizeKey(appliedFilters?.domain || filters.domain || "");
     const base = mergedMeta.filter((row) => {
       if (hiddenCampaigns.has(row.campaign_id)) return false;
+      if (!isDirectWebsiteSalesRow(row)) return false;
       if (!domainKey) return true;
       const host = getHostname(row.destination_url);
       if (!host) return true;
@@ -13330,7 +13280,7 @@ function App() {
     const pageId = String(activeMessageFilters.pageId || "").trim();
     const base = mergedMeta.filter((row) => {
       if (hiddenCampaigns.has(row.campaign_id)) return false;
-      return true;
+      return isMessageMetricsRow(row);
     });
     const scopedBase = isGestorSession(session)
       ? base.filter((row) => rowMatchesDashboardUser(row, session?.username))
@@ -13494,6 +13444,38 @@ function App() {
     () => metaDomainFiltered,
     [metaDomainFiltered]
   );
+
+  const directTrafficJoinadsRows = useMemo(() => {
+    const grouped = new Map();
+    consolidateMetaJoinRows(metaDomainFiltered)
+      .filter((row) => row.joinads_matched)
+      .forEach((row) => {
+        const campaign = String(row.campaign_name || "Campanha sem nome").trim();
+        const domain = getHostname(row.destination_url) || String(appliedFilters?.domain || filters.domain || "").trim();
+        const key = normalizeKey(row.campaign_id || campaign);
+        const current = grouped.get(key) || {
+          domain,
+          custom_value: campaign,
+          impressions: 0,
+          clicks: 0,
+          revenue: 0,
+          revenue_client: 0,
+        };
+        current.impressions += toNumber(row.impressions_joinads);
+        current.clicks += toNumber(row.clicks_joinads);
+        current.revenue += toNumber(row.revenue_joinads_value);
+        current.revenue_client += toNumber(row.revenue_client_value);
+        grouped.set(key, current);
+      });
+    return Array.from(grouped.values()).map((row) => ({
+      ...row,
+      ctr: row.impressions > 0 ? row.clicks / row.impressions * 100 : 0,
+      ecpm: row.impressions > 0 ? row.revenue / row.impressions * 1000 : 0,
+      ecpm_client: row.impressions > 0 ? row.revenue_client / row.impressions * 1000 : 0,
+      active_view: 0,
+    }));
+  }, [metaDomainFiltered, appliedFilters, filters.domain]);
+  const totals = useTotalsFromEarnings(directTrafficJoinadsRows, []);
 
   const dupNameMap = useMemo(() => {
     const map = new Map();
@@ -13914,7 +13896,6 @@ function App() {
           : html`
               <${MetricasMensagensView}
                 rows=${metaMessageFiltered}
-                earningsRows=${earnings}
                 joinadsDetailRows=${keyValueContent}
                 advertiserRows=${advertiserRows}
                 advertiserDiagnostics=${advertiserDiagnostics}
@@ -14114,6 +14095,7 @@ function App() {
                 metaSpendBrl=${metaTotals.spendBrl}
                 fxDateLabel=${fxInfo?.effectiveDate ? formatFxDate(fxInfo.effectiveDate) : ""}
                 usePmLabels=${usePmLabels}
+                scopeLabel="Vendas → site"
               />`}
               ${html`
                 <${MetaJoinTable}
@@ -14132,13 +14114,18 @@ function App() {
                 />
               `}
               ${html`<${MetaJoinAdsetTable} rows=${filteredMeta} joinadsRows=${superTermRows} brlRate=${brlRate} usePmLabels=${usePmLabels} />`}
-              ${html`<${EarningsTable} rows=${earningsAll.filter((r) => { const d = typeof r.date === "string" ? r.date.slice(0, 10) : ""; return !d || ((!filters.startDate || d >= filters.startDate) && (!filters.endDate || d <= filters.endDate)); })} usePmLabels=${usePmLabels} />`}
+              ${html`<${EarningsTable}
+                rows=${directTrafficJoinadsRows}
+                usePmLabels=${usePmLabels}
+                groupedByMedium=${true}
+                dimensionLabel="Campanha de vendas"
+                title="Ganhos de vendas para o site"
+              />`}
             </main>
           `
         : activeTab === "metricas_mensagens"
         ? html`<${MetricasMensagensView}
             rows=${metaMessageFiltered}
-            earningsRows=${earnings}
             joinadsDetailRows=${keyValueContent}
             advertiserRows=${advertiserRows}
             advertiserDiagnostics=${advertiserDiagnostics}
