@@ -10,8 +10,9 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=166";
-import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=166";
+} from "./campaign-builder.mjs?v=167";
+import { buildModelDraftNames, nextAnName, shiftCjName } from "./campaign-manager.mjs?v=167";
+import { buildDirectSalesCampaignRows } from "./sales-attribution.mjs?v=167";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -20,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 166;
+const APP_VERSION_BUILD = 167;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -571,7 +572,7 @@ function useTotalsFromEarnings(earnings, fallbackSuper) {
         ctr: 0,
         ecpm: 0,
         ecpmClient: 0,
-        activeView: 0,
+        activeView: null,
       };
     }
 
@@ -584,7 +585,10 @@ function useTotalsFromEarnings(earnings, fallbackSuper) {
         const imps = toNumber(row.impressions);
         acc.ecpmWeighted += toNumber(row.ecpm) * imps;
         acc.ecpmClientWeighted += toNumber(row.ecpm_client) * imps;
-        acc.activeViewWeighted += toNumber(row.active_view) * imps;
+        if (row.active_view != null && row.active_view !== "" && Number.isFinite(Number(row.active_view))) {
+          acc.activeViewWeighted += Number(row.active_view) * imps;
+          acc.activeViewImpressions += imps;
+        }
         return acc;
       },
       {
@@ -597,15 +601,18 @@ function useTotalsFromEarnings(earnings, fallbackSuper) {
         ecpmClient: 0,
         ecpmWeighted: 0,
         ecpmClientWeighted: 0,
-        activeView: 0,
+        activeView: null,
         activeViewWeighted: 0,
+        activeViewImpressions: 0,
       }
     );
 
     sum.ctr = sum.impressions ? (sum.clicks / sum.impressions) * 100 : 0;
     sum.ecpm = sum.impressions ? sum.ecpmWeighted / sum.impressions : 0;
     sum.ecpmClient = sum.impressions ? sum.ecpmClientWeighted / sum.impressions : 0;
-    sum.activeView = sum.impressions ? sum.activeViewWeighted / sum.impressions : 0;
+    sum.activeView = sum.activeViewImpressions
+      ? sum.activeViewWeighted / sum.activeViewImpressions
+      : null;
 
     return sum;
   }, [earnings, fallbackSuper]);
@@ -925,8 +932,10 @@ function Metrics({ totals, usdToBrl, metaSpendBrl, fxDateLabel, usePmLabels = fa
     },
     {
       label: "Active view",
-      value: `${(totals.activeView || 0).toFixed(1)}%`,
+      value: totals.activeView != null ? `${totals.activeView.toFixed(1)}%` : "-",
       helper: "Visibilidade mídia",
+      current: totals.activeView,
+      format: "percent",
     },
   ];
 
@@ -3884,7 +3893,7 @@ function EarningsTable({ rows, usePmLabels = false, groupedByMedium = false, dim
                       <td>${`${Number(row.ctr || 0).toFixed(2)}%`}</td>
                       <td>${currencyUSD.format(row.ecpm || 0)}</td>
                       <td>${currencyUSD.format(row.revenue_client || 0)}</td>
-                      <td>${`${Number(row.active_view || 0).toFixed(2)}%`}</td>
+                      <td>${row.active_view != null && row.active_view !== "" ? `${Number(row.active_view).toFixed(2)}%` : "-"}</td>
                     </tr>
                   `
                 )}
@@ -6245,7 +6254,7 @@ function consolidateMetaJoinRows(rows) {
   });
 }
 
-function buildSalesDashboardSnapshot(rows) {
+function buildSalesDashboardSnapshot(rows, directCampaignRows = []) {
   const consolidated = consolidateMetaJoinRows(rows);
   const createBucket = () => ({
     spend_brl: 0,
@@ -6299,6 +6308,33 @@ function buildSalesDashboardSnapshot(rows) {
     ads[adKey] = finish(adBucket);
     addRow(totalsBucket, row);
   });
+
+  const replaceJoinadsMetrics = (bucket, row) => {
+    if (!bucket) return;
+    bucket.gross_revenue_usd = toNumber(row.revenue);
+    bucket.revenue_usd = toNumber(row.revenue_client);
+    bucket.revenue_brl = toNumber(row.revenue_client_brl);
+    bucket.joinads_impressions = toNumber(row.impressions);
+    bucket.joinads_clicks = toNumber(row.clicks);
+  };
+
+  if (Array.isArray(directCampaignRows) && directCampaignRows.length) {
+    const directTotals = createBucket();
+    directCampaignRows.forEach((row) => {
+      const campaignKey = String(row.campaign_id || row.campaign_name || "");
+      replaceJoinadsMetrics(campaignBuckets.get(campaignKey), row);
+      directTotals.gross_revenue_usd += toNumber(row.revenue);
+      directTotals.revenue_usd += toNumber(row.revenue_client);
+      directTotals.revenue_brl += toNumber(row.revenue_client_brl);
+      directTotals.joinads_impressions += toNumber(row.impressions);
+      directTotals.joinads_clicks += toNumber(row.clicks);
+    });
+    totalsBucket.gross_revenue_usd = directTotals.gross_revenue_usd;
+    totalsBucket.revenue_usd = directTotals.revenue_usd;
+    totalsBucket.revenue_brl = directTotals.revenue_brl;
+    totalsBucket.joinads_impressions = directTotals.joinads_impressions;
+    totalsBucket.joinads_clicks = directTotals.joinads_clicks;
+  }
 
   return {
     schema: "sales-dashboard-refresh-v1",
@@ -14537,35 +14573,22 @@ function App() {
   );
 
   const directTrafficJoinadsRows = useMemo(() => {
-    const grouped = new Map();
-    consolidateMetaJoinRows(metaDomainFiltered)
-      .filter((row) => row.joinads_matched)
-      .forEach((row) => {
-        const campaign = String(row.campaign_name || "Campanha sem nome").trim();
-        const domain = getHostname(row.destination_url) || String(appliedFilters?.domain || filters.domain || "").trim();
-        const key = normalizeKey(row.campaign_id || campaign);
-        const current = grouped.get(key) || {
-          domain,
-          custom_value: campaign,
-          impressions: 0,
-          clicks: 0,
-          revenue: 0,
-          revenue_client: 0,
-        };
-        current.impressions += toNumber(row.impressions_joinads);
-        current.clicks += toNumber(row.clicks_joinads);
-        current.revenue += toNumber(row.revenue_joinads_value);
-        current.revenue_client += toNumber(row.revenue_client_value);
-        grouped.set(key, current);
-      });
-    return Array.from(grouped.values()).map((row) => ({
-      ...row,
-      ctr: row.impressions > 0 ? row.clicks / row.impressions * 100 : 0,
-      ecpm: row.impressions > 0 ? row.revenue / row.impressions * 1000 : 0,
-      ecpm_client: row.impressions > 0 ? row.revenue_client / row.impressions * 1000 : 0,
-      active_view: 0,
-    }));
-  }, [metaDomainFiltered, appliedFilters, filters.domain]);
+    const domain = String(appliedFilters?.domain || filters.domain || "").trim();
+    return buildDirectSalesCampaignRows({
+      metaRows: consolidateMetaJoinRows(metaDomainFiltered),
+      campaignRows: joinadsCampaignRows,
+      fallbackCampaignRows: keyValueContent,
+      domain,
+      brlRate,
+    });
+  }, [
+    metaDomainFiltered,
+    joinadsCampaignRows,
+    keyValueContent,
+    appliedFilters,
+    filters.domain,
+    brlRate,
+  ]);
   const totals = useTotalsFromEarnings(directTrafficJoinadsRows, []);
   const activeSalesFilters = appliedFilters || filters;
   const salesRefreshComparisonKey = salesDashboardStorageKey({
@@ -14590,7 +14613,7 @@ function App() {
       setSalesRefreshSyncError("");
       return;
     }
-    const currentSnapshot = buildSalesDashboardSnapshot(filteredMeta);
+    const currentSnapshot = buildSalesDashboardSnapshot(filteredMeta, directTrafficJoinadsRows);
     if (!Object.keys(currentSnapshot.campaigns).length) {
       setSalesRefreshComparison(null);
       setSalesRefreshSyncStatus("idle");
@@ -14645,6 +14668,7 @@ function App() {
     lastRefreshed,
     snapshotEligible,
     filteredMeta,
+    directTrafficJoinadsRows,
     salesRefreshComparisonKey,
     salesRefreshServerVariant,
   ]);
