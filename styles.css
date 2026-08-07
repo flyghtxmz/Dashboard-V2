@@ -1165,6 +1165,15 @@ button.ghost.danger {
 .manager-create-panel .field small {
   color: var(--muted);
 }
+.manager-campaign-copy-panel {
+  background: color-mix(in srgb, #1683d8 6%, var(--card));
+}
+.manager-campaign-copy-fields {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) minmax(150px, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
 .manager-check {
   display: inline-flex;
   align-items: center;
@@ -1226,6 +1235,61 @@ button.ghost.danger {
 }
 .manager-draft-ad.is-removed {
   opacity: 0.58;
+}
+.draft-card.is-campaign-draft {
+  border-left: 4px solid #1683d8;
+}
+.manager-campaign-draft {
+  display: grid;
+  gap: 12px;
+}
+.manager-campaign-draft-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: color-mix(in srgb, #1683d8 8%, var(--card));
+  font-size: 0.82rem;
+}
+.manager-campaign-draft-summary span {
+  color: var(--muted);
+}
+.manager-campaign-draft-tree {
+  display: grid;
+  gap: 9px;
+}
+.manager-campaign-draft-adset {
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.manager-campaign-draft-adset.is-removed {
+  opacity: 0.58;
+}
+.manager-campaign-draft-adset > summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  background: var(--card);
+  cursor: pointer;
+}
+.manager-campaign-draft-adset > summary > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.manager-campaign-draft-adset > summary small {
+  color: var(--muted);
+}
+.manager-campaign-draft-adset-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px 12px 12px 42px;
+  border-top: 1px solid var(--border-light);
 }
 .manager-advanced > summary {
   display: flex;
@@ -1902,6 +1966,9 @@ button.ghost.danger {
   .manager-create-panel {
     padding: 13px 12px;
   }
+  .manager-campaign-copy-fields {
+    grid-template-columns: 1fr;
+  }
   .manager-create-actions,
   .manager-advanced > summary {
     align-items: stretch;
@@ -1912,6 +1979,9 @@ button.ghost.danger {
   }
   .manager-draft-ad {
     grid-template-columns: 1fr;
+  }
+  .manager-campaign-draft-adset-body {
+    padding-left: 12px;
   }
   .manager-template-list {
     grid-template-columns: 1fr;

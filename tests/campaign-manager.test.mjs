@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildModelDraftNames, nextAnName, nextCampaignCjToken, replaceCjToken, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCjToken, nextCampaignCopyName, replaceCjToken, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
 
 test("incrementa CJ usando o maior conjunto existente na campanha", () => {
   const campaign = {
@@ -43,4 +43,31 @@ test("Gerenciar aplica UTM oficial em vendas e preserva a origem em mensagens", 
     resolveManagedUrlTags({ trafficType: "messages", sourceUrlTags: "?utm_campaign=src_abc", siteUrlTags: siteTags }),
     "utm_campaign=src_abc"
   );
+});
+
+test("gera o proximo nome ao duplicar uma campanha sem alterar o nicho", () => {
+  assert.equal(nextCampaignCopyName("cmp-02-eng-aplicativos", [
+    { name: "cmp-02-eng-aplicativos" },
+    { name: "cmp-03-eng-aplicativos" },
+    { name: "cmp-20-vnd-outro" },
+  ]), "cmp-04-eng-aplicativos");
+  assert.equal(nextCampaignCopyName("Mensagens MX", []), "Mensagens MX - Copia");
+});
+
+test("reinicia CJ e AN ao montar a estrutura de uma nova campanha", () => {
+  const structure = buildCampaignCopyStructure({ adsets: [
+    { id: "set-9", name: "produto-mx-cj09", ads: [
+      { id: "ad-8", name: "produto-mx-cj09-an08", url_tags: "utm_source=fb" },
+      { id: "ad-12", name: "produto-mx-cj09-an12" },
+    ] },
+    { id: "set-15", name: "produto-mx-cj15", ads: [
+      { id: "ad-4", name: "produto-mx-cj15-an04" },
+    ] },
+  ] });
+  assert.equal(structure[0].new_name, "produto-mx-cj01");
+  assert.equal(structure[0].ads[0].new_name, "produto-mx-cj01-an01");
+  assert.equal(structure[0].ads[1].new_name, "produto-mx-cj01-an02");
+  assert.equal(structure[1].new_name, "produto-mx-cj02");
+  assert.equal(structure[1].ads[0].new_name, "produto-mx-cj02-an01");
+  assert.equal(structure[0].ads[0].url_tags, "utm_source=fb");
 });

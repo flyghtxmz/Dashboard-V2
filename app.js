@@ -11,7 +11,7 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=172";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=174";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
 
 const html = htm.bind(React.createElement);
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 173;
+const APP_VERSION_BUILD = 174;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4720,10 +4720,13 @@ function GerenciarView({
   onRefreshStatus,
   statusLoading,
   onAddDraft,
+  onAddCampaignDraft,
   drafts,
   onRemoveDraft,
   onUpdateDraft,
   onUpdateDraftAd,
+  onUpdateCampaignDraftAdset,
+  onUpdateCampaignDraftAd,
   onToggleDraftAd,
   onPublish,
   publishing,
@@ -4757,6 +4760,9 @@ function GerenciarView({
   const [modelAdsetName, setModelAdsetName] = useState("");
   const [modelAdditionalAds, setModelAdditionalAds] = useState([]);
   const [modelMode, setModelMode] = useState("adset");
+  const [modelingCampaignId, setModelingCampaignId] = useState("");
+  const [campaignModelName, setCampaignModelName] = useState("");
+  const [campaignModelStatus, setCampaignModelStatus] = useState("ACTIVE");
   const [managerToast, setManagerToast] = useState(null);
   const [form, setForm] = useState({
     name: "",
@@ -4885,6 +4891,25 @@ function GerenciarView({
     setCreatingFor(creatingFor === campaign.id ? "" : campaign.id);
     if (!(pixels || []).length && accountId) onLoadPixels?.(accountId);
   };
+  const beginCampaignModel = (campaign) => {
+    const willOpen = modelingCampaignId !== campaign.id;
+    setModelingCampaignId(willOpen ? campaign.id : "");
+    setCreatingFor("");
+    setModelingAdsetId("");
+    setCampaignModelName(nextCampaignCopyName(campaign.name, campaigns));
+    setCampaignModelStatus("ACTIVE");
+  };
+  const confirmCampaignModel = (campaign) => {
+    onAddCampaignDraft?.(campaign, {
+      campaignName: campaignModelName,
+      status: campaignModelStatus,
+      trafficType,
+    });
+    setModelingCampaignId("");
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => document.querySelector(".manager-drafts")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    }
+  };
   const beginModel = (campaign, adset) => {
     const ads = adset?.ads || [];
     const generatedNames = buildModelDraftNames(campaign, adset);
@@ -4984,7 +5009,7 @@ function GerenciarView({
       setManagerToast({
         type: "success",
         title: "Publicado com sucesso",
-        message: `${result.publishedItems} item(ns) enviado(s) como ativo(s) para o Gerenciador de Anúncios.`,
+        message: `${result.publishedItems} item(ns) enviado(s) para o Gerenciador de Anúncios com o status escolhido.`,
       });
     } else if (result.failedDrafts > 0) {
       setManagerToast({
@@ -5083,7 +5108,7 @@ function GerenciarView({
           <strong>${filteredCampaigns.length}</strong>
           <span>${filteredCampaigns.length === 1 ? "campanha encontrada" : "campanhas encontradas"}</span>
           <span className="manager-summary-divider">•</span>
-          <span>Itens publicados pelo rascunho são enviados ativos</span>
+          <span>O status final é definido em cada rascunho</span>
         </div>
 
         <div className="manager-campaigns">
@@ -5114,6 +5139,7 @@ function GerenciarView({
                       <details className="manager-more">
                         <summary aria-label="Ações da campanha">•••</summary>
                         <div className="manager-more-menu">
+                          <button onClick=${() => beginCampaignModel(campaign)}>Duplicar campanha</button>
                           <button disabled=${!!togglingStatus?.[campaign.id]} onClick=${() => onToggleCampaignStatus?.(campaign.id, statusText(campaign))}>
                             ${statusText(campaign) === "ACTIVE" ? "Pausar campanha" : "Ativar campanha"}
                           </button>
@@ -5125,6 +5151,35 @@ function GerenciarView({
                       </details>
                     </div>
                   </header>
+
+                  ${modelingCampaignId === campaign.id ? html`
+                    <div className="manager-create-panel manager-campaign-copy-panel">
+                      <div className="manager-model-head">
+                        <div>
+                          <strong>Duplicar como uma nova campanha</strong>
+                          <p className="muted small">Serão copiados ${(campaign.adsets || []).length} conjunto(s) e ${(campaign.adsets || []).reduce((sum, adset) => sum + (adset.ads || []).length, 0)} anúncio(s). Você poderá revisar a estrutura e trocar criativos no rascunho.</p>
+                        </div>
+                        <button className="ghost small" onClick=${() => setModelingCampaignId("")}>Fechar</button>
+                      </div>
+                      <div className="manager-campaign-copy-fields">
+                        <label className="field">
+                          <span>Nome da nova campanha</span>
+                          <input value=${campaignModelName} onInput=${(event) => setCampaignModelName(event.target.value)} />
+                        </label>
+                        <label className="field">
+                          <span>Status após publicar</span>
+                          <select value=${campaignModelStatus} onChange=${(event) => setCampaignModelStatus(event.target.value)}>
+                            <option value="ACTIVE">Ativa</option>
+                            <option value="PAUSED">Pausada</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div className="manager-create-actions">
+                        <span className="muted small">A campanha original não será alterada.</span>
+                        <button className="primary" disabled=${!campaignModelName.trim() || !(campaign.adsets || []).length} onClick=${() => confirmCampaignModel(campaign)}>Adicionar campanha ao rascunho</button>
+                      </div>
+                    </div>
+                  ` : null}
 
                   ${creatingFor === campaign.id
                     ? trafficType === "messages"
@@ -5393,32 +5448,77 @@ function GerenciarView({
 
       <section className="card wide manager-drafts">
         <div className="card-head">
-          <div><span className="eyebrow">Rascunho</span><h2 className="section-title">Conjuntos e anúncios preparados</h2></div>
+          <div><span className="eyebrow">Rascunho</span><h2 className="section-title">Campanhas, conjuntos e anúncios preparados</h2></div>
           <button className="primary" onClick=${publishWithFeedback} disabled=${publishing || !drafts.length}>
             ${publishing ? "Publicando..." : `Publicar ${drafts.length || ""}`}
           </button>
         </div>
         ${!drafts.length
-          ? html`<div className="manager-empty compact"><span>Use um conjunto ou anúncio como modelo para preparar a criação.</span></div>`
+          ? html`<div className="manager-empty compact"><span>Use uma campanha, conjunto ou anúncio como modelo para preparar a criação.</span></div>`
           : html`<div className="draft-list">
-              ${drafts.map((draft) => html`<div className="draft-card" key=${draft.id}>
+              ${drafts.map((draft) => html`<div className=${`draft-card ${draft.mode === "campaign" ? "is-campaign-draft" : ""}`} key=${draft.id}>
                 <div className="draft-head">
                   <div>
-                    <strong>${draft.campaign_name}</strong>
+                    <strong>${draft.mode === "campaign" ? draft.campaign_new_name : draft.campaign_name}</strong>
                     <div className="muted small">
-                      ${draft.mode === "ad_only" ? `Novo anúncio dentro de: ${draft.source_adset_name}` : `Conjunto-modelo: ${draft.source_adset_name}`}
+                      ${draft.mode === "campaign"
+                        ? `Nova campanha baseada em: ${draft.source_campaign_name}`
+                        : draft.mode === "ad_only"
+                        ? `Novo anúncio dentro de: ${draft.source_adset_name}`
+                        : `Conjunto-modelo: ${draft.source_adset_name}`}
                     </div>
                   </div>
                   <button className="ghost small" onClick=${() => onRemoveDraft(draft.id)}>Remover</button>
                 </div>
-                ${draft.mode === "ad_only"
+                ${draft.mode === "campaign"
+                  ? html`<div className="manager-campaign-draft">
+                      <div className="draft-fields manager-campaign-draft-fields">
+                        <label className="field"><span>Nome da nova campanha</span><input value=${draft.campaign_new_name} onChange=${(event) => onUpdateDraft(draft.id, { campaign_new_name: event.target.value })} /></label>
+                        <label className="field"><span>Status após publicar</span><select value=${draft.publish_status || "ACTIVE"} onChange=${(event) => onUpdateDraft(draft.id, { publish_status: event.target.value })}><option value="ACTIVE">Ativa</option><option value="PAUSED">Pausada</option></select></label>
+                      </div>
+                      <div className="manager-campaign-draft-summary">
+                        <strong>${(draft.adsets || []).filter((adset) => !adset.removed).length} conjunto(s)</strong>
+                        <span>${(draft.adsets || []).filter((adset) => !adset.removed).reduce((sum, adset) => sum + (adset.ads || []).filter((ad) => !ad.removed).length, 0)} anúncio(s) selecionado(s)</span>
+                      </div>
+                      <div className="manager-campaign-draft-tree">
+                        ${(draft.adsets || []).map((adset) => html`<details className=${`manager-campaign-draft-adset ${adset.removed ? "is-removed" : ""}`} open key=${adset.source_adset_id}>
+                          <summary>
+                            <label className="manager-model-checkbox" title="Incluir este conjunto" onClick=${(event) => event.stopPropagation()}>
+                              <input type="checkbox" checked=${!adset.removed} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { removed: !event.target.checked })} />
+                            </label>
+                            <${ManagerLevelIcon} level="adset" />
+                            <span><strong>${adset.source_name}</strong><small>${(adset.ads || []).filter((ad) => !ad.removed).length}/${(adset.ads || []).length} anúncio(s)</small></span>
+                          </summary>
+                          <div className="manager-campaign-draft-adset-body">
+                            <label className="field"><span>Novo nome do conjunto</span><input disabled=${adset.removed} value=${adset.new_name} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { new_name: event.target.value })} /></label>
+                            <div className="manager-draft-ad-list">
+                              ${(adset.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed || adset.removed ? "is-removed" : ""}`} key=${ad.source_ad_id}>
+                                <div className="manager-draft-ad-source">
+                                  <label className="manager-model-checkbox" title="Incluir este anúncio">
+                                    <input type="checkbox" disabled=${adset.removed} checked=${!ad.removed && !adset.removed} onChange=${(event) => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { removed: !event.target.checked })} />
+                                  </label>
+                                  ${ad.replacement_image_url || ad.thumbnail_url ? html`<img src=${ad.replacement_image_url || ad.thumbnail_url} alt="Preview do anúncio" loading="lazy" />` : null}
+                                  <span>${ad.source_name}${ad.replacement_image_hash ? html`<small className="manager-creative-changed">Nova imagem selecionada</small>` : null}</span>
+                                </div>
+                                <input disabled=${ad.removed || adset.removed} value=${ad.new_name} onChange=${(event) => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { new_name: event.target.value })} />
+                                ${!ad.removed && !adset.removed ? html`<div className="manager-draft-creative">
+                                  <${CampaignMediaPicker} accountId=${accountId} type="image" selectedKey=${ad.replacement_image_hash || ""} onSelect=${(item) => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { replacement_image_hash: item.key, replacement_image_url: item.url || "" })} />
+                                  ${ad.replacement_image_hash ? html`<button className="ghost small" onClick=${() => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { replacement_image_hash: "", replacement_image_url: "" })}>Usar imagem original</button>` : null}
+                                </div>` : null}
+                              </div>`)}
+                            </div>
+                          </div>
+                        </details>`)}
+                      </div>
+                    </div>`
+                  : draft.mode === "ad_only"
                   ? html`<div className="manager-current-adset"><span>O conjunto não será duplicado; o anúncio será publicado ativo em</span><strong>${draft.source_adset_name}</strong></div>`
                   : html`<div className="draft-fields">
                       <label className="field"><span>Novo nome do conjunto</span><input value=${draft.adset_new_name} onChange=${(e) => onUpdateDraft(draft.id, { adset_new_name: e.target.value })} /></label>
                       <label className="field"><span>Número de cópias</span><input type="number" min="1" value=${draft.copies || 1} onChange=${(e) => onUpdateDraft(draft.id, { copies: Math.max(1, Number(e.target.value) || 1) })} /></label>
                       <label className="field"><span>Orçamento diário (R$)</span><input type="number" min="0" step="0.01" value=${draft.daily_budget_brl} onChange=${(e) => onUpdateDraft(draft.id, { daily_budget_brl: e.target.value })} /></label>
                     </div>`}
-                <details className="manager-draft-ads">
+                ${draft.mode !== "campaign" ? html`<details className="manager-draft-ads">
                   <summary>Revisar anúncios (${(draft.ads || []).filter((ad) => !ad.removed).length}/${(draft.ads || []).length})</summary>
                   <div className="manager-draft-ad-list">
                     ${(draft.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed ? "is-removed" : ""}`} key=${ad.id}>
@@ -5439,7 +5539,7 @@ function GerenciarView({
                       </div>` : null}
                     </div>`)}
                   </div>
-                </details>
+                </details>` : null}
               </div>`)}
             </div>`}
       </section>
@@ -13565,6 +13665,20 @@ function App() {
     setDrafts((prev) => [created, ...prev]);
   };
 
+  const addDraftFromCampaign = (campaign, options = {}) => {
+    const created = {
+      id: `campaign-${campaign.id}-${Date.now()}`,
+      mode: "campaign",
+      traffic_type: options.trafficType === "messages" ? "messages" : "sales",
+      source_campaign_id: campaign.id,
+      source_campaign_name: campaign.name,
+      campaign_new_name: String(options.campaignName || nextCampaignCopyName(campaign.name, dupCampaigns)).trim(),
+      publish_status: options.status === "PAUSED" ? "PAUSED" : "ACTIVE",
+      adsets: buildCampaignCopyStructure(campaign),
+    };
+    setDrafts((prev) => [created, ...prev]);
+  };
+
   const removeDraft = (draftId) => {
     setDrafts((prev) => prev.filter((d) => d.id !== draftId));
   };
@@ -13589,6 +13703,25 @@ function App() {
         };
       })
     );
+  };
+
+  const updateCampaignDraftAdset = (draftId, sourceAdsetId, patch) => {
+    setDrafts((prev) => prev.map((draft) => draft.id !== draftId ? draft : {
+      ...draft,
+      adsets: (draft.adsets || []).map((adset) => adset.source_adset_id === sourceAdsetId
+        ? { ...adset, ...patch }
+        : adset),
+    }));
+  };
+
+  const updateCampaignDraftAd = (draftId, sourceAdsetId, sourceAdId, patch) => {
+    setDrafts((prev) => prev.map((draft) => draft.id !== draftId ? draft : {
+      ...draft,
+      adsets: (draft.adsets || []).map((adset) => adset.source_adset_id !== sourceAdsetId ? adset : {
+        ...adset,
+        ads: (adset.ads || []).map((ad) => ad.source_ad_id === sourceAdId ? { ...ad, ...patch } : ad),
+      }),
+    }));
   };
 
   const toggleDraftAd = (draftId, adId) => {
@@ -14066,6 +14199,137 @@ function App() {
       let manualCopyAds = requiresManualAds;
       let adCopyMode = requiresManualAds ? "create" : "copy";
       try {
+        if (draft.mode === "campaign") {
+          const selectedAdsets = (draft.adsets || []).filter((adset) => !adset.removed);
+          if (!String(draft.campaign_new_name || "").trim()) {
+            throw new Error("Informe o nome da nova campanha.");
+          }
+          if (!selectedAdsets.length) {
+            throw new Error("Selecione ao menos um conjunto para a nova campanha.");
+          }
+          if (selectedAdsets.some((adset) => !String(adset.new_name || "").trim())) {
+            throw new Error("Todos os conjuntos selecionados precisam de um nome.");
+          }
+          if (selectedAdsets.some((adset) => (adset.ads || []).some((ad) => !ad.removed && !String(ad.new_name || "").trim()))) {
+            throw new Error("Todos os anúncios selecionados precisam de um nome.");
+          }
+
+          step = "copy-campaign";
+          const copyCampaignRes = draft.copied_campaign_id
+            ? { copied_campaign_id: draft.copied_campaign_id }
+            : await fetchJson(`${API_BASE}/meta-campaign-copy`, {
+                method: "POST",
+                body: JSON.stringify({
+                  campaign_id: draft.source_campaign_id,
+                  deep_copy: false,
+                  status_option: "PAUSED",
+                  rename_strategy: "NO_RENAME",
+                }),
+              });
+          const newCampaignId = copyCampaignRes.copied_campaign_id;
+          if (!draft.copied_campaign_id) {
+            draft.copied_campaign_id = newCampaignId;
+            updateDraft(draft.id, { copied_campaign_id: newCampaignId });
+          }
+
+          step = "rename-campaign";
+          await fetchJson(`${API_BASE}/meta-rename`, {
+            method: "POST",
+            body: JSON.stringify({ object_id: newCampaignId, name: String(draft.campaign_new_name).trim() }),
+          });
+
+          for (const adset of selectedAdsets) {
+            let copiedAdsetId = adset.copied_adset_id || "";
+            if (!copiedAdsetId) {
+              step = "copy-campaign-adset";
+              const copiedAdset = await fetchJson(`${API_BASE}/meta-adset-copy`, {
+                method: "POST",
+                body: JSON.stringify({
+                  adset_id: adset.source_adset_id,
+                  campaign_id: newCampaignId,
+                  status_option: "PAUSED",
+                  rename_strategy: "NO_RENAME",
+                  deep_copy: false,
+                  include_creative: false,
+                }),
+              });
+              copiedAdsetId = copiedAdset.new_adset_id || copiedAdset.data?.copied_adset_id || copiedAdset.data?.id || "";
+              if (!copiedAdsetId) throw new Error(`A Meta não informou a cópia do conjunto ${adset.source_name}.`);
+              adset.copied_adset_id = copiedAdsetId;
+              updateCampaignDraftAdset(draft.id, adset.source_adset_id, { copied_adset_id: copiedAdsetId });
+            }
+
+            step = "rename-copied-adset";
+            await fetchJson(`${API_BASE}/meta-rename`, {
+              method: "POST",
+              body: JSON.stringify({ object_id: copiedAdsetId, name: String(adset.new_name).trim() }),
+            });
+
+            for (const ad of (adset.ads || []).filter((item) => !item.removed)) {
+              let finalAdId = ad.copied_ad_id || "";
+              if (!finalAdId) {
+                step = "create-campaign-ad";
+                const createResult = await retryOnSubcode33(() => fetchJson(`${API_BASE}/meta-ad-create`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    ad_id: ad.source_ad_id,
+                    adset_id: copiedAdsetId,
+                    name: String(ad.new_name).trim(),
+                    status: "PAUSED",
+                    sanitize_video_placements: true,
+                    replacement_image_hash: ad.replacement_image_hash || "",
+                    utm_tags: resolveManagedUrlTags({
+                      trafficType: draft.traffic_type,
+                      sourceUrlTags: ad.url_tags || "",
+                      siteUrlTags: DEFAULT_UTM_TAGS,
+                    }),
+                  }),
+                }));
+                finalAdId = createResult?.new_ad_id || createResult?.data?.id;
+                if (!finalAdId) throw new Error(`Não foi possível obter o novo ID do anúncio ${ad.source_name}.`);
+                ad.copied_ad_id = finalAdId;
+                updateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { copied_ad_id: finalAdId });
+              } else if (String(ad.new_name).trim()) {
+                step = "rename-copied-ad";
+                await fetchJson(`${API_BASE}/meta-rename`, {
+                  method: "POST",
+                  body: JSON.stringify({ object_id: finalAdId, name: String(ad.new_name).trim() }),
+                });
+              }
+
+              if (draft.publish_status === "ACTIVE") {
+                step = "activate-copied-ad";
+                await fetchJson(`${API_BASE}/meta-ad-status`, {
+                  method: "POST",
+                  body: JSON.stringify({ ad_id: finalAdId, status: "ACTIVE" }),
+                });
+              }
+            }
+
+            if (draft.publish_status === "ACTIVE") {
+              step = "activate-copied-adset";
+              await fetchJson(`${API_BASE}/meta-adset-status`, {
+                method: "POST",
+                body: JSON.stringify({ adset_id: copiedAdsetId, status: "ACTIVE" }),
+              });
+            }
+          }
+
+          if (draft.publish_status === "ACTIVE") {
+            step = "activate-copied-campaign";
+            await fetchJson(`${API_BASE}/meta-campaign-status`, {
+              method: "POST",
+              body: JSON.stringify({ campaign_id: newCampaignId, status: "ACTIVE" }),
+            });
+          }
+          pushLog("duplicar-campanha", {
+            message: `Nova campanha publicada: ${draft.source_campaign_name} -> ${draft.campaign_new_name}`,
+            campaign_id: newCampaignId,
+          });
+          publishedItems += 1;
+          publishedDrafts += 1;
+          continue;
+        }
         if (draft.mode === "ad_only") {
           const adsToCreate = (draft.ads || []).filter((ad) => !ad.removed);
           if (!draft.target_adset_id || !adsToCreate.length) {
@@ -15840,10 +16104,13 @@ function App() {
               onRefreshStatus=${handleRefreshDuplicarStatus}
               statusLoading=${dupStatusLoading}
               onAddDraft=${addDraftFromAdset}
+              onAddCampaignDraft=${addDraftFromCampaign}
               drafts=${drafts}
               onRemoveDraft=${removeDraft}
               onUpdateDraft=${updateDraft}
               onUpdateDraftAd=${updateDraftAd}
+              onUpdateCampaignDraftAdset=${updateCampaignDraftAdset}
+              onUpdateCampaignDraftAd=${updateCampaignDraftAd}
               onToggleDraftAd=${toggleDraftAd}
               onPublish=${handlePublishDrafts}
               publishing=${publishing}

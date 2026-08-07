@@ -21,6 +21,7 @@ export async function onRequest({ request, env }) {
     number_of_copies,
     include_creative,
     deep_copy,
+    campaign_id,
   } = body || {};
   if (!adset_id) {
     return jsonResponse(400, { error: "Parametros obrigatorios: adset_id" });
@@ -39,6 +40,7 @@ export async function onRequest({ request, env }) {
       params.set("rename_options", JSON.stringify(rename_options));
     }
     if (number_of_copies) params.set("number_of_copies", String(number_of_copies));
+    if (campaign_id) params.set("campaign_id", String(campaign_id));
     if (include_creative !== undefined && include_creative !== null) {
       params.set("include_creative", include_creative ? "true" : "false");
     }

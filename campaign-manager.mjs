@@ -60,6 +60,51 @@ export function buildModelDraftNames(campaign, adset) {
   };
 }
 
+export function nextCampaignCopyName(sourceName, campaigns = []) {
+  const source = String(sourceName || "Campanha").trim();
+  const match = source.match(/^(.*?\bcmp[-_ ]?)(\d+)(.*)$/i);
+  if (!match) return `${source} - Copia`;
+  const [, prefix, digits, suffix] = match;
+  const comparablePrefix = prefix.toLowerCase();
+  const comparableSuffix = suffix.toLowerCase();
+  const candidates = [source, ...(campaigns || []).map((campaign) => campaign?.name)]
+    .map((name) => String(name || "").match(/^(.*?\bcmp[-_ ]?)(\d+)(.*)$/i))
+    .filter((item) => item && item[1].toLowerCase() === comparablePrefix && item[3].toLowerCase() === comparableSuffix)
+    .map((item) => Number(item[2]))
+    .filter(Number.isFinite);
+  const next = Math.max(Number(digits), ...candidates) + 1;
+  return `${prefix}${String(next).padStart(digits.length, "0")}${suffix}`;
+}
+
+export function buildCampaignCopyStructure(campaign) {
+  return (campaign?.adsets || []).map((adset, adsetIndex) => {
+    const cjToken = `cj${String(adsetIndex + 1).padStart(2, "0")}`;
+    return {
+      source_adset_id: String(adset?.id || ""),
+      source_name: String(adset?.name || "Conjunto"),
+      new_name: replaceCjToken(adset?.name || "Conjunto", cjToken),
+      removed: false,
+      ads: (adset?.ads || []).map((ad, adIndex) => {
+        const anToken = `an${String(adIndex + 1).padStart(2, "0")}`;
+        const withCj = replaceCjToken(ad?.name || "Anuncio", cjToken);
+        const newName = /an\d+/i.test(withCj)
+          ? withCj.replace(/an\d+/gi, anToken)
+          : `${withCj}-${anToken}`;
+        return {
+          source_ad_id: String(ad?.id || ""),
+          source_name: String(ad?.name || "Anuncio"),
+          new_name: newName,
+          removed: false,
+          replacement_image_hash: "",
+          replacement_image_url: "",
+          url_tags: String(ad?.url_tags || ""),
+          thumbnail_url: String(ad?.thumbnail_url || ""),
+        };
+      }),
+    };
+  });
+}
+
 export function resolveManagedUrlTags({ trafficType, sourceUrlTags = "", siteUrlTags = "" } = {}) {
   const value = trafficType === "messages" ? sourceUrlTags : siteUrlTags;
   return String(value || "").trim().replace(/^\?/, "");
