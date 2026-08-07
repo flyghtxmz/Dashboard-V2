@@ -11,7 +11,7 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=175";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=176";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
 
 const html = htm.bind(React.createElement);
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 175;
+const APP_VERSION_BUILD = 176;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -14197,6 +14197,15 @@ function App() {
       });
     }
   };
+  const assertSelectedImageWasPublished = (result, ad) => {
+    const expectedHash = String(ad?.replacement_image_hash || "").trim();
+    if (!expectedHash) return;
+    const verifiedHash = String(result?.verified_image_hash || "").trim();
+    if (verifiedHash !== expectedHash) {
+      throw new Error(`A Meta nao confirmou a imagem selecionada para ${ad?.new_name || ad?.name || "o anuncio"}. A publicacao foi interrompida.`);
+    }
+  };
+
   const handlePublishDrafts = async () => {
     if (!drafts.length) return;
     setPublishing(true);
@@ -14317,6 +14326,7 @@ function App() {
                     }),
                   }),
                 }));
+                assertSelectedImageWasPublished(createResult, ad);
                 finalAdId = createResult?.new_ad_id || createResult?.data?.id;
                 if (!finalAdId) throw new Error(`Não foi possível obter o novo ID do anúncio ${ad.source_name}.`);
                 ad.copied_ad_id = finalAdId;
@@ -14384,6 +14394,7 @@ function App() {
                 }),
               })
             );
+            assertSelectedImageWasPublished(createResult, ad);
             const createdAdId = createResult?.new_ad_id || createResult?.data?.id;
             if (createdAdId) {
               step = "activate-ad-in-existing-adset";
@@ -14569,6 +14580,7 @@ function App() {
                       }),
                     })
                   );
+                  assertSelectedImageWasPublished(createRes, ad);
                   newAdId = createRes.new_ad_id || createRes.data?.id || null;
                 } catch (err) {
                   const subcode =
@@ -14625,6 +14637,7 @@ function App() {
                           }),
                         })
                       );
+                      assertSelectedImageWasPublished(createRes, ad);
                       newAdId =
                         createRes.new_ad_id || createRes.data?.id || null;
                     } catch (errCreate) {

@@ -85,29 +85,28 @@ export function applyReplacementImageHash(objectStorySpec, assetFeedSpec, imageH
   const nextStory = objectStorySpec ? structuredClone(objectStorySpec) : null;
   const nextFeed = assetFeedSpec ? structuredClone(assetFeedSpec) : null;
 
-  if (nextStory?.link_data) {
-    nextStory.link_data.image_hash = hash;
-    delete nextStory.link_data.image_url;
-    delete nextStory.link_data.picture;
-    if (Array.isArray(nextStory.link_data.child_attachments)) {
-      nextStory.link_data.child_attachments = nextStory.link_data.child_attachments.map((attachment) => ({
-        ...attachment,
-        image_hash: hash,
-        image_url: undefined,
-        picture: undefined,
-      }));
-    }
+  const replaceContainerImage = (container) => {
+    if (!container || typeof container !== "object") return;
+    container.image_hash = hash;
+    delete container.image_url;
+    delete container.picture;
     changed = true;
-  } else if (nextStory?.photo_data) {
-    nextStory.photo_data.image_hash = hash;
-    delete nextStory.photo_data.image_url;
-    delete nextStory.photo_data.picture;
-    changed = true;
-  } else if (nextStory?.template_data) {
-    nextStory.template_data.image_hash = hash;
-    delete nextStory.template_data.image_url;
-    delete nextStory.template_data.picture;
-    changed = true;
+  };
+
+  // Alguns criativos devolvidos pela Meta possuem mais de um bloco de imagem.
+  // Todos precisam apontar para o mesmo hash para evitar que a plataforma
+  // reutilize a imagem do post/modelo em determinados posicionamentos.
+  [nextStory?.link_data, nextStory?.photo_data, nextStory?.template_data]
+    .forEach(replaceContainerImage);
+  if (nextStory?.video_data && (
+    nextStory.video_data.image_hash ||
+    nextStory.video_data.image_url ||
+    nextStory.video_data.picture
+  )) {
+    replaceContainerImage(nextStory.video_data);
+  }
+  if (Array.isArray(nextStory?.link_data?.child_attachments)) {
+    nextStory.link_data.child_attachments.forEach(replaceContainerImage);
   }
 
   if (nextFeed) {
@@ -139,6 +138,12 @@ export function collectCreativeImageHashes(value, key = "") {
     }
   });
   return [...new Set(hashes)];
+}
+
+export function creativeContainsImageHash(creative, expectedHash) {
+  const expected = String(expectedHash || "").trim();
+  if (!expected) return true;
+  return collectCreativeImageHashes(creative).includes(expected);
 }
 
 export function resolveCreativeUrlTags(body, creative) {
@@ -510,6 +515,31 @@ export async function onRequest({ request, env }) {
       return jsonResponse(400, { error: "creative_id nao gerado" });
     }
 
+    let verifiedImageHashes = [];
+    if (replacement_image_hash) {
+      const verificationRes = await fetch(
+        `${API_BASE}/${encodeURIComponent(newCreativeId)}?fields=id,image_hash,object_story_spec,asset_feed_spec&access_token=${token}`
+      );
+      const verificationData = await safeJson(verificationRes);
+      if (!verificationRes.ok) {
+        return jsonResponse(502, {
+          error: "A Meta criou o criativo, mas nao foi possivel confirmar a imagem selecionada. O anuncio nao foi publicado.",
+          details: verificationData,
+          stage: "verify-creative-image",
+          expected_image_hash: String(replacement_image_hash),
+        });
+      }
+      verifiedImageHashes = collectCreativeImageHashes(verificationData);
+      if (!creativeContainsImageHash(verificationData, replacement_image_hash)) {
+        return jsonResponse(409, {
+          error: "A Meta devolveu uma imagem diferente da selecionada. O anuncio nao foi publicado.",
+          stage: "verify-creative-image",
+          expected_image_hash: String(replacement_image_hash),
+          actual_image_hashes: verifiedImageHashes,
+        });
+      }
+    }
+
     if (apply_to_existing) {
       const updateRes = await fetch(`${API_BASE}/${encodeURIComponent(ad_id)}`, {
         method: "POST",
@@ -532,6 +562,8 @@ export async function onRequest({ request, env }) {
         data: updateData,
         updated_ad_id: ad_id,
         creative_id: newCreativeId,
+        verified_image_hash: replacement_image_hash ? String(replacement_image_hash) : null,
+        actual_image_hashes: verifiedImageHashes,
         url_tags: resolvedUtmTags,
       });
     }
@@ -559,6 +591,9 @@ export async function onRequest({ request, env }) {
       code: "success",
       data,
       new_ad_id: data?.id || null,
+      creative_id: newCreativeId,
+      verified_image_hash: replacement_image_hash ? String(replacement_image_hash) : null,
+      actual_image_hashes: verifiedImageHashes,
       placement_adjusted: placementAdjust?.adjusted || false,
       placement_ratio: placementAdjust?.ratio || null,
       url_tags: resolvedUtmTags,

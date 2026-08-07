@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyCreativePageOverride, applyReplacementImageHash, collectCreativeImageHashes, resolveCreativeUrlTags } from "../functions/api/meta-ad-create.js";
+import { applyCreativePageOverride, applyReplacementImageHash, collectCreativeImageHashes, creativeContainsImageHash, onRequest, resolveCreativeUrlTags } from "../functions/api/meta-ad-create.js";
 
 test("troca a imagem do criativo modelo sem alterar o objeto original", () => {
   const original = {
@@ -39,6 +39,84 @@ test("substitui imagens de carrossel e asset feed sem perder rotulos", () => {
     image_hash: "new-hash",
     asset_feed_spec: result.assetFeedSpec,
   }), ["new-hash"]);
+});
+
+test("substitui todos os blocos de imagem quando a Meta devolve um criativo misto", () => {
+  const result = applyReplacementImageHash({
+    link_data: { image_hash: "old-link" },
+    photo_data: { image_hash: "old-photo", picture: "https://example.com/photo.jpg" },
+    template_data: { image_url: "https://example.com/template.jpg" },
+    video_data: { image_hash: "old-thumb" },
+  }, null, "selected-hash");
+
+  assert.equal(result.objectStorySpec.link_data.image_hash, "selected-hash");
+  assert.equal(result.objectStorySpec.photo_data.image_hash, "selected-hash");
+  assert.equal(result.objectStorySpec.template_data.image_hash, "selected-hash");
+  assert.equal(result.objectStorySpec.video_data.image_hash, "selected-hash");
+  assert.equal(result.objectStorySpec.photo_data.picture, undefined);
+  assert.equal(result.objectStorySpec.template_data.image_url, undefined);
+});
+
+test("confirma apenas o hash efetivamente devolvido pela Meta", () => {
+  const creative = {
+    image_hash: "selected-hash",
+    object_story_spec: { link_data: { image_hash: "selected-hash" } },
+  };
+  assert.equal(creativeContainsImageHash(creative, "selected-hash"), true);
+  assert.equal(creativeContainsImageHash(creative, "another-hash"), false);
+});
+
+test("nao cria o anuncio quando a Meta salva uma imagem diferente da selecionada", async () => {
+  const originalFetch = globalThis.fetch;
+  let adCreationCalled = false;
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes("/source-ad?")) {
+      return Response.json({
+        name: "Modelo",
+        account_id: "123",
+        creative: {
+          actor_id: "page-1",
+          object_story_spec: {
+            page_id: "page-1",
+            link_data: { link: "https://example.com", image_hash: "old-hash" },
+          },
+        },
+      });
+    }
+    if (target.endsWith("/act_123/adcreatives")) {
+      const sentSpec = JSON.parse(options.body.get("object_story_spec"));
+      assert.equal(sentSpec.link_data.image_hash, "selected-hash");
+      return Response.json({ id: "new-creative" });
+    }
+    if (target.includes("/new-creative?")) {
+      return Response.json({ id: "new-creative", image_hash: "different-hash" });
+    }
+    if (target.endsWith("/act_123/ads")) adCreationCalled = true;
+    return Response.json({ id: "unexpected" });
+  };
+
+  try {
+    const response = await onRequest({
+      request: new Request("https://example.com/api/meta-ad-create", {
+        method: "POST",
+        body: JSON.stringify({
+          ad_id: "source-ad",
+          adset_id: "target-adset",
+          name: "Novo anuncio",
+          replacement_image_hash: "selected-hash",
+        }),
+      }),
+      env: { META_ACCESS_TOKEN: "token" },
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(payload.stage, "verify-creative-image");
+    assert.equal(payload.expected_image_hash, "selected-hash");
+    assert.equal(adCreationCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("preserva os parametros do criativo modelo quando nao ha sobrescrita", () => {
