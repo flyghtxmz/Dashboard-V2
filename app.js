@@ -10,9 +10,9 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=170";
-import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=170";
-import { buildDirectSalesCampaignRows } from "./sales-attribution.mjs?v=170";
+} from "./campaign-builder.mjs?v=171";
+import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=171";
+import { buildDirectSalesCampaignRows, buildMessageJoinadsSummary } from "./sales-attribution.mjs?v=171";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 170;
+const APP_VERSION_BUILD = 171;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -404,7 +404,7 @@ function messageMetricsServerVariant({ pageId, adsetFilter, taxSignature, hidden
 function salesDashboardStorageKey({ domain, startDate, endDate, metaAccountId, adsetFilter, taxSignature, hiddenSignature }) {
   const scope = typeof window !== "undefined" ? window.__cd_session_scope__ || "anon" : "anon";
   return [
-    "__sales_dashboard_refresh_v1__",
+    "__sales_dashboard_refresh_v2__",
     scope,
     domain || "sem-dominio",
     startDate || "sem-inicio",
@@ -418,7 +418,7 @@ function salesDashboardStorageKey({ domain, startDate, endDate, metaAccountId, a
 
 function salesDashboardServerVariant({ adsetFilter, taxSignature, hiddenSignature }) {
   return [
-    "sales-dashboard-refresh-v1",
+    "sales-dashboard-refresh-v2",
     normalizeKey(adsetFilter || "sem-filtro"),
     taxSignature || "imposto-padrao",
     hiddenSignature || "nenhuma-oculta",
@@ -2282,11 +2282,47 @@ function MetricasMensagensView({
       summary.impressions > 0 ? (summary.revenue_usd / summary.impressions) * 1000 : null;
     return summary;
   };
-  let messengerMedium = buildMediumSummary("messenger", totalsRow.spend_brl || 0);
-  const messengerMediumRows = messengerMedium.rows;
-  // Com filtro de Pagina ativo, a receita por utm_medium e global (todas as paginas) e vazaria
-  // ROAS/lucro/eCPM de outras paginas. Nesse caso usamos os totais ja escopados por pagina
-  // (atribuicao por campanha) e zeramos o organico, que nao e atribuivel a uma pagina.
+  const messengerGlobal = buildMediumSummary("messenger", totalsRow.spend_brl || 0);
+  const campaignOriginTotals = (Array.isArray(joinadsDetailRows) ? joinadsDetailRows : []).reduce((acc, row) => {
+    const value = normalizeKey(row.custon_value ?? row.custom_value);
+    const target = value.startsWith("src_")
+      ? acc.src
+      : value === "organic" || value.startsWith("organic_")
+      ? acc.evoOrganic
+      : value
+      ? acc.other
+      : acc.empty;
+    target.impressions += toNumber(row.impressions);
+    target.clicks += toNumber(row.clicks);
+    target.revenueUsd += toNumber(row.earnings_client ?? row.revenue_client ?? 0);
+    return acc;
+  }, {
+    src: { impressions: 0, clicks: 0, revenueUsd: 0 },
+    evoOrganic: { impressions: 0, clicks: 0, revenueUsd: 0 },
+    other: { impressions: 0, clicks: 0, revenueUsd: 0 },
+    empty: { impressions: 0, clicks: 0, revenueUsd: 0 },
+  });
+  const messageCampaignSummary = buildMessageJoinadsSummary({
+    campaignRows: joinadsDetailRows,
+    domain: reportFilters.domain || "",
+    brlRate,
+    spendBrl: totalsRow.spend_brl || 0,
+  });
+  // O resumo oficial de mensagens usa exclusivamente utm_campaign=src_. O total
+  // global de utm_medium=messenger permanece apenas na reconciliacao/diagnostico.
+  let messengerMedium = {
+    rows: [],
+    impressions: messageCampaignSummary.impressions,
+    clicks: messageCampaignSummary.clicks,
+    revenue_usd: messageCampaignSummary.revenueClient,
+    revenue_brl: messageCampaignSummary.revenueClientBrl || 0,
+    spend_brl: messageCampaignSummary.spendBrl,
+    profit_brl: messageCampaignSummary.profitBrl || 0,
+    roas: messageCampaignSummary.roas,
+    ecpm: messageCampaignSummary.ecpmClient,
+  };
+  // Com filtro de Pagina ativo, ate src_ e global. Nesse caso usamos somente as
+  // origens efetivamente resolvidas para anuncios da pagina selecionada.
   if (pageScoped) {
     messengerMedium = {
       ...messengerMedium,
@@ -2300,42 +2336,24 @@ function MetricasMensagensView({
       ecpm: totalsRow.ecpm,
     };
   }
-  const campaignOriginTotals = (Array.isArray(joinadsDetailRows) ? joinadsDetailRows : []).reduce((acc, row) => {
-    const value = normalizeKey(row.custon_value ?? row.custom_value);
-    const target = value.startsWith("src_")
-      ? acc.src
-      : value === "organic" || value.startsWith("organic_")
-      ? acc.evoOrganic
-      : value
-      ? acc.other
-      : acc.empty;
-    target.impressions += toNumber(row.impressions);
-    target.revenueUsd += toNumber(row.earnings_client ?? row.revenue_client ?? 0);
-    return acc;
-  }, {
-    src: { impressions: 0, revenueUsd: 0 },
-    evoOrganic: { impressions: 0, revenueUsd: 0 },
-    other: { impressions: 0, revenueUsd: 0 },
-    empty: { impressions: 0, revenueUsd: 0 },
-  });
   const paidMessengerRevenueUsd = pageScoped
     ? totalsRow.revenue_usd
-    : Math.max(totalsRow.revenue_usd, messengerMedium.revenue_usd - campaignOriginTotals.evoOrganic.revenueUsd);
+    : Math.max(totalsRow.revenue_usd, messengerGlobal.revenue_usd - campaignOriginTotals.evoOrganic.revenueUsd);
   const paidMessengerImpressions = pageScoped
     ? totalsRow.joinads_impressions
-    : Math.max(totalsRow.joinads_impressions, messengerMedium.impressions - campaignOriginTotals.evoOrganic.impressions);
+    : Math.max(totalsRow.joinads_impressions, messengerGlobal.impressions - campaignOriginTotals.evoOrganic.impressions);
   const realRevenueCoverage = paidMessengerRevenueUsd > 0 ? totalsRow.revenue_usd / paidMessengerRevenueUsd : null;
   const realImpressionCoverage = paidMessengerImpressions > 0 ? totalsRow.joinads_impressions / paidMessengerImpressions : null;
   const economicRoas = totalsRow.spend_brl > 0 ? paidMessengerRevenueUsd * toNumber(brlRate) / totalsRow.spend_brl : null;
   const economicProfitBrl = paidMessengerRevenueUsd * toNumber(brlRate) - totalsRow.spend_brl;
   const unclassifiedMessengerRevenueUsd = pageScoped ? 0 : Math.max(
     0,
-    messengerMedium.revenue_usd - campaignOriginTotals.src.revenueUsd -
+    messengerGlobal.revenue_usd - campaignOriginTotals.src.revenueUsd -
       campaignOriginTotals.evoOrganic.revenueUsd - campaignOriginTotals.other.revenueUsd
   );
   const unclassifiedMessengerImpressions = pageScoped ? 0 : Math.max(
     0,
-    messengerMedium.impressions - campaignOriginTotals.src.impressions -
+    messengerGlobal.impressions - campaignOriginTotals.src.impressions -
       campaignOriginTotals.evoOrganic.impressions - campaignOriginTotals.other.impressions
   );
   const allTermRows = Array.isArray(termRows) ? termRows : [];
@@ -3563,36 +3581,38 @@ function MetricasMensagensView({
             <h2 className="section-title">Resumo</h2>
           </div>
           <div className="chip-group">
-            <span className="chip neutral">${messengerMediumRows.length} messenger</span>
+            <span className="chip good">${messageCampaignSummary.sources} origens src_</span>
+            <span className="chip neutral">Separado de vendas para o site</span>
           </div>
         </div>
         <p className="muted small">
           ${pageScoped
             ? html`<strong>Filtro de Página ativo:</strong> os números abaixo usam a atribuição por
                 campanha da página selecionada (não o total por <code>utm_medium</code>, que é global).`
-            : html`Reconcilia <code>utm_medium</code> com <code>utm_campaign</code>. Somente
-                <code>src_</code> recebe gasto Meta e impostos; <code>organic_</code> permanece com custo zero.`}
+            : html`O resumo oficial usa somente <code>utm_campaign=src_*</code>. O total global de
+                <code>utm_medium=messenger</code>, <code>organic_</code> e dados sem classificacao ficam
+                separados no diagnostico e nunca entram no Dashboard de vendas para o site.`}
         </p>
         <div className="metrics-grid">
           <div className="metric-card">
             <div className="metric-label">Impressoes JoinAds</div>
-            <${MetricInfo} text="Total de impressoes de anuncios JoinAds registradas com utm_medium=messenger no dominio e periodo. Inclui trafego atribuido, sem classificacao e organic_ do Evo." />
+            <${MetricInfo} text="Total de impressoes JoinAds registradas nas origens persistidas utm_campaign=src_. Nao inclui campanhas numericas de vendas para o site, organic_ nem trafego sem classificacao." />
             <div className="metric-value">${number.format(messengerMedium.impressions || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Cliques JoinAds</div>
-            <${MetricInfo} text="Total de cliques nos anuncios JoinAds para utm_medium=messenger. Nao sao cliques do anuncio Meta; sao interacoes com os anuncios monetizados no site." />
+            <${MetricInfo} text="Total de cliques JoinAds registrados nas origens utm_campaign=src_. Nao sao cliques do anuncio Meta; sao interacoes com os anuncios monetizados no site." />
             <div className="metric-value">${number.format(messengerMedium.clicks || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita Messenger USD</div>
-            <div className="metric-helper">Total utm_medium=messenger, antes da reconciliação</div>
-            <${MetricInfo} text="Receita cliente em USD informada pela JoinAds para todo utm_medium=messenger, antes de separar src_, unknown_messenger e organic_. Usa revenue_client/earnings_client e nao aplica outro desconto de revshare." />
+            <div className="metric-helper">Somente origens utm_campaign=src_*</div>
+            <${MetricInfo} text="Receita cliente em USD informada pela JoinAds exclusivamente para origens src_. Campanhas numericas de vendas, organic_ e trafego sem classificacao nao entram neste valor." />
             <div className="metric-value">${currencyUSD.format(messengerMedium.revenue_usd || 0)}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita BRL</div>
-            <${MetricInfo} text="Receita cliente de todo o Messenger convertida de USD para BRL pela cotacao exibida. Formula: receita cliente USD do Messenger x cambio USD/BRL." />
+            <${MetricInfo} text="Receita cliente das origens src_ convertida de USD para BRL pela cotacao exibida. Formula: receita cliente USD de mensagens x cambio USD/BRL." />
             <div className="metric-value">${currencyBRL.format(messengerMedium.revenue_brl || 0)}</div>
           </div>
           <div className="metric-card">
@@ -3649,7 +3669,7 @@ function MetricasMensagensView({
           </div>
           <div className="metric-card">
             <div className="metric-label">${label}</div>
-            <${MetricInfo} text="eCPM cliente do Messenger. Formula: receita cliente USD do Messenger / impressoes JoinAds do Messenger x 1.000. Nao usa a receita bruta." />
+            <${MetricInfo} text="eCPM cliente das origens src_. Formula: receita cliente USD de mensagens / impressoes JoinAds das mesmas src_ x 1.000. Nao usa vendas para o site nem receita bruta." />
             <div className="metric-value">${messengerMedium.ecpm != null ? currencyUSD.format(messengerMedium.ecpm) : "-"}</div>
           </div>
         </div>
@@ -6292,7 +6312,7 @@ function consolidateMetaJoinRows(rows) {
   });
 }
 
-function buildSalesDashboardSnapshot(rows, directCampaignRows = []) {
+function buildSalesDashboardSnapshot(rows, directCampaignRows = [], directAdsetRows = [], brlRate = 0) {
   const consolidated = consolidateMetaJoinRows(rows);
   const createBucket = () => ({
     spend_brl: 0,
@@ -6374,8 +6394,34 @@ function buildSalesDashboardSnapshot(rows, directCampaignRows = []) {
     totalsBucket.joinads_clicks = directTotals.joinads_clicks;
   }
 
+  // O snapshot por conjunto precisa usar a dimensao oficial utm_term=adset_id.
+  // Dados por anuncio nao substituem esta origem porque utm_content pode ainda
+  // estar ausente, e receita de campanha nao deve ser rateada artificialmente.
+  const directAdsetMetrics = new Map();
+  (Array.isArray(directAdsetRows) ? directAdsetRows : []).forEach((row) => {
+    const adsetKey = String(row.custom_value ?? row.custon_value ?? "").trim();
+    if (!adsetKey || !adsetBuckets.has(adsetKey)) return;
+    const item = directAdsetMetrics.get(adsetKey) || {
+      revenue: 0,
+      revenue_client: 0,
+      revenue_client_brl: 0,
+      impressions: 0,
+      clicks: 0,
+    };
+    const revenueClient = toNumber(row.revenue_client ?? row.earnings_client);
+    item.revenue += toNumber(row.revenue ?? row.earnings);
+    item.revenue_client += revenueClient;
+    item.revenue_client_brl += brlRate ? revenueClient * toNumber(brlRate) : 0;
+    item.impressions += toNumber(row.impressions);
+    item.clicks += toNumber(row.clicks);
+    directAdsetMetrics.set(adsetKey, item);
+  });
+  directAdsetMetrics.forEach((metrics, adsetKey) => {
+    replaceJoinadsMetrics(adsetBuckets.get(adsetKey), metrics);
+  });
+
   return {
-    schema: "sales-dashboard-refresh-v1",
+    schema: "sales-dashboard-refresh-v2",
     campaigns: Object.fromEntries(Array.from(campaignBuckets, ([key, value]) => [key, finish(value)])),
     adsets: Object.fromEntries(Array.from(adsetBuckets, ([key, value]) => [key, finish(value)])),
     ads,
@@ -14870,7 +14916,12 @@ function App() {
       setSalesRefreshSyncError("");
       return;
     }
-    const currentSnapshot = buildSalesDashboardSnapshot(filteredMeta, directTrafficJoinadsRows);
+    const currentSnapshot = buildSalesDashboardSnapshot(
+      filteredMeta,
+      directTrafficJoinadsRows,
+      superTermRows,
+      brlRate
+    );
     if (!Object.keys(currentSnapshot.campaigns).length) {
       setSalesRefreshComparison(null);
       setSalesRefreshSyncStatus("idle");
@@ -14926,6 +14977,8 @@ function App() {
     snapshotEligible,
     filteredMeta,
     directTrafficJoinadsRows,
+    superTermRows,
+    brlRate,
     salesRefreshComparisonKey,
     salesRefreshServerVariant,
   ]);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDirectSalesCampaignRows } from "../sales-attribution.mjs";
+import { buildDirectSalesCampaignRows, buildMessageJoinadsSummary } from "../sales-attribution.mjs";
 
 const ad = (overrides = {}) => ({
   campaign_id: "cmp-1",
@@ -81,4 +81,39 @@ test("usa key-value como fallback e respeita o dominio selecionado", () => {
   assert.equal(row.impressions, 30);
   assert.equal(row.revenue_client, 0.8);
   assert.equal(row.attribution_source, "key_value_campaign_id");
+});
+
+test("separa mensagens src_ de vendas, organico e trafego sem classificacao", () => {
+  const summary = buildMessageJoinadsSummary({
+    campaignRows: [
+      { domain: "site.com", custom_value: "src_a", impressions: 10, clicks: 2, revenue_client: 1 },
+      { domain: "site.com", custom_value: "src_b", impressions: 5, clicks: 1, revenue_client: 0.5 },
+      { domain: "site.com", custom_value: "120000001", impressions: 50, clicks: 4, revenue_client: 4 },
+      { domain: "site.com", custom_value: "organic_1", impressions: 20, clicks: 3, revenue_client: 2 },
+      { domain: "outro.com", custom_value: "src_c", impressions: 99, clicks: 9, revenue_client: 9 },
+    ],
+    domain: "site.com",
+    brlRate: 5,
+    spendBrl: 3,
+  });
+
+  assert.equal(summary.sources, 2);
+  assert.equal(summary.impressions, 15);
+  assert.equal(summary.clicks, 3);
+  assert.equal(summary.revenueClient, 1.5);
+  assert.equal(summary.revenueClientBrl, 7.5);
+  assert.equal(summary.roas, 2.5);
+});
+
+test("nao usa src_ como fallback de uma campanha de vendas com nome igual", () => {
+  const [row] = buildDirectSalesCampaignRows({
+    metaRows: [ad({ campaign_id: "sales-1", campaign_name: "src_legado" })],
+    campaignRows: [
+      { domain: "site.com", custom_value: "src_legado", impressions: 100, revenue_client: 10 },
+    ],
+    domain: "site.com",
+  });
+
+  assert.equal(row.joinads_matched, false);
+  assert.equal(row.revenue_client, 0);
 });

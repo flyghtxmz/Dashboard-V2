@@ -17,6 +17,19 @@ function rowDomainMatches(row, domainKey) {
   return !rowDomain || rowDomain === domainKey;
 }
 
+function customValue(row) {
+  return String(row?.custom_value ?? row?.custon_value ?? "").trim();
+}
+
+export function isMessageCampaignValue(value) {
+  return normalize(value).startsWith("src_");
+}
+
+function isNonSalesCampaignValue(value) {
+  const key = normalize(value);
+  return isMessageCampaignValue(key) || key === "organic" || key.startsWith("organic_");
+}
+
 function createJoinadsTotal() {
   return {
     impressions: 0,
@@ -39,13 +52,71 @@ function indexCampaignRows(rows, domainKey) {
   const index = new Map();
   (Array.isArray(rows) ? rows : []).forEach((row) => {
     if (!rowDomainMatches(row, domainKey)) return;
-    const key = normalize(row?.custom_value ?? row?.custon_value);
+    const rawValue = customValue(row);
+    if (isNonSalesCampaignValue(rawValue)) return;
+    const key = normalize(rawValue);
     if (!key) return;
     const total = index.get(key) || createJoinadsTotal();
     addRawJoinadsRow(total, row);
     index.set(key, total);
   });
   return index;
+}
+
+/**
+ * Resume somente o trafego de mensagens identificado pela origem persistida
+ * src_. Totais globais por utm_medium ficam fora para nao misturar vendas,
+ * organico ou trafego sem classificacao no resumo oficial de mensagens.
+ */
+export function buildMessageJoinadsSummary({
+  campaignRows = [],
+  domain = "",
+  brlRate = 0,
+  spendBrl = 0,
+} = {}) {
+  const domainKey = normalize(domain);
+  const summary = {
+    rows: 0,
+    sources: new Set(),
+    impressions: 0,
+    clicks: 0,
+    revenue: 0,
+    revenueClient: 0,
+  };
+
+  (Array.isArray(campaignRows) ? campaignRows : []).forEach((row) => {
+    if (!rowDomainMatches(row, domainKey)) return;
+    const value = customValue(row);
+    if (!isMessageCampaignValue(value)) return;
+    summary.rows += 1;
+    summary.sources.add(normalize(value));
+    summary.impressions += toFiniteNumber(row?.impressions);
+    summary.clicks += toFiniteNumber(row?.clicks);
+    summary.revenue += toFiniteNumber(row?.revenue ?? row?.earnings);
+    summary.revenueClient += toFiniteNumber(row?.revenue_client ?? row?.earnings_client);
+  });
+
+  const numericRate = toFiniteNumber(brlRate);
+  const numericSpend = toFiniteNumber(spendBrl);
+  const revenueClientBrl = numericRate > 0 ? summary.revenueClient * numericRate : null;
+  return {
+    rows: summary.rows,
+    sources: summary.sources.size,
+    impressions: summary.impressions,
+    clicks: summary.clicks,
+    revenue: summary.revenue,
+    revenueClient: summary.revenueClient,
+    revenueClientBrl,
+    spendBrl: numericSpend,
+    ctr: summary.impressions > 0 ? summary.clicks / summary.impressions * 100 : 0,
+    ecpmClient: summary.impressions > 0
+      ? summary.revenueClient / summary.impressions * 1000
+      : null,
+    roas: revenueClientBrl != null && numericSpend > 0
+      ? revenueClientBrl / numericSpend
+      : null,
+    profitBrl: revenueClientBrl != null ? revenueClientBrl - numericSpend : null,
+  };
 }
 
 function hasMetricSignal(total) {
