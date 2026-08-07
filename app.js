@@ -1414,6 +1414,7 @@ function MetricasMensagensView({
     diagnostics?.joinadsSuperFilterDiagnostics?.earnings?.cache,
     diagnostics?.joinadsSuperFilterDiagnostics?.earningsAll?.cache,
     diagnostics?.joinadsSuperFilterDiagnostics?.keyValueCountry?.cache,
+    diagnostics?.joinadsSuperFilterDiagnostics?.keyValueContentCountry?.cache,
     diagnostics?.joinadsSuperFilterDiagnostics?.utmContent?.response?.cache,
     diagnostics?.joinadsSuperFilterDiagnostics?.utmCampaign?.response?.cache,
     diagnostics?.joinadsSuperFilterDiagnostics?.utmTerm?.cache,
@@ -4274,6 +4275,8 @@ function ParamTable({ rows }) {
 function DiagnosticsJoin({
   superRows,
   kvRows,
+  contentCountryRows = [],
+  contentKeyValueRows = [],
   earnings,
   topUrls,
   domain,
@@ -4282,6 +4285,8 @@ function DiagnosticsJoin({
 }) {
   const superCount = Array.isArray(superRows) ? superRows.length : 0;
   const kvCount = Array.isArray(kvRows) ? kvRows.length : 0;
+  const contentCountryCount = Array.isArray(contentCountryRows) ? contentCountryRows.length : 0;
+  const contentKeyValueCount = Array.isArray(contentKeyValueRows) ? contentKeyValueRows.length : 0;
   const earningsCount = Array.isArray(earnings) ? earnings.length : 0;
   const topCount = Array.isArray(topUrls) ? topUrls.length : 0;
   const unresolvedCount = Array.isArray(messenleadUnresolved) ? messenleadUnresolved.length : 0;
@@ -4309,6 +4314,16 @@ function DiagnosticsJoin({
           <div className="metric-label">key-value (linhas)</div>
           <div className="metric-value">${kvCount}</div>
           <div className="metric-helper">utm_campaign</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">key-value-country content</div>
+          <div className="metric-value">${contentCountryCount}</div>
+          <div className="metric-helper">utm_content</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">key-value content</div>
+          <div className="metric-value">${contentKeyValueCount}</div>
+          <div className="metric-helper">utm_content</div>
         </div>
         <div className="metric-card">
           <div className="metric-label">earnings (linhas)</div>
@@ -4349,7 +4364,7 @@ function DiagnosticsJoin({
             </tr>
           </thead>
           <tbody>
-            ${kvCount === 0 && superCount === 0
+            ${kvCount === 0 && superCount === 0 && contentCountryCount === 0 && contentKeyValueCount === 0
               ? html`<tr><td colSpan="7" className="muted">Sem dados retornados.</td></tr>`
               : html`
                   ${superRows?.slice(0, 20).map(
@@ -4369,6 +4384,32 @@ function DiagnosticsJoin({
                     (row, idx) => html`
                       <tr key=${`k-${idx}`}>
                         <td>key-value</td>
+                        <td>${row.name || row.domain || "-"}</td>
+                        <td>${row.custon_value || row.custom_value || "-"}</td>
+                        <td>${number.format(row.impressions || 0)}</td>
+                        <td>${number.format(row.clicks || 0)}</td>
+                        <td>${currencyUSD.format(row.earnings_client ?? 0)}</td>
+                        <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
+                      </tr>
+                    `
+                  )}
+                  ${contentCountryRows?.slice(0, 20).map(
+                    (row, idx) => html`
+                      <tr key=${`kc-${idx}`}>
+                        <td>key-value-country utm_content</td>
+                        <td>${row.name || row.domain || "-"}</td>
+                        <td>${row.custon_value || row.custom_value || "-"}</td>
+                        <td>${number.format(row.impressions || 0)}</td>
+                        <td>${number.format(row.clicks || 0)}</td>
+                        <td>${currencyUSD.format(row.earnings_client ?? 0)}</td>
+                        <td>${currencyUSD.format(row.ecpm_client || row.ecpm || 0)}</td>
+                      </tr>
+                    `
+                  )}
+                  ${contentKeyValueRows?.slice(0, 20).map(
+                    (row, idx) => html`
+                      <tr key=${`kv-content-${idx}`}>
+                        <td>key-value utm_content</td>
                         <td>${row.name || row.domain || "-"}</td>
                         <td>${row.custon_value || row.custom_value || "-"}</td>
                         <td>${number.format(row.impressions || 0)}</td>
@@ -11569,9 +11610,9 @@ function App() {
       adIds: Array.from(metaAdIds),
       domain,
       sources: [
-        { rows: contentComparisonRows, dataLevel: "utm_content_super_filter" },
-        { rows: contentCountryComparisonRows, dataLevel: "utm_content_key_value_country" },
-        { rows: contentKeyValueComparisonRows, dataLevel: "utm_content_key_value" },
+        { rows: contentComparisonRows, dataLevel: "utm_content_ad_id", sourceEndpoint: "super-filter" },
+        { rows: contentCountryComparisonRows, dataLevel: "utm_content_ad_id", sourceEndpoint: "key-value-country" },
+        { rows: contentKeyValueComparisonRows, dataLevel: "utm_content_ad_id", sourceEndpoint: "key-value" },
       ],
     });
     const sourceByAdId = new Map();
@@ -14474,9 +14515,9 @@ function App() {
       adIds: Array.from(metaAdIds),
       domain: appliedDomain,
       sources: [
-        { rows: domainFilteredContentRows, dataLevel: "utm_content_super_filter" },
-        { rows: domainFilteredContentCountryRows, dataLevel: "utm_content_key_value_country" },
-        { rows: domainFilteredContentKeyValueRows, dataLevel: "utm_content_key_value" },
+        { rows: domainFilteredContentRows, dataLevel: "utm_content_ad_id", sourceEndpoint: "super-filter" },
+        { rows: domainFilteredContentCountryRows, dataLevel: "utm_content_ad_id", sourceEndpoint: "key-value-country" },
+        { rows: domainFilteredContentKeyValueRows, dataLevel: "utm_content_ad_id", sourceEndpoint: "key-value" },
       ],
     });
 
@@ -14722,6 +14763,7 @@ function App() {
             ? "utm_term_summary"
             : null),
         joinads_source_value: resolvedJoin.source_value || "",
+        joinads_attribution_endpoint: resolvedJoin.source_endpoint || "",
         results_meta: resultsCount,
         adset_daily_budget_brl: dailyBudgetBrl,
         adset_lifetime_budget_brl: lifetimeBudgetBrl,
@@ -15541,6 +15583,8 @@ function App() {
                 allowBidControl=${false}
                 diagnostics=${{
                   joinadsContentRowsCount: joinadsContentRows.length,
+                  joinadsContentCountryRowsCount: joinadsContentCountryRows.length,
+                  joinadsContentKeyValueRowsCount: joinadsContentKeyValueRows.length,
                   joinadsCampaignRowsCount: joinadsCampaignRows.length,
                   joinadsSuperFilterDiagnostics,
                   messenleadSourcesCount: messenleadSources.length,
@@ -15775,6 +15819,8 @@ function App() {
             attributionAudit=${messengerAttributionAudit}
             diagnostics=${{
               joinadsContentRowsCount: joinadsContentRows.length,
+              joinadsContentCountryRowsCount: joinadsContentCountryRows.length,
+              joinadsContentKeyValueRowsCount: joinadsContentKeyValueRows.length,
               joinadsCampaignRowsCount: joinadsCampaignRows.length,
               joinadsSuperFilterDiagnostics,
               messenleadSourcesCount: messenleadSources.length,
@@ -15948,6 +15994,8 @@ function App() {
                 <${DiagnosticsJoin}
                   superRows=${Array.isArray(superFilter) ? superFilter : []}
                   kvRows=${Array.isArray(keyValueContent) ? keyValueContent : []}
+                  contentCountryRows=${Array.isArray(joinadsContentCountryRows) ? joinadsContentCountryRows : []}
+                  contentKeyValueRows=${Array.isArray(joinadsContentKeyValueRows) ? joinadsContentKeyValueRows : []}
                   earnings=${earnings}
                   topUrls=${topUrls}
                   domain=${appliedFilters?.domain || filters.domain}

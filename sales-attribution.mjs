@@ -53,7 +53,8 @@ export function buildJoinadsAdAttributionIndex({
         revenue_client: 0,
         ecpm: null,
         ecpm_client: null,
-        data_level: source?.dataLevel || "utm_content",
+        data_level: source?.dataLevel || "utm_content_ad_id",
+        source_endpoint: source?.sourceEndpoint || source?.dataLevel || "utm_content",
         source_value: customValue(row),
       };
       total.impressions += toFiniteNumber(row?.impressions);
