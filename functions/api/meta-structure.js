@@ -79,7 +79,7 @@ export async function onRequest({ request, env }) {
   const end_date = params.get("end_date");
   const force = params.get("force") === "1" || params.get("force") === "true";
   const kv = env.CPA_RULES_KV || env.DASHBOARD_KV;
-  const cacheKey = `meta_structure:v3:${account_id}:${start_date || ""}:${end_date || ""}`;
+  const cacheKey = `meta_structure:v4:${account_id}:${start_date || ""}:${end_date || ""}`;
 
   // ── KV cache read ──────────────────────────────────────
   if (kv && !force) {
@@ -112,7 +112,7 @@ export async function onRequest({ request, env }) {
     // ── 3 parallel paginated fetches — NO nested loops ────
     const campFields = "id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining";
     const adsetFields = "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,promoted_object,start_time,end_time";
-    const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{id,url_tags,image_hash,thumbnail_url,asset_feed_spec,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link,image_hash,picture},photo_data{image_hash},video_data{call_to_action}}}";
+    const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{id,url_tags,image_hash,thumbnail_url,actor_id,instagram_actor_id,asset_feed_spec,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{page_id,instagram_actor_id,link_data{link,image_hash,picture},photo_data{image_hash},video_data{call_to_action}}}";
     const insightFields = "ad_id,spend,ctr,cpc,cpm,frequency,impressions,video_thruplay_watched_actions";
     const imageFields = "hash,url,url_128";
 
@@ -184,6 +184,8 @@ export async function onRequest({ request, env }) {
         campaign_status: camp.effective_status || camp.status || "",
         campaign_daily_budget: camp.daily_budget || "",
         campaign_lifetime_budget: camp.lifetime_budget || "",
+        page_id: spec?.page_id || ad?.creative?.actor_id || "",
+        instagram_actor_id: spec?.instagram_actor_id || ad?.creative?.instagram_actor_id || "",
         url_tags: ad?.creative?.url_tags || "",
         url,
         object_story_id:
@@ -222,6 +224,8 @@ export async function onRequest({ request, env }) {
         effective_status: ad.effective_status,
         campaign_id: ad.campaign_id,
         adset_id: ad.adset_id,
+        page_id: spec?.page_id || ad?.creative?.actor_id || "",
+        instagram_actor_id: spec?.instagram_actor_id || ad?.creative?.instagram_actor_id || "",
         url_tags: ad?.creative?.url_tags || "",
         destination_url: ad?.creative?.link_url || ad?.creative?.object_url || extractUrl(spec) || "",
         object_story_id: ad?.creative?.effective_object_story_id || ad?.creative?.object_story_id || "",

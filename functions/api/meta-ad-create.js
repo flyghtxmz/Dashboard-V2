@@ -147,6 +147,20 @@ export function resolveCreativeUrlTags(body, creative) {
   return String(value ?? "").trim().replace(/^\?/, "");
 }
 
+export function applyCreativePageOverride(objectStorySpec, pageId, instagramActorId = "") {
+  const nextPageId = String(pageId || "").trim();
+  if (!nextPageId) return { objectStorySpec, changed: false, unsupported: false };
+  if (!objectStorySpec || typeof objectStorySpec !== "object") {
+    return { objectStorySpec, changed: false, unsupported: true };
+  }
+  const next = structuredClone(objectStorySpec);
+  next.page_id = nextPageId;
+  const nextInstagramId = String(instagramActorId || "").trim();
+  if (nextInstagramId) next.instagram_actor_id = nextInstagramId;
+  else delete next.instagram_actor_id;
+  return { objectStorySpec: next, changed: true, unsupported: false };
+}
+
 function isEmptyObject(value) {
   return (
     value &&
@@ -338,6 +352,8 @@ export async function onRequest({ request, env }) {
     apply_to_existing,
     sanitize_video_placements,
     replacement_image_hash,
+    page_id,
+    instagram_actor_id,
   } = body || {};
   if (!ad_id || (!adset_id && !apply_to_existing)) {
     return jsonResponse(400, {
@@ -423,7 +439,18 @@ export async function onRequest({ request, env }) {
       };
     }
 
-    if (apply_to_existing && objectStoryId && !replacement_image_hash) {
+    if (page_id) {
+      const pageOverride = applyCreativePageOverride(objectStorySpec, page_id, instagram_actor_id);
+      if (pageOverride.unsupported) {
+        return jsonResponse(400, {
+          error: "Este criativo usa uma publicacao existente e nao permite trocar a Pagina automaticamente.",
+        });
+      }
+      objectStorySpec = pageOverride.objectStorySpec;
+      objectStoryId = null;
+    }
+
+    if (apply_to_existing && objectStoryId && !replacement_image_hash && !page_id) {
       // Mantem o mesmo post e o historico social ao corrigir apenas as UTMs.
       objectStorySpec = null;
       assetFeedSpec = null;

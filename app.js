@@ -11,7 +11,7 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=174";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=175";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
 
 const html = htm.bind(React.createElement);
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 174;
+const APP_VERSION_BUILD = 175;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4731,6 +4731,9 @@ function GerenciarView({
   onPublish,
   publishing,
   onCreateAdset,
+  pages,
+  pagesLoading,
+  onLoadPages,
   pixels,
   pixelsLoading,
   onLoadPixels,
@@ -4898,6 +4901,7 @@ function GerenciarView({
     setModelingAdsetId("");
     setCampaignModelName(nextCampaignCopyName(campaign.name, campaigns));
     setCampaignModelStatus("ACTIVE");
+    if (willOpen && !(pages || []).length) onLoadPages?.();
   };
   const confirmCampaignModel = (campaign) => {
     onAddCampaignDraft?.(campaign, {
@@ -5490,7 +5494,10 @@ function GerenciarView({
                             <span><strong>${adset.source_name}</strong><small>${(adset.ads || []).filter((ad) => !ad.removed).length}/${(adset.ads || []).length} anúncio(s)</small></span>
                           </summary>
                           <div className="manager-campaign-draft-adset-body">
-                            <label className="field"><span>Novo nome do conjunto</span><input disabled=${adset.removed} value=${adset.new_name} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { new_name: event.target.value })} /></label>
+                            <div className="manager-campaign-draft-adset-fields">
+                              <label className="field"><span>Novo nome do conjunto</span><input disabled=${adset.removed} value=${adset.new_name} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { new_name: event.target.value })} /></label>
+                              <label className="field"><span>País do conjunto</span><select disabled=${adset.removed} value=${adset.countries?.[0] || ""} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { countries: event.target.value ? [event.target.value] : [] })}><option value="">Selecione o país</option>${COUNTRY_LIST.map((country) => html`<option value=${country.code}>${flagEmoji(country.code)} ${country.name}</option>`)}</select></label>
+                            </div>
                             <div className="manager-draft-ad-list">
                               ${(adset.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed || adset.removed ? "is-removed" : ""}`} key=${ad.source_ad_id}>
                                 <div className="manager-draft-ad-source">
@@ -5501,6 +5508,20 @@ function GerenciarView({
                                   <span>${ad.source_name}${ad.replacement_image_hash ? html`<small className="manager-creative-changed">Nova imagem selecionada</small>` : null}</span>
                                 </div>
                                 <input disabled=${ad.removed || adset.removed} value=${ad.new_name} onChange=${(event) => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { new_name: event.target.value })} />
+                                <label className="manager-draft-page-field">
+                                  <span>Página ${pagesLoading ? "(carregando...)" : ""}</span>
+                                  <select disabled=${ad.removed || adset.removed || pagesLoading} value=${ad.page_id || ""} onChange=${(event) => {
+                                    const selectedPage = (pages || []).find((page) => String(page.id) === String(event.target.value));
+                                    onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, {
+                                      page_id: event.target.value,
+                                      instagram_actor_id: selectedPage?.instagram_business_account?.id || "",
+                                    });
+                                  }}>
+                                    <option value="">Manter Página original</option>
+                                    ${ad.page_id && !(pages || []).some((page) => String(page.id) === String(ad.page_id)) ? html`<option value=${ad.page_id}>Página atual • ${ad.page_id}</option>` : null}
+                                    ${(pages || []).map((page) => html`<option value=${page.id}>${page.name || page.id}${page.name ? ` • ${page.id}` : ""}</option>`)}
+                                  </select>
+                                </label>
                                 ${!ad.removed && !adset.removed ? html`<div className="manager-draft-creative">
                                   <${CampaignMediaPicker} accountId=${accountId} type="image" selectedKey=${ad.replacement_image_hash || ""} onSelect=${(item) => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { replacement_image_hash: item.key, replacement_image_url: item.url || "" })} />
                                   ${ad.replacement_image_hash ? html`<button className="ghost small" onClick=${() => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { replacement_image_hash: "", replacement_image_url: "" })}>Usar imagem original</button>` : null}
@@ -14210,6 +14231,9 @@ function App() {
           if (selectedAdsets.some((adset) => !String(adset.new_name || "").trim())) {
             throw new Error("Todos os conjuntos selecionados precisam de um nome.");
           }
+          if (selectedAdsets.some((adset) => !(adset.countries || []).length)) {
+            throw new Error("Selecione o país de todos os conjuntos da nova campanha.");
+          }
           if (selectedAdsets.some((adset) => (adset.ads || []).some((ad) => !ad.removed && !String(ad.new_name || "").trim()))) {
             throw new Error("Todos os anúncios selecionados precisam de um nome.");
           }
@@ -14265,6 +14289,12 @@ function App() {
               body: JSON.stringify({ object_id: copiedAdsetId, name: String(adset.new_name).trim() }),
             });
 
+            step = "update-copied-adset-country";
+            await fetchJson(`${API_BASE}/meta-adset-country`, {
+              method: "POST",
+              body: JSON.stringify({ adset_id: copiedAdsetId, countries: adset.countries }),
+            });
+
             for (const ad of (adset.ads || []).filter((item) => !item.removed)) {
               let finalAdId = ad.copied_ad_id || "";
               if (!finalAdId) {
@@ -14278,6 +14308,8 @@ function App() {
                     status: "PAUSED",
                     sanitize_video_placements: true,
                     replacement_image_hash: ad.replacement_image_hash || "",
+                    page_id: ad.page_id && ad.page_id !== ad.original_page_id ? ad.page_id : "",
+                    instagram_actor_id: ad.page_id && ad.page_id !== ad.original_page_id ? ad.instagram_actor_id || "" : "",
                     utm_tags: resolveManagedUrlTags({
                       trafficType: draft.traffic_type,
                       sourceUrlTags: ad.url_tags || "",
@@ -16115,6 +16147,9 @@ function App() {
               onPublish=${handlePublishDrafts}
               publishing=${publishing}
               onCreateAdset=${handleCreateManagedAdset}
+              pages=${pagesList}
+              pagesLoading=${pagesLoading}
+              onLoadPages=${handleLoadPages}
               pixels=${pixelsList}
               pixelsLoading=${pixelsLoading}
               onLoadPixels=${handleLoadPixels}

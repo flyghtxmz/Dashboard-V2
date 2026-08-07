@@ -1291,6 +1291,29 @@ button.ghost.danger {
   padding: 12px 12px 12px 42px;
   border-top: 1px solid var(--border-light);
 }
+.manager-campaign-draft-adset-fields {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(180px, 1fr);
+  gap: 10px;
+}
+.is-campaign-draft .manager-draft-ad {
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr);
+}
+.manager-draft-page-field {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.manager-draft-page-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+}
 .manager-advanced > summary {
   display: flex;
   justify-content: space-between;
@@ -1982,6 +2005,10 @@ button.ghost.danger {
   }
   .manager-campaign-draft-adset-body {
     padding-left: 12px;
+  }
+  .manager-campaign-draft-adset-fields,
+  .is-campaign-draft .manager-draft-ad {
+    grid-template-columns: 1fr;
   }
   .manager-template-list {
     grid-template-columns: 1fr;

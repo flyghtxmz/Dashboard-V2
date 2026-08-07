@@ -56,8 +56,8 @@ test("gera o proximo nome ao duplicar uma campanha sem alterar o nicho", () => {
 
 test("reinicia CJ e AN ao montar a estrutura de uma nova campanha", () => {
   const structure = buildCampaignCopyStructure({ adsets: [
-    { id: "set-9", name: "produto-mx-cj09", ads: [
-      { id: "ad-8", name: "produto-mx-cj09-an08", url_tags: "utm_source=fb" },
+    { id: "set-9", name: "produto-mx-cj09", targeting: { geo_locations: { countries: ["MX"] } }, ads: [
+      { id: "ad-8", name: "produto-mx-cj09-an08", url_tags: "utm_source=fb", page_id: "page-1" },
       { id: "ad-12", name: "produto-mx-cj09-an12" },
     ] },
     { id: "set-15", name: "produto-mx-cj15", ads: [
@@ -70,4 +70,6 @@ test("reinicia CJ e AN ao montar a estrutura de uma nova campanha", () => {
   assert.equal(structure[1].new_name, "produto-mx-cj02");
   assert.equal(structure[1].ads[0].new_name, "produto-mx-cj02-an01");
   assert.equal(structure[0].ads[0].url_tags, "utm_source=fb");
+  assert.deepEqual(structure[0].countries, ["MX"]);
+  assert.equal(structure[0].ads[0].page_id, "page-1");
 });

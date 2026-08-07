@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyReplacementImageHash, collectCreativeImageHashes, resolveCreativeUrlTags } from "../functions/api/meta-ad-create.js";
+import { applyCreativePageOverride, applyReplacementImageHash, collectCreativeImageHashes, resolveCreativeUrlTags } from "../functions/api/meta-ad-create.js";
 
 test("troca a imagem do criativo modelo sem alterar o objeto original", () => {
   const original = {
@@ -57,4 +57,12 @@ test("aplica os parametros enviados pelo Gerenciar e remove o ponto de interroga
     "utm_medium=paid_social&utm_campaign={{campaign.id}}"
   );
   assert.equal(resolveCreativeUrlTags({ utm_tags: "" }, { url_tags: "utm_medium=antigo" }), "");
+});
+
+test("troca a Pagina do criativo e remove o Instagram antigo quando necessario", () => {
+  const changed = applyCreativePageOverride({ page_id: "page-1", instagram_actor_id: "ig-old", link_data: { link: "https://example.com" } }, "page-2");
+  assert.equal(changed.changed, true);
+  assert.equal(changed.objectStorySpec.page_id, "page-2");
+  assert.equal(changed.objectStorySpec.instagram_actor_id, undefined);
+  assert.equal(applyCreativePageOverride(null, "page-2").unsupported, true);
 });

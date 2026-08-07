@@ -83,6 +83,9 @@ export function buildCampaignCopyStructure(campaign) {
       source_adset_id: String(adset?.id || ""),
       source_name: String(adset?.name || "Conjunto"),
       new_name: replaceCjToken(adset?.name || "Conjunto", cjToken),
+      countries: (adset?.targeting?.geo_locations?.countries || adset?.countries || [])
+        .map((code) => String(code || "").trim().toUpperCase())
+        .filter((code) => /^[A-Z]{2}$/.test(code)),
       removed: false,
       ads: (adset?.ads || []).map((ad, adIndex) => {
         const anToken = `an${String(adIndex + 1).padStart(2, "0")}`;
@@ -99,6 +102,9 @@ export function buildCampaignCopyStructure(campaign) {
           replacement_image_url: "",
           url_tags: String(ad?.url_tags || ""),
           thumbnail_url: String(ad?.thumbnail_url || ""),
+          page_id: String(ad?.page_id || ""),
+          original_page_id: String(ad?.page_id || ""),
+          instagram_actor_id: String(ad?.instagram_actor_id || ""),
         };
       }),
     };

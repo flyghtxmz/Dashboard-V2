@@ -52,6 +52,8 @@ test("resolve o preview pelo image_hash real da biblioteca da conta", async () =
         creative: {
           image_hash: "selected-hash",
           thumbnail_url: "https://meta.test/preview-antigo.jpg",
+          actor_id: "page-1",
+          instagram_actor_id: "ig-1",
         },
       }] });
     }
@@ -75,6 +77,8 @@ test("resolve o preview pelo image_hash real da biblioteca da conta", async () =
     const ad = body.structure[0].adsets[0].ads[0];
     assert.equal(ad.image_hash, "selected-hash");
     assert.equal(ad.thumbnail_url, "https://meta.test/imagem-correta.jpg");
+    assert.equal(ad.page_id, "page-1");
+    assert.equal(ad.instagram_actor_id, "ig-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
