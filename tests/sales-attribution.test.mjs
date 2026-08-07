@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDirectSalesCampaignRows, buildMessageJoinadsSummary } from "../sales-attribution.mjs";
+import {
+  buildDirectSalesCampaignRows,
+  buildMessageJoinadsSummary,
+  hasJoinadsAttributionMatch,
+} from "../sales-attribution.mjs";
 
 const ad = (overrides = {}) => ({
   campaign_id: "cmp-1",
@@ -116,4 +120,16 @@ test("nao usa src_ como fallback de uma campanha de vendas com nome igual", () =
 
   assert.equal(row.joinads_matched, false);
   assert.equal(row.revenue_client, 0);
+});
+
+test("mantem utm_term reconhecida mesmo quando existe utm_content sem correspondencia", () => {
+  const matched = hasJoinadsAttributionMatch({
+    resolvedAd: false,
+    content: false,
+    custom: false,
+    campaign: false,
+    term: true,
+  });
+
+  assert.equal(matched, true);
 });

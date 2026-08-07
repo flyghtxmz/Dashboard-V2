@@ -10,9 +10,9 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=171";
-import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=171";
-import { buildDirectSalesCampaignRows, buildMessageJoinadsSummary } from "./sales-attribution.mjs?v=171";
+} from "./campaign-builder.mjs?v=172";
+import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=172";
+import { buildDirectSalesCampaignRows, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=172";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 171;
+const APP_VERSION_BUILD = 172;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -14441,7 +14441,6 @@ function App() {
         .filter(Boolean)
     );
     const hasTermData = termSet.size > 0;
-    const hasContentData = contentSet.size > 0;
 
     return metaRows.map((row) => {
       const date = row.date_start || row.date || "";
@@ -14475,16 +14474,13 @@ function App() {
       const matchedByResolvedAdId = Object.keys(resolvedJoin).length > 0;
       const matchedByContent = contentSet.has(nameKey) || contentSet.has(adIdKey);
       const matchedByTerm = termSet.has(adsetIdKey) || termSet.has(adsetKey);
-      const hasJoinads = hasContentData
-        ? matchedByResolvedAdId ||
-          matchedByContent ||
-          Object.keys(fromCustom).length > 0 ||
-          Object.keys(fromKv).length > 0
-        : matchedByResolvedAdId
-        ? true
-        : hasTermData
-        ? matchedByTerm
-        : false;
+      const hasJoinads = hasJoinadsAttributionMatch({
+        resolvedAd: matchedByResolvedAdId,
+        content: matchedByContent,
+        custom: Object.keys(fromCustom).length > 0,
+        campaign: Object.keys(fromKv).length > 0,
+        term: hasTermData && matchedByTerm,
+      });
 
       const impressionsJoin = toNumber(
         fromKv.impressions ?? fromCustom.impressions ?? null

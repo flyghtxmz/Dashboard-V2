@@ -25,6 +25,21 @@ export function isMessageCampaignValue(value) {
   return normalize(value).startsWith("src_");
 }
 
+/**
+ * Informa se existe alguma correspondencia segura com a JoinAds. A presenca
+ * global de linhas em outra dimensao (por exemplo utm_content=organic) nunca
+ * pode apagar uma correspondencia exata por utm_term=adset_id.
+ */
+export function hasJoinadsAttributionMatch({
+  resolvedAd = false,
+  content = false,
+  custom = false,
+  campaign = false,
+  term = false,
+} = {}) {
+  return !!(resolvedAd || content || custom || campaign || term);
+}
+
 function isNonSalesCampaignValue(value) {
   const key = normalize(value);
   return isMessageCampaignValue(key) || key === "organic" || key.startsWith("organic_");
