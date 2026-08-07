@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildDirectSalesCampaignRows,
+  buildJoinadsAdAttributionIndex,
   buildMessageJoinadsSummary,
   hasJoinadsAttributionMatch,
 } from "../sales-attribution.mjs";
@@ -132,4 +133,51 @@ test("mantem utm_term reconhecida mesmo quando existe utm_content sem correspond
   });
 
   assert.equal(matched, true);
+});
+
+test("usa endpoint alternativo de utm_content sem somar a mesma receita entre fontes", () => {
+  const index = buildJoinadsAdAttributionIndex({
+    adIds: ["ad-1", "ad-2"],
+    domain: "site.test",
+    sources: [
+      {
+        dataLevel: "utm_content_super_filter",
+        rows: [
+          { domain: "site.test", custom_value: "organic", impressions: 100, revenue_client: 10 },
+          { domain: "site.test", custom_value: "ad-1", impressions: 8, revenue_client: 0.4 },
+        ],
+      },
+      {
+        dataLevel: "utm_content_key_value_country",
+        rows: [
+          { name: "site.test", custom_value: "ad-1", impressions: 80, earnings_client: 4 },
+          { name: "site.test", custom_value: "ad-2", impressions: 12, earnings_client: 0.6 },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(index.get("ad-1").impressions, 8);
+  assert.equal(index.get("ad-1").revenue_client, 0.4);
+  assert.equal(index.get("ad-1").data_level, "utm_content_super_filter");
+  assert.equal(index.get("ad-2").impressions, 12);
+  assert.equal(index.get("ad-2").revenue_client, 0.6);
+  assert.equal(index.get("ad-2").data_level, "utm_content_key_value_country");
+  assert.equal(index.has("organic"), false);
+});
+
+test("agrega linhas do mesmo endpoint antes de aplicar a prioridade", () => {
+  const index = buildJoinadsAdAttributionIndex({
+    adIds: ["120"],
+    sources: [{
+      dataLevel: "utm_content_key_value",
+      rows: [
+        { custom_value: "120", impressions: 3, earnings_client: 0.1 },
+        { custon_value: "120", impressions: 4, earnings_client: 0.2 },
+      ],
+    }],
+  });
+
+  assert.equal(index.get("120").impressions, 7);
+  assert.equal(index.get("120").revenue_client, 0.30000000000000004);
 });

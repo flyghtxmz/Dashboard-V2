@@ -12,7 +12,7 @@ import {
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
 import { buildModelDraftNames, nextAnName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=172";
-import { buildDirectSalesCampaignRows, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=172";
+import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 172;
+const APP_VERSION_BUILD = 173;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -11090,6 +11090,8 @@ function App() {
   });
   const [superFilter, setSuperFilter] = useState([]);
   const [joinadsContentRows, setJoinadsContentRows] = useState([]);
+  const [joinadsContentCountryRows, setJoinadsContentCountryRows] = useState([]);
+  const [joinadsContentKeyValueRows, setJoinadsContentKeyValueRows] = useState([]);
   const [joinadsCampaignRows, setJoinadsCampaignRows] = useState([]);
   const [joinadsMediumRows, setJoinadsMediumRows] = useState([]);
   const [joinadsSuperFilterDiagnostics, setJoinadsSuperFilterDiagnostics] = useState({});
@@ -11182,6 +11184,8 @@ function App() {
   const resetScopedState = () => {
     setSuperFilter([]);
     setJoinadsContentRows([]);
+    setJoinadsContentCountryRows([]);
+    setJoinadsContentKeyValueRows([]);
     setJoinadsCampaignRows([]);
     setJoinadsMediumRows([]);
     setJoinadsSuperFilterDiagnostics({});
@@ -11486,7 +11490,13 @@ function App() {
     });
     if (date === formatDate(new Date())) metaParams.set("_ts", String(Date.now()));
 
-    const [metaResponse, contentResponse, campaignResponse] = await Promise.all([
+    const [
+      metaResponse,
+      contentResponse,
+      campaignResponse,
+      contentCountryResponse,
+      contentKeyValueResponse,
+    ] = await Promise.all([
       fetchJson(`${API_BASE}/meta-insights?${metaParams.toString()}`, { force: true }),
       fetchJson(`${API_BASE}/super-filter`, {
         method: "POST",
@@ -11496,10 +11506,36 @@ function App() {
         method: "POST",
         body: JSON.stringify(superPayload("utm_campaign")),
       }),
+      fetchJson(`${API_BASE}/key-value-country?${new URLSearchParams({
+        start_date: date,
+        end_date: date,
+        domain,
+        report_type: "Analytical",
+        custom_key: "utm_content",
+      }).toString()}`).catch((err) => {
+        pushLog("comparison-key-value-country-content", err);
+        return { data: [] };
+      }),
+      fetchJson(`${API_BASE}/key-value?${new URLSearchParams({
+        start_date: date,
+        end_date: date,
+        domain,
+        report_type: "Analytical",
+        custom_key: "utm_content",
+      }).toString()}`).catch((err) => {
+        pushLog("comparison-key-value-content", err);
+        return { data: [] };
+      }),
     ]);
 
     const metaComparisonRows = Array.isArray(metaResponse?.data) ? metaResponse.data : [];
     const contentComparisonRows = Array.isArray(contentResponse?.data) ? contentResponse.data : [];
+    const contentCountryComparisonRows = Array.isArray(contentCountryResponse?.data)
+      ? contentCountryResponse.data
+      : [];
+    const contentKeyValueComparisonRows = Array.isArray(contentKeyValueResponse?.data)
+      ? contentKeyValueResponse.data
+      : [];
     const campaignComparisonRows = Array.isArray(campaignResponse?.data) ? campaignResponse.data : [];
     const sourceKeys = Array.from(new Set(
       campaignComparisonRows
@@ -11529,10 +11565,14 @@ function App() {
       entry.revenue_usd += toNumber(row.revenue_client ?? row.earnings_client ?? 0);
       map.set(key, entry);
     };
-    const contentByAdId = new Map();
-    contentComparisonRows.forEach((row) => {
-      const adId = normalizeKey(row.custom_value ?? row.custon_value);
-      addJoinadsRow(contentByAdId, adId, row);
+    const contentByAdId = buildJoinadsAdAttributionIndex({
+      adIds: Array.from(metaAdIds),
+      domain,
+      sources: [
+        { rows: contentComparisonRows, dataLevel: "utm_content_super_filter" },
+        { rows: contentCountryComparisonRows, dataLevel: "utm_content_key_value_country" },
+        { rows: contentKeyValueComparisonRows, dataLevel: "utm_content_key_value" },
+      ],
     });
     const sourceByAdId = new Map();
     campaignComparisonRows.forEach((row) => {
@@ -11591,7 +11631,7 @@ function App() {
           if (joinads) {
             item.joinads_impressions += joinads.impressions;
             item.joinads_clicks += joinads.clicks;
-            item.revenue_usd += joinads.revenue_usd;
+            item.revenue_usd += toNumber(joinads.revenue_usd ?? joinads.revenue_client ?? 0);
           }
           item.countedJoinadsAds.add(adId);
         }
@@ -11651,6 +11691,8 @@ function App() {
     setEarnings(arr(d.earnings));
     setEarningsAll(arr(d.earningsAll));
     setJoinadsContentRows(arr(d.joinadsContentRows));
+    setJoinadsContentCountryRows(arr(d.joinadsContentCountryRows));
+    setJoinadsContentKeyValueRows(arr(d.joinadsContentKeyValueRows));
     setJoinadsCampaignRows(arr(d.joinadsCampaignRows));
     setJoinadsMediumRows(arr(d.joinadsMediumRows));
     setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
@@ -11916,6 +11958,8 @@ function App() {
         editListRes,
         superTermRes,
         keyValueContentRes,
+        keyValueAdContentCountryRes,
+        keyValueAdContentRes,
         metaSourceRes,
         metaMediumRes,
         bidHistoryRes,
@@ -11949,6 +11993,40 @@ function App() {
             cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
         ).catch((err) => { criticalFailures.push({ source: "joinads-key-value-country", error: formatError(err) }); pushLog("key-value-country", err); return { data: [], _dashboardError: formatError(err) }; }),
+        fetchJson(
+          `${API_BASE}/key-value-country?${new URLSearchParams({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            domain: filters.domain.trim(),
+            report_type: "Analytical",
+            custom_key: "utm_content",
+          }).toString()}`,
+          {
+            force: true,
+            cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
+            cacheKey: `key-value-country-content:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
+          }
+        ).catch((err) => {
+          pushLog("key-value-country-content", err);
+          return { data: [], _dashboardError: formatError(err) };
+        }),
+        fetchJson(
+          `${API_BASE}/key-value?${new URLSearchParams({
+            start_date: filters.startDate,
+            end_date: filters.endDate,
+            domain: filters.domain.trim(),
+            report_type: "Analytical",
+            custom_key: "utm_content",
+          }).toString()}`,
+          {
+            force: true,
+            cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
+            cacheKey: `key-value-content:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
+          }
+        ).catch((err) => {
+          pushLog("key-value-content", err);
+          return { data: [], _dashboardError: formatError(err) };
+        }),
         fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -12010,6 +12088,23 @@ function App() {
           error: keyValueContentRes?._dashboardError || null,
           fields: Array.from(new Set((keyValueContentRes?.data || []).flatMap((row) => Object.keys(row || {})))).sort(),
           cache: keyValueContentRes?.cache || null,
+        },
+        keyValueContentCountry: {
+          endpoint: "https://office.joinads.me/api/clients-endpoints/key-value-country",
+          reportType: "Analytical",
+          customKey: "utm_content",
+          rows: Array.isArray(keyValueAdContentCountryRes?.data) ? keyValueAdContentCountryRes.data.length : 0,
+          error: keyValueAdContentCountryRes?._dashboardError || null,
+          fields: Array.from(new Set((keyValueAdContentCountryRes?.data || []).flatMap((row) => Object.keys(row || {})))).sort(),
+          cache: keyValueAdContentCountryRes?.cache || null,
+        },
+        keyValueContent: {
+          endpoint: "https://office.joinads.me/api/clients-endpoints/key-value",
+          reportType: "Analytical",
+          customKey: "utm_content",
+          rows: Array.isArray(keyValueAdContentRes?.data) ? keyValueAdContentRes.data.length : 0,
+          error: keyValueAdContentRes?._dashboardError || null,
+          fields: Array.from(new Set((keyValueAdContentRes?.data || []).flatMap((row) => Object.keys(row || {})))).sort(),
         },
       }));
       const advertiserCampaigns = Array.from(new Set(
@@ -12308,6 +12403,8 @@ function App() {
           : []
       );
       setJoinadsContentRows(Array.isArray(contentSuperRes?.data) ? contentSuperRes.data : []);
+      setJoinadsContentCountryRows(Array.isArray(keyValueAdContentCountryRes?.data) ? keyValueAdContentCountryRes.data : []);
+      setJoinadsContentKeyValueRows(Array.isArray(keyValueAdContentRes?.data) ? keyValueAdContentRes.data : []);
       setJoinadsCampaignRows(Array.isArray(campaignSuperRes?.data) ? campaignSuperRes.data : []);
       setJoinadsMediumRows(Array.isArray(metaMediumRes?.data) ? metaMediumRes.data : []);
       setMessenleadSources(Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : []);
@@ -12405,6 +12502,8 @@ function App() {
           joinadsKeyValueRows: Array.isArray(keyValueContentRes?.data) ? keyValueContentRes.data.length : 0,
           joinadsCampaignRows: Array.isArray(campaignSuperRes?.data) ? campaignSuperRes.data.length : 0,
           joinadsContentRows: Array.isArray(contentSuperRes?.data) ? contentSuperRes.data.length : 0,
+          joinadsContentCountryRows: Array.isArray(keyValueAdContentCountryRes?.data) ? keyValueAdContentCountryRes.data.length : 0,
+          joinadsContentKeyValueRows: Array.isArray(keyValueAdContentRes?.data) ? keyValueAdContentRes.data.length : 0,
         },
       };
       const comparisonResult = await comparisonPromise;
@@ -12444,7 +12543,7 @@ function App() {
   };
 
   // ---- Cache local dos ultimos dados carregados (sobrevive a recarregar a pagina) ----
-  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v5";
+  const DASHBOARD_SNAPSHOT_KEY = "__cd_dashboard_snapshot__:v6";
   const USE_DASHBOARD_DISPLAY_SNAPSHOT = false;
   const snapshotRestoredRef = useRef(false);
 
@@ -12454,7 +12553,7 @@ function App() {
     if (!lastRefreshed || !snapshotEligible) return;
     try {
       const snapshot = {
-        v: 5,
+        v: 6,
         savedAt: Date.now(),
         scope: (typeof window !== "undefined" && window.__cd_session_scope__) || "anon",
         filters,
@@ -12466,6 +12565,8 @@ function App() {
           earnings,
           earningsAll,
           joinadsContentRows,
+          joinadsContentCountryRows,
+          joinadsContentKeyValueRows,
           joinadsCampaignRows,
           joinadsMediumRows,
           joinadsSuperFilterDiagnostics,
@@ -12539,7 +12640,7 @@ function App() {
     } catch (e) {
       snapshot = null;
     }
-    if (!snapshot || snapshot.v !== 5) return;
+    if (!snapshot || snapshot.v !== 6) return;
     const scope = (typeof window !== "undefined" && window.__cd_session_scope__) || "anon";
     if (snapshot.scope && snapshot.scope !== scope) return; // cache de outra sessao/usuario
     if (snapshot.savedAt && Date.now() - snapshot.savedAt > 7 * 24 * 60 * 60 * 1000) return; // > 7 dias
@@ -12553,6 +12654,8 @@ function App() {
     setEarnings(arr(d.earnings));
     setEarningsAll(arr(d.earningsAll));
     setJoinadsContentRows(arr(d.joinadsContentRows));
+    setJoinadsContentCountryRows(arr(d.joinadsContentCountryRows));
+    setJoinadsContentKeyValueRows(arr(d.joinadsContentKeyValueRows));
     setJoinadsCampaignRows(arr(d.joinadsCampaignRows));
     setJoinadsMediumRows(arr(d.joinadsMediumRows));
     setJoinadsSuperFilterDiagnostics(obj(d.joinadsSuperFilterDiagnostics));
@@ -14331,6 +14434,14 @@ function App() {
       const d = normalizeKey(row.domain || row.name || "");
       return domainKey ? d === domainKey : true;
     });
+    const domainFilteredContentCountryRows = (joinadsContentCountryRows || []).filter((row) => {
+      const d = normalizeKey(row.domain || row.name || "");
+      return domainKey ? d === domainKey : true;
+    });
+    const domainFilteredContentKeyValueRows = (joinadsContentKeyValueRows || []).filter((row) => {
+      const d = normalizeKey(row.domain || row.name || "");
+      return domainKey ? d === domainKey : true;
+    });
     const domainFilteredCampaignRows = (joinadsCampaignRows || []).filter((row) => {
       const d = normalizeKey(row.domain || row.name || "");
       return domainKey ? d === domainKey : true;
@@ -14359,12 +14470,14 @@ function App() {
       map.set(key, entry);
     };
 
-    const contentByAdId = new Map();
-    domainFilteredContentRows.forEach((row) => {
-      const adId = normalizeKey(row.custom_value);
-      if (metaAdIds.has(adId)) {
-        addJoinadsByAdId(contentByAdId, adId, row, "utm_content_ad_id", row.custom_value);
-      }
+    const contentByAdId = buildJoinadsAdAttributionIndex({
+      adIds: Array.from(metaAdIds),
+      domain: appliedDomain,
+      sources: [
+        { rows: domainFilteredContentRows, dataLevel: "utm_content_super_filter" },
+        { rows: domainFilteredContentCountryRows, dataLevel: "utm_content_key_value_country" },
+        { rows: domainFilteredContentKeyValueRows, dataLevel: "utm_content_key_value" },
+      ],
     });
 
     const sourceByAdId = new Map();
@@ -14625,6 +14738,8 @@ function App() {
     earnings,
     superFilter,
     joinadsContentRows,
+    joinadsContentCountryRows,
+    joinadsContentKeyValueRows,
     joinadsCampaignRows,
     messenleadSources,
     superTermRows,

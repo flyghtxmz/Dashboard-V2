@@ -21,6 +21,57 @@ function customValue(row) {
   return String(row?.custom_value ?? row?.custon_value ?? "").trim();
 }
 
+/**
+ * Monta a atribuicao por anuncio usando fontes equivalentes em ordem de
+ * prioridade. Cada fonte e agregada separadamente e a primeira que devolver
+ * o ID exato do anuncio vence; os mesmos ganhos nunca sao somados entre
+ * endpoints da JoinAds.
+ */
+export function buildJoinadsAdAttributionIndex({
+  adIds = [],
+  sources = [],
+  domain = "",
+} = {}) {
+  const validAdIds = new Set(
+    (Array.isArray(adIds) ? adIds : [])
+      .map(normalize)
+      .filter(Boolean)
+  );
+  const domainKey = normalize(domain);
+  const preferred = new Map();
+
+  (Array.isArray(sources) ? sources : []).forEach((source) => {
+    const sourceTotals = new Map();
+    (Array.isArray(source?.rows) ? source.rows : []).forEach((row) => {
+      if (!rowDomainMatches(row, domainKey)) return;
+      const adId = normalize(customValue(row));
+      if (!adId || !validAdIds.has(adId)) return;
+      const total = sourceTotals.get(adId) || {
+        impressions: 0,
+        clicks: 0,
+        revenue: 0,
+        revenue_client: 0,
+        ecpm: null,
+        ecpm_client: null,
+        data_level: source?.dataLevel || "utm_content",
+        source_value: customValue(row),
+      };
+      total.impressions += toFiniteNumber(row?.impressions);
+      total.clicks += toFiniteNumber(row?.clicks);
+      total.revenue += toFiniteNumber(row?.revenue ?? row?.earnings);
+      total.revenue_client += toFiniteNumber(row?.revenue_client ?? row?.earnings_client);
+      if (row?.ecpm != null) total.ecpm = toFiniteNumber(row.ecpm);
+      if (row?.ecpm_client != null) total.ecpm_client = toFiniteNumber(row.ecpm_client);
+      sourceTotals.set(adId, total);
+    });
+    sourceTotals.forEach((total, adId) => {
+      if (!preferred.has(adId)) preferred.set(adId, total);
+    });
+  });
+
+  return preferred;
+}
+
 export function isMessageCampaignValue(value) {
   return normalize(value).startsWith("src_");
 }
