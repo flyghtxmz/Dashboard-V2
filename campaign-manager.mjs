@@ -140,6 +140,24 @@ export function buildCampaignCopyStructure(campaign) {
   });
 }
 
+export function resolveCampaignDraftAdsetPage(adset) {
+  const ads = (Array.isArray(adset?.ads) ? adset.ads : []).filter((ad) => !ad?.removed);
+  const pageIds = [...new Set(ads.map((ad) => String(ad?.page_id || "").trim()).filter(Boolean))];
+  if (pageIds.length > 1) {
+    return {
+      valid: false,
+      pageId: "",
+      changed: false,
+      error: "Todos os anúncios do mesmo conjunto precisam usar a mesma Página.",
+    };
+  }
+  const pageId = pageIds[0] || "";
+  const changed = Boolean(pageId) && ads.some(
+    (ad) => String(ad?.original_page_id || "").trim() !== pageId
+  );
+  return { valid: true, pageId, changed, error: "" };
+}
+
 export function resolveManagedUrlTags({ trafficType, sourceUrlTags = "", siteUrlTags = "" } = {}) {
   const value = trafficType === "messages" ? sourceUrlTags : siteUrlTags;
   return String(value || "").trim().replace(/^\?/, "");

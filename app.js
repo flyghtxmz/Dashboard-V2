@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=189";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=190";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=189";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=190";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 189;
+const APP_VERSION_BUILD = 190;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -14422,9 +14422,15 @@ function App() {
           if (!selectedAdsets.length) {
             throw new Error("Selecione ao menos um conjunto para a nova campanha.");
           }
-          if (selectedAdsets.some((adset) => !String(adset.new_name || "").trim())) {
-            throw new Error("Todos os conjuntos selecionados precisam de um nome.");
-          }
+           if (selectedAdsets.some((adset) => !String(adset.new_name || "").trim())) {
+             throw new Error("Todos os conjuntos selecionados precisam de um nome.");
+           }
+           const invalidPageAdset = selectedAdsets.find(
+             (adset) => !resolveCampaignDraftAdsetPage(adset).valid
+           );
+           if (invalidPageAdset) {
+             throw new Error(`${resolveCampaignDraftAdsetPage(invalidPageAdset).error} Conjunto: ${invalidPageAdset.new_name || invalidPageAdset.source_name}.`);
+           }
            if (selectedAdsets.some((adset) => !(adset.countries || []).length)) {
              throw new Error("Selecione o país de todos os conjuntos da nova campanha.");
            }
@@ -14563,6 +14569,15 @@ function App() {
                });
              }
 
+             const adsetPage = resolveCampaignDraftAdsetPage(adset);
+             if (adsetPage.changed && adsetPage.pageId) {
+               step = "update-copied-adset-page";
+               await fetchJson(`${API_BASE}/meta-adset-page`, {
+                 method: "POST",
+                 body: JSON.stringify({ adset_id: copiedAdsetId, page_id: adsetPage.pageId }),
+               });
+             }
+
              for (const ad of (adset.ads || []).filter((item) => !item.removed)) {
               let finalAdId = ad.copied_ad_id || "";
               if (!finalAdId) {
@@ -14576,8 +14591,8 @@ function App() {
                     status: "PAUSED",
                     sanitize_video_placements: true,
                     replacement_image_hash: ad.replacement_image_hash || "",
-                    page_id: ad.page_id && ad.page_id !== ad.original_page_id ? ad.page_id : "",
-                    instagram_actor_id: ad.page_id && ad.page_id !== ad.original_page_id ? ad.instagram_actor_id || "" : "",
+                    page_id: adsetPage.changed ? adsetPage.pageId : "",
+                    instagram_actor_id: adsetPage.changed ? ad.instagram_actor_id || "" : "",
                     utm_tags: resolveManagedUrlTags({
                       trafficType: draft.traffic_type,
                       sourceUrlTags: ad.url_tags || "",

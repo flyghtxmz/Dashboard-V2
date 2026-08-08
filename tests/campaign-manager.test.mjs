@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCjToken, nextCampaignCopyName, readBidDraft, readBudgetDraft, replaceCjToken, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCjToken, nextCampaignCopyName, readBidDraft, readBudgetDraft, replaceCjToken, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
 
 test("incrementa CJ usando o maior conjunto existente na campanha", () => {
   const campaign = {
@@ -106,4 +106,16 @@ test("preserva a meta de custo ao montar a copia da campanha", () => {
   });
   assert.equal(structure[0].bid_strategy, "COST_CAP");
   assert.equal(structure[0].bid_amount_brl, "22.00");
+});
+
+test("sincroniza uma unica Pagina por conjunto duplicado", () => {
+  assert.deepEqual(resolveCampaignDraftAdsetPage({ ads: [
+    { page_id: "page-2", original_page_id: "page-1" },
+    { page_id: "page-2", original_page_id: "page-1" },
+  ] }), { valid: true, pageId: "page-2", changed: true, error: "" });
+
+  assert.equal(resolveCampaignDraftAdsetPage({ ads: [
+    { page_id: "page-1", original_page_id: "page-1" },
+    { page_id: "page-2", original_page_id: "page-1" },
+  ] }).valid, false);
 });
