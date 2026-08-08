@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { matchesMessageCampaignFilter, resolveMessageBudgetTarget, sortMessageCampaignRows } from "../message-metrics.mjs";
+import { matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "../message-metrics.mjs";
 
 const rows = [
   { campaign_name: "Campanha 10", revenue_brl: 30, roas: null, margin_pct: -5, meta_impressions: 200, profit_per_conversation: null },
@@ -75,4 +75,18 @@ test("reconhece CBO mesmo quando a Meta devolve orcamento zero no conjunto", () 
     dailyBudgetBrl: 20,
     campaignDailyBudgetBrl: 0,
   }), { id: "set-2", scope: "adset" });
+});
+
+test("confirma a estrategia CBO pela campanha quando o conjunto omite o campo", () => {
+  assert.equal(resolveMessageBidConfirmationStrategy({
+    cbo: true,
+    campaignStrategy: "cost_cap",
+    adsetStrategy: "",
+  }), "COST_CAP");
+
+  assert.equal(resolveMessageBidConfirmationStrategy({
+    cbo: false,
+    campaignStrategy: "COST_CAP",
+    adsetStrategy: "LOWEST_COST_WITHOUT_CAP",
+  }), "LOWEST_COST_WITHOUT_CAP");
 });

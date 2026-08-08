@@ -75,3 +75,13 @@ export function resolveMessageBudgetTarget(adset) {
   }
   return { id: adset.id, scope: "adset" };
 }
+
+export function resolveMessageBidConfirmationStrategy({
+  cbo = false,
+  campaignStrategy = "",
+  adsetStrategy = "",
+} = {}) {
+  const campaignValue = String(campaignStrategy || "").trim().toUpperCase();
+  const adsetValue = String(adsetStrategy || "").trim().toUpperCase();
+  return cbo ? campaignValue || adsetValue : adsetValue;
+}

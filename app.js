@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=184";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=185";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { matchesMessageCampaignFilter, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=184";
+import { matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=185";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 184;
+const APP_VERSION_BUILD = 185;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -14082,7 +14082,7 @@ function App() {
       }
     };
 
-    const confirmLiveBid = async () => {
+    const confirmLiveBid = async (confirmedCampaignStrategy = "") => {
       let actual = null;
       let rawActual = null;
       let actualStrategy = "";
@@ -14093,7 +14093,11 @@ function App() {
           cache: "no-store",
         });
         actual = confirmation?.adset || null;
-        actualStrategy = String(actual?.bid_strategy || "").toUpperCase();
+        actualStrategy = resolveMessageBidConfirmationStrategy({
+          cbo,
+          campaignStrategy: confirmedCampaignStrategy,
+          adsetStrategy: actual?.bid_strategy,
+        });
         rawActual = actualStrategy === BID_STRATEGY_COST_CAP
           ? actual?.bid_constraints?.cost_per_result_goal ?? actual?.bid_constraints?.cost_cap ?? actual?.bid_amount
           : actual?.bid_amount ?? actual?.bid_constraints?.bid_cap;
@@ -14112,7 +14116,7 @@ function App() {
             ? {
                 ...row,
                 adset_bid_amount: actual.bid_amount ?? null,
-                adset_bid_strategy: actual.bid_strategy || row.adset_bid_strategy || "",
+                adset_bid_strategy: actualStrategy || actual.bid_strategy || row.adset_bid_strategy || "",
                 adset_optimization_goal: actual.optimization_goal || row.adset_optimization_goal || "",
                 adset_bid_constraints: actual.bid_constraints ?? null,
               }
@@ -14134,7 +14138,7 @@ function App() {
       const matches = strategyMatches && amountMatches;
       const message = matches
         ? requiresBidValue
-          ? `Confirmado na Meta: R$ ${confirmed.amountBrl.toFixed(2)}.`
+          ? `Confirmado na Meta: ${formatBidStrategy(confirmed.actualStrategy)} em R$ ${confirmed.amountBrl.toFixed(2)}.`
           : "Confirmado na Meta: sem limite definido."
         : !strategyMatches
         ? `NAO APLICADO: voce escolheu ${formatBidStrategy(bidStrategy)}, mas a Meta manteve ${formatBidStrategy(confirmed.actualStrategy || "desconhecida")}.`
@@ -14289,7 +14293,9 @@ function App() {
             detail: adsetStrategyError?.data || adsetStrategyError?.message || adsetStrategyError,
           });
         }
-        const confirmed = await confirmLiveBid();
+        const confirmed = await confirmLiveBid(
+          campaignStrategy || (campApplied === true ? bidStrategy : "")
+        );
         showBidConfirmation(confirmed);
         return;
       }
