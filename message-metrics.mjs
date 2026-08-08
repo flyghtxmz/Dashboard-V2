@@ -85,3 +85,28 @@ export function resolveMessageBidConfirmationStrategy({
   const adsetValue = String(adsetStrategy || "").trim().toUpperCase();
   return cbo ? campaignValue || adsetValue : adsetValue;
 }
+
+export function classifyMessageBidConfirmation({
+  requestedStrategy = "",
+  actualStrategy = "",
+  requestedAmount = null,
+  actualAmount = null,
+  requiresAmount = false,
+} = {}) {
+  const requested = String(requestedStrategy || "").trim().toUpperCase();
+  const actual = String(actualStrategy || "").trim().toUpperCase();
+  const strategyKnown = Boolean(actual);
+  const strategyMatches = strategyKnown && actual === requested;
+  const actualNumber = actualAmount == null ? null : Number(actualAmount);
+  const requestedNumber = requestedAmount == null ? null : Number(requestedAmount);
+  const amountKnown = !requiresAmount || Number.isFinite(actualNumber);
+  const amountMatches = !requiresAmount || (
+    amountKnown && Number.isFinite(requestedNumber) && Math.abs(actualNumber - requestedNumber) < 0.005
+  );
+
+  if (strategyKnown && !strategyMatches) return "rejected_strategy";
+  if (amountKnown && !amountMatches) return "rejected_amount";
+  if (strategyMatches && amountMatches) return "confirmed";
+  if (requiresAmount && !strategyKnown && amountMatches) return "confirmed_amount";
+  return "inconclusive";
+}

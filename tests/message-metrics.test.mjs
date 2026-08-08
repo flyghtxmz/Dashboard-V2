@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "../message-metrics.mjs";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "../message-metrics.mjs";
 
 const rows = [
   { campaign_name: "Campanha 10", revenue_brl: 30, roas: null, margin_pct: -5, meta_impressions: 200, profit_per_conversation: null },
@@ -89,4 +89,22 @@ test("confirma a estrategia CBO pela campanha quando o conjunto omite o campo", 
     campaignStrategy: "COST_CAP",
     adsetStrategy: "LOWEST_COST_WITHOUT_CAP",
   }), "LOWEST_COST_WITHOUT_CAP");
+});
+
+test("nao classifica campo omitido pela Meta como lance recusado", () => {
+  assert.equal(classifyMessageBidConfirmation({
+    requestedStrategy: "COST_CAP",
+    actualStrategy: "",
+    requestedAmount: 0.12,
+    actualAmount: 0.12,
+    requiresAmount: true,
+  }), "confirmed_amount");
+
+  assert.equal(classifyMessageBidConfirmation({
+    requestedStrategy: "COST_CAP",
+    actualStrategy: "LOWEST_COST_WITH_BID_CAP",
+    requestedAmount: 0.12,
+    actualAmount: 0.12,
+    requiresAmount: true,
+  }), "rejected_strategy");
 });

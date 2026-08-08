@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=186";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=187";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=186";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=187";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 186;
+const APP_VERSION_BUILD = 187;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -2945,8 +2945,7 @@ function MetricasMensagensView({
     return {
       status: "check",
       label: goals[0],
-      detail:
-        "A elegibilidade final e validada pela Meta. Se recusar, esta otimizacao nao aceita Meta de custo.",
+      detail: "",
     };
   };
   const advertiserDiagnosticRowsRaw = (Array.isArray(advertiserRows) ? advertiserRows : []).map((row, index) => ({
@@ -3302,13 +3301,13 @@ function MetricasMensagensView({
                                           ${bidBusy ? "..." : "Salvar"}
                                         </button>
                                       </div>
-                                      <div className=${`muted small ${costCapBlocked ? "danger-text" : ""}`}>
-                                        ${bidStrategy === BID_STRATEGY_COST_CAP
-                                          ? costCapEligibility.detail
-                                          : `Otimizacao: ${costCapEligibility.label}`}
-                                      </div>
+                                      ${bidStrategy === BID_STRATEGY_COST_CAP
+                                        ? costCapEligibility.detail
+                                          ? html`<div className=${`muted small ${costCapBlocked ? "danger-text" : ""}`}>${costCapEligibility.detail}</div>`
+                                          : null
+                                        : html`<div className="muted small">Otimizacao: ${costCapEligibility.label}</div>`}
                                       ${bidFeedback?.[singleAdset.id]
-                                        ? html`<div className=${`muted small ${bidFeedback[singleAdset.id].ok ? "pos" : "danger-text"}`}>
+                                        ? html`<div className=${`muted small ${bidFeedback[singleAdset.id].ok === true ? "pos" : bidFeedback[singleAdset.id].ok === false ? "danger-text" : ""}`}>
                                             ${bidFeedback[singleAdset.id].message}
                                           </div>`
                                         : null}
@@ -14131,20 +14130,31 @@ function App() {
     };
 
     const showBidConfirmation = (confirmed) => {
-      const strategyMatches = confirmed.actualStrategy === bidStrategy;
-      const amountMatches = !requiresBidValue || (
-        confirmed.amountBrl != null && Math.abs(confirmed.amountBrl - bidNumber) < 0.005
-      );
-      const matches = strategyMatches && amountMatches;
-      const message = matches
+      const outcome = classifyMessageBidConfirmation({
+        requestedStrategy: bidStrategy,
+        actualStrategy: confirmed.actualStrategy,
+        requestedAmount: bidNumber,
+        actualAmount: confirmed.amountBrl,
+        requiresAmount: requiresBidValue,
+      });
+      const ok = outcome === "confirmed" || outcome === "confirmed_amount"
+        ? true
+        : outcome === "inconclusive"
+        ? null
+        : false;
+      const message = outcome === "confirmed"
         ? requiresBidValue
           ? `Confirmado na Meta: ${formatBidStrategy(confirmed.actualStrategy)} em R$ ${confirmed.amountBrl.toFixed(2)}.`
           : "Confirmado na Meta: sem limite definido."
-        : !strategyMatches
-        ? `NAO APLICADO: voce escolheu ${formatBidStrategy(bidStrategy)}, mas a Meta manteve ${formatBidStrategy(confirmed.actualStrategy || "desconhecida")}.`
-        : `NAO APLICADO: voce pediu R$ ${bidNumber.toFixed(2)}, mas a Meta manteve R$ ${confirmed.amountBrl != null ? confirmed.amountBrl.toFixed(2) : "0,00"}.`;
-      setBidFeedback((prev) => ({ ...prev, [adsetId]: { ok: matches, message } }));
-      pushLog(matches ? "meta-bid-confirmed" : "meta-bid-not-applied", { message, data: confirmed.actual });
+        : outcome === "confirmed_amount"
+        ? `Valor confirmado na Meta: R$ ${confirmed.amountBrl.toFixed(2)}.`
+        : outcome === "rejected_strategy"
+        ? `A Meta retornou ${formatBidStrategy(confirmed.actualStrategy)} para esta configuracao.`
+        : outcome === "rejected_amount"
+        ? `A Meta retornou R$ ${confirmed.amountBrl.toFixed(2)} em vez de R$ ${bidNumber.toFixed(2)}.`
+        : "Alteracao enviada a Meta. A API nao repetiu todos os campos na confirmacao.";
+      setBidFeedback((prev) => ({ ...prev, [adsetId]: { ok, message } }));
+      pushLog(ok === false ? "meta-bid-divergent" : "meta-bid-confirmed", { message, data: confirmed.actual });
     };
 
     let bidNumber = null;
