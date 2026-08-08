@@ -11,7 +11,7 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=183";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=183";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
 import { matchesMessageCampaignFilter, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=183";
 
@@ -4939,6 +4939,28 @@ function GerenciarView({
       ? `${currencyBRL.format(amount)} total`
       : `${currencyBRL.format(amount)}/dia`;
   };
+  const renderCampaignDraftBidFields = (draft, adset) => {
+    const isCboDraft = draft.campaign_budget_type !== "none";
+    const strategy = String(
+      isCboDraft ? draft.campaign_bid_strategy : adset.bid_strategy
+    ).toUpperCase() || BID_STRATEGY_WITHOUT_BID;
+    const requiresValue =
+      strategy === BID_STRATEGY_COST_CAP || strategy === BID_STRATEGY_WITH_BID;
+    return html`
+      ${!isCboDraft ? html`<label className="field">
+        <span>Estratégia de lance</span>
+        <select disabled=${adset.removed} value=${strategy} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { bid_strategy: event.target.value })}>
+          <option value=${BID_STRATEGY_COST_CAP}>Meta de custo</option>
+          <option value=${BID_STRATEGY_WITH_BID}>Limite de lance</option>
+          <option value=${BID_STRATEGY_WITHOUT_BID}>Sem limite</option>
+        </select>
+      </label>` : null}
+      ${requiresValue ? html`<label className="field">
+        <span>${strategy === BID_STRATEGY_COST_CAP ? "Meta de custo" : "Limite de lance"} (R$)</span>
+        <input type="number" min="0.01" step="0.01" disabled=${adset.removed} value=${adset.bid_amount_brl || ""} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { bid_amount_brl: event.target.value })} />
+      </label>` : null}
+    `;
+  };
   const openCreate = (campaign) => {
     setCreateError("");
     setCreateSuccess("");
@@ -5540,14 +5562,23 @@ function GerenciarView({
                       <div className="draft-fields manager-campaign-draft-fields">
                          <label className="field"><span>Nome da nova campanha</span><input value=${draft.campaign_new_name} onChange=${(event) => onUpdateDraft(draft.id, { campaign_new_name: event.target.value })} /></label>
                          <label className="field"><span>Status após publicar</span><select value=${draft.publish_status || "ACTIVE"} onChange=${(event) => onUpdateDraft(draft.id, { publish_status: event.target.value })}><option value="ACTIVE">Ativa</option><option value="PAUSED">Pausada</option></select></label>
-                         ${draft.campaign_budget_type !== "none"
-                           ? html`<label className="field"><span>Orçamento da campanha (${draft.campaign_budget_type === "lifetime" ? "vitalício" : "diário"})</span><input type="number" min="1" step="0.01" value=${draft.campaign_budget_brl || ""} onChange=${(event) => onUpdateDraft(draft.id, { campaign_budget_brl: event.target.value })} /></label>`
-                           : html`<div className="field"><span>Tipo de orçamento</span><strong>Definido em cada conjunto</strong></div>`}
+                          ${draft.campaign_budget_type !== "none"
+                            ? html`<label className="field"><span>Orçamento da campanha (${draft.campaign_budget_type === "lifetime" ? "vitalício" : "diário"})</span><input type="number" min="1" step="0.01" value=${draft.campaign_budget_brl || ""} onChange=${(event) => onUpdateDraft(draft.id, { campaign_budget_brl: event.target.value })} /></label>`
+                            : html`<div className="field"><span>Tipo de orçamento</span><strong>Definido em cada conjunto</strong></div>`}
+                          ${draft.campaign_budget_type !== "none" ? html`<label className="field">
+                            <span>Estratégia de lance da campanha</span>
+                            <select value=${draft.campaign_bid_strategy || BID_STRATEGY_WITHOUT_BID} onChange=${(event) => onUpdateDraft(draft.id, { campaign_bid_strategy: event.target.value })}>
+                              <option value=${BID_STRATEGY_COST_CAP}>Meta de custo</option>
+                              <option value=${BID_STRATEGY_WITH_BID}>Limite de lance</option>
+                              <option value=${BID_STRATEGY_WITHOUT_BID}>Sem limite</option>
+                            </select>
+                          </label>` : null}
                        </div>
                        <div className="manager-campaign-draft-summary">
                          <strong>${(draft.adsets || []).filter((adset) => !adset.removed).length} conjunto(s)</strong>
                          <span>${(draft.adsets || []).filter((adset) => !adset.removed).reduce((sum, adset) => sum + (adset.ads || []).filter((ad) => !ad.removed).length, 0)} anúncio(s) selecionado(s)</span>
-                         <span>${draft.campaign_budget_type !== "none" ? `Orçamento da campanha: ${draftBudgetText(draft.campaign_budget_type, draft.campaign_budget_brl)}` : "Orçamento individual por conjunto"}</span>
+                          <span>${draft.campaign_budget_type !== "none" ? `Orçamento da campanha: ${draftBudgetText(draft.campaign_budget_type, draft.campaign_budget_brl)}` : "Orçamento individual por conjunto"}</span>
+                          ${draft.campaign_budget_type !== "none" ? html`<span>Lance: ${formatBidStrategy(draft.campaign_bid_strategy)}</span>` : null}
                       </div>
                       <div className="manager-campaign-draft-tree">
                         ${(draft.adsets || []).map((adset) => html`<details className=${`manager-campaign-draft-adset ${adset.removed ? "is-removed" : ""}`} open key=${adset.source_adset_id}>
@@ -5562,12 +5593,13 @@ function GerenciarView({
                             <div className="manager-campaign-draft-adset-fields">
                                <label className="field"><span>Novo nome do conjunto</span><input disabled=${adset.removed} value=${adset.new_name} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { new_name: event.target.value })} /></label>
                                <label className="field"><span>País do conjunto</span><select disabled=${adset.removed} value=${adset.countries?.[0] || ""} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { countries: event.target.value ? [event.target.value] : [] })}><option value="">Selecione o país</option>${COUNTRY_LIST.map((country) => html`<option value=${country.code}>${flagEmoji(country.code)} ${country.name}</option>`)}</select></label>
-                               ${draft.campaign_budget_type === "none"
+                                ${draft.campaign_budget_type === "none"
                                  ? adset.budget_type !== "none"
                                    ? html`<label className="field"><span>Orçamento do conjunto (${adset.budget_type === "lifetime" ? "vitalício" : "diário"})</span><input type="number" min="1" step="0.01" disabled=${adset.removed} value=${adset.budget_brl || ""} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { budget_brl: event.target.value })} /></label>`
                                    : html`<div className="field"><span>Orçamento do conjunto</span><strong>Não informado pela Meta</strong></div>`
-                                 : null}
-                             </div>
+                                  : null}
+                                ${renderCampaignDraftBidFields(draft, adset)}
+                              </div>
                             <div className="manager-draft-ad-list">
                               ${(adset.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed || adset.removed ? "is-removed" : ""}`} key=${ad.source_ad_id}>
                                 <div className="manager-draft-ad-source">
@@ -13767,6 +13799,10 @@ function App() {
 
   const addDraftFromCampaign = (campaign, options = {}) => {
     const campaignBudget = readBudgetDraft(campaign);
+    const campaignBid = readBidDraft(
+      campaign,
+      (campaign.adsets || []).find((adset) => adset?.bid_strategy)?.bid_strategy
+    );
     const created = {
       id: `campaign-${campaign.id}-${Date.now()}`,
       mode: "campaign",
@@ -13777,6 +13813,7 @@ function App() {
       publish_status: options.status === "PAUSED" ? "PAUSED" : "ACTIVE",
       campaign_budget_type: campaignBudget.budget_type,
       campaign_budget_brl: campaignBudget.budget_brl,
+      campaign_bid_strategy: campaignBid.bid_strategy,
       adsets: buildCampaignCopyStructure(campaign),
     };
     setDrafts((prev) => [created, ...prev]);
@@ -14355,6 +14392,29 @@ function App() {
            )) {
              throw new Error("Informe um orçamento válido para todos os conjuntos selecionados.");
            }
+           const normalizeDraftBidStrategy = (value) => {
+             const strategy = String(value || "").toUpperCase();
+             return [BID_STRATEGY_COST_CAP, BID_STRATEGY_WITH_BID, BID_STRATEGY_WITHOUT_BID].includes(strategy)
+               ? strategy
+               : BID_STRATEGY_WITHOUT_BID;
+           };
+           const bidRequiresValue = (strategy) =>
+             strategy === BID_STRATEGY_COST_CAP || strategy === BID_STRATEGY_WITH_BID;
+           const isCboDraft = draft.campaign_budget_type !== "none";
+           const campaignBidStrategy = normalizeDraftBidStrategy(draft.campaign_bid_strategy);
+           const invalidBid = selectedAdsets
+             .map((adset) => ({
+               adset,
+               strategy: isCboDraft
+                 ? campaignBidStrategy
+                 : normalizeDraftBidStrategy(adset.bid_strategy),
+             }))
+             .find(({ adset, strategy }) =>
+               bidRequiresValue(strategy) && !hasPositiveBudget(adset.bid_amount_brl)
+             );
+           if (invalidBid) {
+             throw new Error(`Informe o valor de ${invalidBid.strategy === BID_STRATEGY_COST_CAP ? "meta de custo" : "limite de lance"} para ${invalidBid.adset.new_name || invalidBid.adset.source_name}.`);
+           }
            if (selectedAdsets.some((adset) => (adset.ads || []).some((ad) => !ad.removed && !String(ad.new_name || "").trim()))) {
             throw new Error("Todos os anúncios selecionados precisam de um nome.");
           }
@@ -14440,6 +14500,21 @@ function App() {
                });
              }
 
+             if (!isCboDraft) {
+               const adsetBidStrategy = normalizeDraftBidStrategy(adset.bid_strategy);
+               step = "update-copied-adset-bid";
+               await fetchJson(`${API_BASE}/meta-adset-bid`, {
+                 method: "POST",
+                 body: JSON.stringify({
+                   adset_id: copiedAdsetId,
+                   bid_strategy: adsetBidStrategy,
+                   ...(bidRequiresValue(adsetBidStrategy)
+                     ? { bid_amount_brl: adset.bid_amount_brl }
+                     : {}),
+                 }),
+               });
+             }
+
              for (const ad of (adset.ads || []).filter((item) => !item.removed)) {
               let finalAdId = ad.copied_ad_id || "";
               if (!finalAdId) {
@@ -14481,20 +14556,40 @@ function App() {
                   method: "POST",
                   body: JSON.stringify({ ad_id: finalAdId, status: "ACTIVE" }),
                 });
-              }
-            }
+             }
+           }
 
-            if (draft.publish_status === "ACTIVE") {
-              step = "activate-copied-adset";
-              await fetchJson(`${API_BASE}/meta-adset-status`, {
-                method: "POST",
-                body: JSON.stringify({ adset_id: copiedAdsetId, status: "ACTIVE" }),
-              });
-            }
-          }
+           }
 
-          if (draft.publish_status === "ACTIVE") {
-            step = "activate-copied-campaign";
+           if (isCboDraft) {
+             const adsetBidAmounts = bidRequiresValue(campaignBidStrategy)
+               ? Object.fromEntries(
+                   selectedAdsets.map((adset) => [adset.copied_adset_id, adset.bid_amount_brl])
+                 )
+               : undefined;
+             step = "update-copied-campaign-bid";
+             const bidResult = await fetchJson(`${API_BASE}/meta-campaign-bid`, {
+               method: "POST",
+               body: JSON.stringify({
+                 campaign_id: newCampaignId,
+                 bid_strategy: campaignBidStrategy,
+                 ...(adsetBidAmounts ? { adset_bid_amounts: adsetBidAmounts } : {}),
+               }),
+             });
+             if (bidResult?.applied !== true) {
+               throw new Error(bidResult?.warning || "A Meta não confirmou a estratégia e o valor de custo da campanha duplicada.");
+             }
+           }
+
+           if (draft.publish_status === "ACTIVE") {
+             for (const adset of selectedAdsets) {
+               step = "activate-copied-adset";
+               await fetchJson(`${API_BASE}/meta-adset-status`, {
+                 method: "POST",
+                 body: JSON.stringify({ adset_id: adset.copied_adset_id, status: "ACTIVE" }),
+               });
+             }
+             step = "activate-copied-campaign";
             await fetchJson(`${API_BASE}/meta-campaign-status`, {
               method: "POST",
               body: JSON.stringify({ campaign_id: newCampaignId, status: "ACTIVE" }),
