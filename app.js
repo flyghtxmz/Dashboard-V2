@@ -11,7 +11,7 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=176";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=177";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
 
 const html = htm.bind(React.createElement);
@@ -21,7 +21,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 176;
+const APP_VERSION_BUILD = 177;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -557,6 +557,24 @@ async function fetchJson(path, options = {}) {
     }
   }
   return data;
+}
+
+async function fetchJsonWithRetry(path, options = {}, retryOptions = {}) {
+  const attempts = Math.max(1, Number(retryOptions.attempts) || 3);
+  const baseDelayMs = Math.max(0, Number(retryOptions.baseDelayMs) || 350);
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetchJson(path, options);
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status || 0);
+      const retryable = !status || status === 408 || status === 425 || status === 429 || status >= 500;
+      if (!retryable || attempt >= attempts) throw error;
+      await new Promise((resolve) => window.setTimeout(resolve, baseDelayMs * (2 ** (attempt - 1))));
+    }
+  }
+  throw lastError;
 }
 
 function useTotalsFromEarnings(earnings, fallbackSuper) {
@@ -11997,7 +12015,7 @@ function App() {
         group: ["domain", "custom_value"],
       };
       try {
-        contentSuperRes = await fetchJson(`${API_BASE}/super-filter`, {
+        contentSuperRes = await fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(contentSuperPayload),
         });
@@ -12007,7 +12025,7 @@ function App() {
         pushLog("super-filter-content", err);
       }
       try {
-        campaignSuperRes = await fetchJson(`${API_BASE}/super-filter`, {
+        campaignSuperRes = await fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(campaignSuperPayload),
         });
@@ -12079,7 +12097,7 @@ function App() {
       );
       if (sourceKeys.length) {
         try {
-          messenleadRes = await fetchJson(`${API_BASE}/messenlead-resolve`, {
+          messenleadRes = await fetchJsonWithRetry(`${API_BASE}/messenlead-resolve`, {
             method: "POST",
             body: JSON.stringify({ sourceKeys }),
           });
@@ -12140,7 +12158,7 @@ function App() {
             group: ["domain", "custom_value"],
           }),
         }).catch((err) => { pushLog("super-filter-term", err); return { data: [] }; }),
-        fetchJson(
+        fetchJsonWithRetry(
           `${API_BASE}/key-value-country?${new URLSearchParams({
             start_date: filters.startDate,
             end_date: filters.endDate,
@@ -12189,7 +12207,7 @@ function App() {
           pushLog("key-value-content", err);
           return { data: [], _dashboardError: formatError(err) };
         }),
-        fetchJson(`${API_BASE}/super-filter`, {
+        fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
             start_date: filters.startDate,
@@ -12199,7 +12217,7 @@ function App() {
             group: ["domain", "custom_value"],
           }),
         }).catch((err) => { criticalFailures.push({ source: "joinads-utm-source", error: formatError(err) }); pushLog("meta-utmsource", err); return { data: [] }; }),
-        fetchJson(`${API_BASE}/super-filter`, {
+        fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
             start_date: filters.startDate,
@@ -12455,7 +12473,7 @@ function App() {
         if (filters.endDate === formatDate(new Date())) {
           metaParams.set("_ts", String(Date.now()));
         }
-        const metaRes = await fetchJson(
+        const metaRes = await fetchJsonWithRetry(
           `${API_BASE}/meta-insights?${metaParams.toString()}`,
           {
             cacheTtlMs: filters.includeAssets ? 2 * 60 * 1000 : 8 * 60 * 1000,

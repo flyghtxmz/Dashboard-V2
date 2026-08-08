@@ -3,6 +3,27 @@ const DEFAULT_FINAL_HOUR = 10;
 const CACHE_SCHEMA = "joinads-daily-v2";
 const inFlight = new Map();
 
+function isRetryableJoinadsError(error) {
+  const status = Number(error?.status || error?.cause?.status || 0);
+  return !status || status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+export async function retryJoinadsFetch(fetcher, { attempts = 3, baseDelayMs = 250 } = {}) {
+  let lastError;
+  const totalAttempts = Math.max(1, Number(attempts) || 1);
+  for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+    try {
+      return await fetcher(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= totalAttempts || !isRetryableJoinadsError(error)) throw error;
+      const delay = Math.max(0, Number(baseDelayMs) || 0) * (2 ** (attempt - 1));
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
 function getStorage(env) {
   return {
     db: env.DASHBOARD_DB || null,
@@ -208,7 +229,9 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
       } else {
         let pending = inFlight.get(key);
         if (!pending) {
-          pending = Promise.resolve().then(() => fetchDay(day)).finally(() => inFlight.delete(key));
+          pending = Promise.resolve()
+            .then(() => retryJoinadsFetch(() => fetchDay(day)))
+            .finally(() => inFlight.delete(key));
           inFlight.set(key, pending);
         }
         let liveError = null;
