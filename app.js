@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=183";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=184";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { matchesMessageCampaignFilter, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=183";
+import { matchesMessageCampaignFilter, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=184";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 183;
+const APP_VERSION_BUILD = 184;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4816,6 +4816,7 @@ function GerenciarView({
   const [modelingCampaignId, setModelingCampaignId] = useState("");
   const [campaignModelName, setCampaignModelName] = useState("");
   const [campaignModelStatus, setCampaignModelStatus] = useState("ACTIVE");
+  const [campaignModelBudgetBrl, setCampaignModelBudgetBrl] = useState("");
   const [managerToast, setManagerToast] = useState(null);
   const [form, setForm] = useState({
     name: "",
@@ -4980,12 +4981,14 @@ function GerenciarView({
     setModelingAdsetId("");
     setCampaignModelName(nextCampaignCopyName(campaign.name, campaigns));
     setCampaignModelStatus("ACTIVE");
+    setCampaignModelBudgetBrl(willOpen ? readBudgetDraft(campaign).budget_brl : "");
     if (willOpen && !(pages || []).length) onLoadPages?.();
   };
   const confirmCampaignModel = (campaign) => {
     onAddCampaignDraft?.(campaign, {
       campaignName: campaignModelName,
       status: campaignModelStatus,
+      campaignBudgetBrl: campaignModelBudgetBrl,
       trafficType,
     });
     setModelingCampaignId("");
@@ -5256,14 +5259,27 @@ function GerenciarView({
                             <option value="PAUSED">Pausada</option>
                           </select>
                         </label>
-                        <div className="field">
-                          <span>Orçamento que será copiado</span>
-                          <strong>${isCbo(campaign) ? budgetText(campaign) : "O valor de cada conjunto"}</strong>
-                        </div>
+                        ${isCbo(campaign)
+                          ? html`<label className="field">
+                              <span>Orçamento da nova campanha (${campaign?.lifetime_budget != null ? "vitalício" : "diário"})</span>
+                              <input
+                                type="number"
+                                min="1"
+                                step="0.01"
+                                value=${campaignModelBudgetBrl}
+                                onInput=${(event) => setCampaignModelBudgetBrl(event.target.value)}
+                              />
+                              <small>Valor atual: ${budgetText(campaign)}. Você pode alterá-lo antes de criar o rascunho.</small>
+                            </label>`
+                          : html`<div className="field">
+                              <span>Orçamento da nova campanha</span>
+                              <strong>Definido em cada conjunto</strong>
+                              <small>Os valores de cada conjunto ficam editáveis no rascunho.</small>
+                            </div>`}
                       </div>
                       <div className="manager-create-actions">
                         <span className="muted small">A campanha original não será alterada.</span>
-                        <button className="primary" disabled=${!campaignModelName.trim() || !(campaign.adsets || []).length} onClick=${() => confirmCampaignModel(campaign)}>Adicionar campanha ao rascunho</button>
+                        <button className="primary" disabled=${!campaignModelName.trim() || !(campaign.adsets || []).length || (isCbo(campaign) && !(Number(String(campaignModelBudgetBrl).replace(",", ".")) > 0))} onClick=${() => confirmCampaignModel(campaign)}>Adicionar campanha ao rascunho</button>
                       </div>
                     </div>
                   ` : null}
@@ -13799,6 +13815,7 @@ function App() {
 
   const addDraftFromCampaign = (campaign, options = {}) => {
     const campaignBudget = readBudgetDraft(campaign);
+    const requestedCampaignBudget = String(options.campaignBudgetBrl ?? "").trim();
     const campaignBid = readBidDraft(
       campaign,
       (campaign.adsets || []).find((adset) => adset?.bid_strategy)?.bid_strategy
@@ -13812,7 +13829,9 @@ function App() {
       campaign_new_name: String(options.campaignName || nextCampaignCopyName(campaign.name, dupCampaigns)).trim(),
       publish_status: options.status === "PAUSED" ? "PAUSED" : "ACTIVE",
       campaign_budget_type: campaignBudget.budget_type,
-      campaign_budget_brl: campaignBudget.budget_brl,
+      campaign_budget_brl: campaignBudget.budget_type !== "none" && requestedCampaignBudget
+        ? requestedCampaignBudget
+        : campaignBudget.budget_brl,
       campaign_bid_strategy: campaignBid.bid_strategy,
       adsets: buildCampaignCopyStructure(campaign),
     };
