@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=185";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=186";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=185";
+import { matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=186";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 185;
+const APP_VERSION_BUILD = 186;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -14170,6 +14170,7 @@ function App() {
         // 1) Estrategia na CAMPANHA. Em CBO a Meta pode controlar a estrategia neste nivel.
         let campaignStrategy = "";
         let campApplied = null;
+        let campaignAmountApplied = null;
         let campWarning = "";
         let strategyError = null;
         let campaignAdsetUpdated = null;
@@ -14189,8 +14190,11 @@ function App() {
               data: campRes,
             };
           } else {
-            campaignStrategy = String(campRes?.campaign?.bid_strategy || "").toUpperCase();
+            campaignStrategy = String(
+              campRes?.confirmed_strategy || campRes?.campaign?.bid_strategy || ""
+            ).toUpperCase();
             campApplied = campRes?.applied ?? null;
+            campaignAmountApplied = campRes?.amount_applied ?? null;
             campWarning = campRes?.warning || "";
             campaignAdsetUpdated = (campRes?.adsets || []).find(
               (item) => String(item?.id) === String(adsetId)
@@ -14293,9 +14297,14 @@ function App() {
             detail: adsetStrategyError?.data || adsetStrategyError?.message || adsetStrategyError,
           });
         }
-        const confirmed = await confirmLiveBid(
-          campaignStrategy || (campApplied === true ? bidStrategy : "")
-        );
+        const confirmed = campApplied === true && (!requiresBidValue || campaignAmountApplied === true)
+          ? {
+              actual: campaignAdsetUpdated,
+              actualStrategy: campaignStrategy || bidStrategy,
+              amountBrl: requiresBidValue ? bidNumber : null,
+              confirmationSource: "campaign_atomic_update",
+            }
+          : await confirmLiveBid(campaignStrategy);
         showBidConfirmation(confirmed);
         return;
       }

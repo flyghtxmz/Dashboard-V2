@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { onRequest as updateCampaignBid } from "../functions/api/meta-campaign-bid.js";
+import { onRequest as updateCampaignBid, resolveCampaignBidConfirmation } from "../functions/api/meta-campaign-bid.js";
 import { onRequest as updateAdsetBid } from "../functions/api/meta-adset-bid.js";
 
 test("aplica meta de custo CBO de forma atomica na campanha", async () => {
@@ -45,6 +45,34 @@ test("aplica meta de custo CBO de forma atomica na campanha", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("confirma CBO pelo aceite da escrita quando a Meta omite a estrategia na leitura", () => {
+  assert.deepEqual(resolveCampaignBidConfirmation({
+    writeAccepted: true,
+    strategyApplied: null,
+    amountApplied: true,
+    requiresAmount: true,
+    requestedStrategy: "COST_CAP",
+    actualStrategy: "",
+  }), {
+    applied: true,
+    confirmedStrategy: "COST_CAP",
+    source: "meta_write_ack",
+  });
+
+  assert.deepEqual(resolveCampaignBidConfirmation({
+    writeAccepted: true,
+    strategyApplied: false,
+    amountApplied: true,
+    requiresAmount: true,
+    requestedStrategy: "COST_CAP",
+    actualStrategy: "LOWEST_COST_WITH_BID_CAP",
+  }), {
+    applied: false,
+    confirmedStrategy: "LOWEST_COST_WITH_BID_CAP",
+    source: "meta_read",
+  });
 });
 
 test("nao para no HTTP 200 quando a Meta ignora o primeiro formato da meta de custo", async () => {

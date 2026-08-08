@@ -32,6 +32,28 @@ function normalizeAdsetBidAmounts(body, required) {
   return normalized;
 }
 
+export function resolveCampaignBidConfirmation({
+  writeAccepted = false,
+  strategyApplied = null,
+  amountApplied = null,
+  requiresAmount = false,
+  requestedStrategy = "",
+  actualStrategy = "",
+} = {}) {
+  if (strategyApplied === false || amountApplied === false) {
+    return { applied: false, confirmedStrategy: actualStrategy || "", source: "meta_read" };
+  }
+  const amountConfirmed = !requiresAmount || amountApplied === true;
+  if (amountConfirmed && (strategyApplied === true || (strategyApplied == null && writeAccepted))) {
+    return {
+      applied: true,
+      confirmedStrategy: strategyApplied === true ? actualStrategy : requestedStrategy,
+      source: strategyApplied === true ? "meta_read" : "meta_write_ack",
+    };
+  }
+  return { applied: null, confirmedStrategy: actualStrategy || "", source: "inconclusive" };
+}
+
 // Em campanhas com Orcamento de Campanha (CBO/Advantage), a Meta aceita a estrategia e o mapa
 // adset_bid_amounts juntos na CAMPANHA. O envio atomico evita rejeicao durante a troca de estrategia.
 export async function onRequest({ request, env }) {
@@ -144,11 +166,15 @@ export async function onRequest({ request, env }) {
       }
     }
 
-    const applied = strategyApplied === true && amountApplied !== false
-      ? true
-      : strategyApplied === false || amountApplied === false
-      ? false
-      : null;
+    const confirmation = resolveCampaignBidConfirmation({
+      writeAccepted: data?.success === true,
+      strategyApplied,
+      amountApplied,
+      requiresAmount: Object.keys(adsetBidAmounts).length > 0,
+      requestedStrategy: bidStrategy,
+      actualStrategy,
+    });
+    const applied = confirmation.applied;
     const warning =
       applied === false
         ? strategyApplied === false
@@ -162,6 +188,8 @@ export async function onRequest({ request, env }) {
       campaign,
       adsets,
       requested_strategy: bidStrategy,
+      confirmed_strategy: confirmation.confirmedStrategy,
+      strategy_confirmation_source: confirmation.source,
       requested_adset_bid_amounts: adsetBidAmounts,
       strategy_applied: strategyApplied,
       amount_applied: amountApplied,
