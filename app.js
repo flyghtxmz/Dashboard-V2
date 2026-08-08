@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=190";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=191";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=190";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=191";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 190;
+const APP_VERSION_BUILD = 191;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -14510,24 +14510,43 @@ function App() {
            }
 
            for (const adset of selectedAdsets) {
-            let copiedAdsetId = adset.copied_adset_id || "";
+            const adsetPage = resolveCampaignDraftAdsetPage(adset);
+            const copiedAdsetMatchesPage = !adsetPage.changed || (
+              String(adset.copied_adset_page_id || "") === adsetPage.pageId
+            );
+            let copiedAdsetId = copiedAdsetMatchesPage ? adset.copied_adset_id || "" : "";
             if (!copiedAdsetId) {
-              step = "copy-campaign-adset";
-              const copiedAdset = await fetchJson(`${API_BASE}/meta-adset-copy`, {
-                method: "POST",
-                body: JSON.stringify({
-                  adset_id: adset.source_adset_id,
-                  campaign_id: newCampaignId,
-                  status_option: "PAUSED",
-                  rename_strategy: "NO_RENAME",
-                  deep_copy: false,
-                  include_creative: false,
-                }),
-              });
-              copiedAdsetId = copiedAdset.new_adset_id || copiedAdset.data?.copied_adset_id || copiedAdset.data?.id || "";
+              step = adsetPage.changed ? "create-campaign-adset-with-page" : "copy-campaign-adset";
+              const copiedAdset = adsetPage.changed
+                ? await fetchJson(`${API_BASE}/meta-adset-model-create`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      source_adset_id: adset.source_adset_id,
+                      campaign_id: newCampaignId,
+                      page_id: adsetPage.pageId,
+                      name: String(adset.new_name).trim(),
+                      status: "PAUSED",
+                    }),
+                  })
+                : await fetchJson(`${API_BASE}/meta-adset-copy`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      adset_id: adset.source_adset_id,
+                      campaign_id: newCampaignId,
+                      status_option: "PAUSED",
+                      rename_strategy: "NO_RENAME",
+                      deep_copy: false,
+                      include_creative: false,
+                    }),
+                  });
+              copiedAdsetId = copiedAdset.adset_id || copiedAdset.new_adset_id || copiedAdset.data?.copied_adset_id || copiedAdset.data?.id || "";
               if (!copiedAdsetId) throw new Error(`A Meta não informou a cópia do conjunto ${adset.source_name}.`);
               adset.copied_adset_id = copiedAdsetId;
-              updateCampaignDraftAdset(draft.id, adset.source_adset_id, { copied_adset_id: copiedAdsetId });
+              adset.copied_adset_page_id = adsetPage.changed ? adsetPage.pageId : "";
+              updateCampaignDraftAdset(draft.id, adset.source_adset_id, {
+                copied_adset_id: copiedAdsetId,
+                copied_adset_page_id: adset.copied_adset_page_id,
+              });
             }
 
             step = "rename-copied-adset";
@@ -14566,15 +14585,6 @@ function App() {
                      ? { bid_amount_brl: adset.bid_amount_brl }
                      : {}),
                  }),
-               });
-             }
-
-             const adsetPage = resolveCampaignDraftAdsetPage(adset);
-             if (adsetPage.changed && adsetPage.pageId) {
-               step = "update-copied-adset-page";
-               await fetchJson(`${API_BASE}/meta-adset-page`, {
-                 method: "POST",
-                 body: JSON.stringify({ adset_id: copiedAdsetId, page_id: adsetPage.pageId }),
                });
              }
 
