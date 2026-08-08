@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=187";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=188";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=187";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=188";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 187;
+const APP_VERSION_BUILD = 188;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -5097,10 +5097,13 @@ function GerenciarView({
         message: `${result.publishedItems} item(ns) enviado(s) para o Gerenciador de Anúncios com o status escolhido.`,
       });
     } else if (result.failedDrafts > 0) {
+      const firstFailure = result.failures?.[0];
       setManagerToast({
         type: "error",
         title: "Não foi possível publicar",
-        message: "Confira os detalhes no diagnóstico e tente novamente.",
+        message: firstFailure
+          ? `${firstFailure.message} (etapa: ${firstFailure.step})`
+          : "Confira os detalhes no diagnóstico e tente novamente.",
       });
     }
   };
@@ -14392,6 +14395,7 @@ function App() {
     setPublishing(true);
     const managerPublishStatus = "ACTIVE";
     const remaining = [];
+    const failures = [];
     let publishedItems = 0;
     let publishedDrafts = 0;
     for (const draft of drafts) {
@@ -14653,30 +14657,68 @@ function App() {
             throw new Error("Informe ao menos um anúncio para adicionar ao conjunto atual.");
           }
           for (const ad of adsToCreate) {
-            step = "create-ad-in-existing-adset";
             const sourceAdId = ad.source_ad_id || ad.id;
-            const createResult = await retryOnSubcode33(() =>
-              fetchJson(`${API_BASE}/meta-ad-create`, {
-                method: "POST",
-                body: JSON.stringify({
-                  ad_id: sourceAdId,
-                  adset_id: draft.target_adset_id,
-                  name: String(ad.new_name || ad.name || "Novo anúncio").trim(),
-                  status: "ACTIVE",
-                  sanitize_video_placements: true,
-                  replacement_image_hash: ad.replacement_image_hash || "",
-                  utm_tags: urlTagsForAd(ad),
-                }),
-              })
-            );
-            assertSelectedImageWasPublished(createResult, ad);
-            const createdAdId = createResult?.new_ad_id || createResult?.data?.id;
-            if (createdAdId) {
-              step = "activate-ad-in-existing-adset";
-              await fetchJson(`${API_BASE}/meta-ad-status`, {
-                method: "POST",
-                body: JSON.stringify({ ad_id: createdAdId, status: "ACTIVE" }),
-              });
+            const newName = String(ad.new_name || ad.name || "Novo anúncio").trim();
+            let createdAdId = "";
+            const canCopyCreativeDirectly = draft.traffic_type === "messages" && !ad.replacement_image_hash;
+
+            if (canCopyCreativeDirectly) {
+              step = "copy-ad-in-existing-adset";
+              try {
+                const copyResult = await retryOnSubcode33(() =>
+                  fetchJson(`${API_BASE}/meta-ad-copy`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      ad_id: sourceAdId,
+                      adset_id: draft.target_adset_id,
+                      status_option: "ACTIVE",
+                      rename_strategy: "NO_RENAME",
+                    }),
+                  })
+                );
+                createdAdId = copyResult?.new_ad_id || copyResult?.data?.copied_ad_id || copyResult?.data?.id || "";
+              } catch (copyError) {
+                const subcode =
+                  copyError?.data?.details?.error?.error_subcode ||
+                  copyError?.data?.details?.error_subcode;
+                if (subcode !== 3858504) throw copyError;
+                pushLog("gerenciar-anuncio-copy", {
+                  message: "A Meta não permitiu a cópia direta deste criativo. Recriando o anúncio de forma compatível.",
+                });
+              }
+            }
+
+            if (!createdAdId) {
+              step = "create-ad-in-existing-adset";
+              const createResult = await retryOnSubcode33(() =>
+                fetchJson(`${API_BASE}/meta-ad-create`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    ad_id: sourceAdId,
+                    adset_id: draft.target_adset_id,
+                    name: newName,
+                    status: "ACTIVE",
+                    sanitize_video_placements: true,
+                    replacement_image_hash: ad.replacement_image_hash || "",
+                    utm_tags: urlTagsForAd(ad),
+                  }),
+                })
+              );
+              assertSelectedImageWasPublished(createResult, ad);
+              createdAdId = createResult?.new_ad_id || createResult?.data?.id || "";
+            }
+
+            if (!createdAdId) {
+              throw new Error(`A Meta criou a cópia, mas não devolveu o ID do anúncio ${newName}.`);
+            }
+            if (canCopyCreativeDirectly) {
+              step = "rename-ad-in-existing-adset";
+              await retryOnSubcode33(() =>
+                fetchJson(`${API_BASE}/meta-rename`, {
+                  method: "POST",
+                  body: JSON.stringify({ object_id: createdAdId, name: newName }),
+                })
+              );
             }
           }
           pushLog("gerenciar-anuncio", {
@@ -14998,6 +15040,7 @@ function App() {
         publishedDrafts += 1;
       } catch (err) {
         pushLog(`duplicar-${step}`, err);
+        failures.push({ step, message: formatError(err) });
         remaining.push(draft);
       }
     }
@@ -15014,6 +15057,7 @@ function App() {
       publishedItems,
       publishedDrafts,
       failedDrafts: remaining.length,
+      failures,
     };
   };
 
