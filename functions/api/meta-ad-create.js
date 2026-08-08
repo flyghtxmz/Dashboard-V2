@@ -166,6 +166,33 @@ export function applyCreativePageOverride(objectStorySpec, pageId, instagramActo
   return { objectStorySpec: next, changed: true, unsupported: false };
 }
 
+const INSTAGRAM_IDENTITY_KEYS = new Set(["instagram_actor_id", "instagram_user_id"]);
+
+export function removeInstagramIdentity(value) {
+  let changed = false;
+  const visit = (current) => {
+    if (Array.isArray(current)) return current.map(visit);
+    if (!current || typeof current !== "object") return current;
+    const next = {};
+    Object.entries(current).forEach(([key, child]) => {
+      if (INSTAGRAM_IDENTITY_KEYS.has(key)) {
+        changed = true;
+        return;
+      }
+      next[key] = visit(child);
+    });
+    return next;
+  };
+  return { value: visit(value), changed };
+}
+
+export function isInstagramAccessError(payload) {
+  const text = JSON.stringify(payload || {}).toLocaleLowerCase("pt-BR");
+  if (!text.includes("instagram")) return false;
+  return ["acesso", "access", "autoriz", "authoriz", "permiss", "atribua", "assign"]
+    .some((term) => text.includes(term));
+}
+
 function isEmptyObject(value) {
   return (
     value &&
@@ -497,11 +524,30 @@ export async function onRequest({ request, env }) {
     }
     creativeParams.set("access_token", token);
 
-    const creativeRes = await fetch(
+    let creativeRes = await fetch(
       `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
       { method: "POST", body: creativeParams }
     );
-    const creativeData = await safeJson(creativeRes);
+    let creativeData = await safeJson(creativeRes);
+    let instagramIdentityRemoved = false;
+    if (!creativeRes.ok && isInstagramAccessError(creativeData)) {
+      const storyFallback = removeInstagramIdentity(objectStorySpec);
+      const feedFallback = removeInstagramIdentity(assetFeedSpec);
+      if (storyFallback.changed || feedFallback.changed) {
+        objectStorySpec = storyFallback.value;
+        assetFeedSpec = feedFallback.value;
+        if (objectStorySpec) creativeParams.set("object_story_spec", JSON.stringify(objectStorySpec));
+        else creativeParams.delete("object_story_spec");
+        if (assetFeedSpec) creativeParams.set("asset_feed_spec", JSON.stringify(assetFeedSpec));
+        else creativeParams.delete("asset_feed_spec");
+        creativeRes = await fetch(
+          `${API_BASE}/act_${encodeURIComponent(accountId)}/adcreatives`,
+          { method: "POST", body: creativeParams }
+        );
+        creativeData = await safeJson(creativeRes);
+        instagramIdentityRemoved = creativeRes.ok;
+      }
+    }
     if (!creativeRes.ok) {
       return jsonResponse(creativeRes.status, {
         error: "Erro Meta",
@@ -565,6 +611,7 @@ export async function onRequest({ request, env }) {
         verified_image_hash: replacement_image_hash ? String(replacement_image_hash) : null,
         actual_image_hashes: verifiedImageHashes,
         url_tags: resolvedUtmTags,
+        instagram_identity_removed: instagramIdentityRemoved,
       });
     }
 
@@ -597,6 +644,7 @@ export async function onRequest({ request, env }) {
       placement_adjusted: placementAdjust?.adjusted || false,
       placement_ratio: placementAdjust?.ratio || null,
       url_tags: resolvedUtmTags,
+      instagram_identity_removed: instagramIdentityRemoved,
     });
   } catch (error) {
     return jsonResponse(500, {

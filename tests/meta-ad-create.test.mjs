@@ -144,3 +144,69 @@ test("troca a Pagina do criativo e remove o Instagram antigo quando necessario",
   assert.equal(changed.objectStorySpec.instagram_actor_id, undefined);
   assert.equal(applyCreativePageOverride(null, "page-2").unsupported, true);
 });
+
+test("repete a criacao sem Instagram quando a conta nao tem acesso", async () => {
+  const originalFetch = globalThis.fetch;
+  let creativeAttempts = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes("/source-ad?")) {
+      return Response.json({
+        name: "Modelo",
+        account_id: "123",
+        creative: {
+          actor_id: "page-1",
+          instagram_actor_id: "ig-sem-acesso",
+          object_story_spec: {
+            page_id: "page-1",
+            instagram_actor_id: "ig-sem-acesso",
+            link_data: { link: "https://example.com", image_hash: "old-hash" },
+          },
+        },
+      });
+    }
+    if (target.endsWith("/act_123/adcreatives")) {
+      creativeAttempts += 1;
+      const sentSpec = JSON.parse(options.body.get("object_story_spec"));
+      if (creativeAttempts === 1) {
+        assert.equal(sentSpec.instagram_actor_id, "ig-sem-acesso");
+        return Response.json({
+          error: { message: "Ad account does not have access to this Instagram account." },
+        }, { status: 400 });
+      }
+      assert.equal(sentSpec.instagram_actor_id, undefined);
+      assert.equal(sentSpec.link_data.image_hash, "selected-hash");
+      return Response.json({ id: "new-creative" });
+    }
+    if (target.includes("/new-creative?")) {
+      return Response.json({
+        id: "new-creative",
+        object_story_spec: { link_data: { image_hash: "selected-hash" } },
+      });
+    }
+    if (target.endsWith("/act_123/ads")) return Response.json({ id: "new-ad" });
+    return Response.json({}, { status: 404 });
+  };
+
+  try {
+    const response = await onRequest({
+      request: new Request("https://example.com/api/meta-ad-create", {
+        method: "POST",
+        body: JSON.stringify({
+          ad_id: "source-ad",
+          adset_id: "target-adset",
+          name: "Novo anuncio",
+          replacement_image_hash: "selected-hash",
+        }),
+      }),
+      env: { META_ACCESS_TOKEN: "token" },
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.new_ad_id, "new-ad");
+    assert.equal(payload.instagram_identity_removed, true);
+    assert.equal(creativeAttempts, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
