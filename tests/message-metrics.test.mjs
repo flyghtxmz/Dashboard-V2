@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sortMessageCampaignRows } from "../message-metrics.mjs";
+import { matchesMessageCampaignFilter, sortMessageCampaignRows } from "../message-metrics.mjs";
 
 const rows = [
   { campaign_name: "Campanha 10", revenue_brl: 30, roas: null, margin_pct: -5, meta_impressions: 200, profit_per_conversation: null },
@@ -45,4 +45,17 @@ test("ordena as demais metricas agregadas da tabela", () => {
     sortMessageCampaignRows(rows, { key: "profit_per_conversation", direction: "asc" }).map((row) => row.campaign_name),
     ["Campanha 1", "Campanha 2", "Campanha 10"]
   );
+});
+
+test("filtra mensagens por objetivo de vendas ou otimizacao de conversas", () => {
+  const sales = { objective: "OUTCOME_SALES", adset_optimization_goal: "CONVERSATIONS" };
+  const engagement = { objective: "OUTCOME_ENGAGEMENT", adset_optimization_goal: "CONVERSATIONS" };
+  const leads = { objective: "OUTCOME_LEADS", adset_optimization_goal: "LEAD_GENERATION" };
+
+  assert.equal(matchesMessageCampaignFilter(sales, "sales"), true);
+  assert.equal(matchesMessageCampaignFilter(engagement, "sales"), false);
+  assert.equal(matchesMessageCampaignFilter(sales, "conversations"), true);
+  assert.equal(matchesMessageCampaignFilter(engagement, "conversations"), true);
+  assert.equal(matchesMessageCampaignFilter(leads, "conversations"), false);
+  assert.equal(matchesMessageCampaignFilter(leads, ""), true);
 });

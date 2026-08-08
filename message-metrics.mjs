@@ -50,3 +50,15 @@ export function sortMessageCampaignRows(rows, sorting = {}) {
     );
   });
 }
+
+export function matchesMessageCampaignFilter(row, filter = "") {
+  const selected = String(filter || "").trim().toLowerCase();
+  if (!selected) return true;
+  const objective = String(row?.objective || "").trim().toUpperCase();
+  const optimization = String(
+    row?.adset_optimization_goal || row?.optimization_goal || ""
+  ).trim().toUpperCase();
+  if (selected === "sales") return objective.includes("SALES");
+  if (selected === "conversations") return optimization.includes("CONVERSATION");
+  return true;
+}

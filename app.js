@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=179";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=180";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { sortMessageCampaignRows } from "./message-metrics.mjs?v=179";
+import { matchesMessageCampaignFilter, sortMessageCampaignRows } from "./message-metrics.mjs?v=180";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 179;
+const APP_VERSION_BUILD = 180;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -360,6 +360,7 @@ function messageMetricsStorageKey({
   endDate,
   metaAccountId,
   pageId,
+  messageType,
   adsetFilter,
   taxSignature,
   hiddenSignature,
@@ -375,6 +376,7 @@ function messageMetricsStorageKey({
     endDate || "sem-fim",
     metaAccountId || "sem-conta",
     pageId || "todas-paginas",
+    messageType || "todos-tipos",
     normalizeKey(adsetFilter || "sem-filtro"),
     taxSignature || "imposto-padrao",
     hiddenSignature || "nenhuma-oculta",
@@ -392,10 +394,11 @@ function legacyMessageMetricsStorageKey({ domain, startDate, endDate, metaAccoun
   ].join(":");
 }
 
-function messageMetricsServerVariant({ pageId, adsetFilter, taxSignature, hiddenSignature }) {
+function messageMetricsServerVariant({ pageId, messageType, adsetFilter, taxSignature, hiddenSignature }) {
   return [
     "message-refresh-v4",
     pageId || "todas-paginas",
+    messageType || "todos-tipos",
     normalizeKey(adsetFilter || "sem-filtro"),
     taxSignature || "imposto-padrao",
     hiddenSignature || "nenhuma-oculta",
@@ -1421,6 +1424,7 @@ function MetricasMensagensView({
   ltvExtraDays = [],
   attributionAudit = null,
   pageScoped = false,
+  messageTypeScoped = false,
   refreshComparisonSnapshot = null,
   refreshSyncStatus = "idle",
   refreshSyncError = "",
@@ -1428,6 +1432,7 @@ function MetricasMensagensView({
   dateComparisonError = "",
 }) {
   const label = performanceUnitLabel(usePmLabels);
+  const messageScopeFiltered = pageScoped || messageTypeScoped;
   const safeRows = Array.isArray(rows) ? rows : [];
   const cacheDiagnostics = [
     diagnostics?.joinadsSuperFilterDiagnostics?.earnings?.cache,
@@ -2345,7 +2350,7 @@ function MetricasMensagensView({
   };
   // Com filtro de Pagina ativo, ate src_ e global. Nesse caso usamos somente as
   // origens efetivamente resolvidas para anuncios da pagina selecionada.
-  if (pageScoped) {
+  if (messageScopeFiltered) {
     messengerMedium = {
       ...messengerMedium,
       impressions: totalsRow.joinads_impressions || 0,
@@ -2358,22 +2363,22 @@ function MetricasMensagensView({
       ecpm: totalsRow.ecpm,
     };
   }
-  const paidMessengerRevenueUsd = pageScoped
+  const paidMessengerRevenueUsd = messageScopeFiltered
     ? totalsRow.revenue_usd
     : Math.max(totalsRow.revenue_usd, messengerGlobal.revenue_usd - campaignOriginTotals.evoOrganic.revenueUsd);
-  const paidMessengerImpressions = pageScoped
+  const paidMessengerImpressions = messageScopeFiltered
     ? totalsRow.joinads_impressions
     : Math.max(totalsRow.joinads_impressions, messengerGlobal.impressions - campaignOriginTotals.evoOrganic.impressions);
   const realRevenueCoverage = paidMessengerRevenueUsd > 0 ? totalsRow.revenue_usd / paidMessengerRevenueUsd : null;
   const realImpressionCoverage = paidMessengerImpressions > 0 ? totalsRow.joinads_impressions / paidMessengerImpressions : null;
   const economicRoas = totalsRow.spend_brl > 0 ? paidMessengerRevenueUsd * toNumber(brlRate) / totalsRow.spend_brl : null;
   const economicProfitBrl = paidMessengerRevenueUsd * toNumber(brlRate) - totalsRow.spend_brl;
-  const unclassifiedMessengerRevenueUsd = pageScoped ? 0 : Math.max(
+  const unclassifiedMessengerRevenueUsd = messageScopeFiltered ? 0 : Math.max(
     0,
     messengerGlobal.revenue_usd - campaignOriginTotals.src.revenueUsd -
       campaignOriginTotals.evoOrganic.revenueUsd - campaignOriginTotals.other.revenueUsd
   );
-  const unclassifiedMessengerImpressions = pageScoped ? 0 : Math.max(
+  const unclassifiedMessengerImpressions = messageScopeFiltered ? 0 : Math.max(
     0,
     messengerGlobal.impressions - campaignOriginTotals.src.impressions -
       campaignOriginTotals.evoOrganic.impressions - campaignOriginTotals.other.impressions
@@ -3011,6 +3016,8 @@ function MetricasMensagensView({
           </div>
           <div className="inline-actions">
             <span className="chip neutral">${normalizedMessageSearch ? `${visibleCampaignRows.length} de ${campaignRows.length}` : campaignRows.length} campanhas de mensagem</span>
+            ${pageScoped ? html`<span className="chip neutral">Pagina filtrada</span>` : null}
+            ${messageTypeScoped ? html`<span className="chip neutral">${reportFilters.messageType === "sales" ? "Objetivo Vendas" : "Otimizacao CONVERSATIONS"}</span>` : null}
             <span className=${`chip ${joinadsDataSource.className}`} title=${joinadsDataSource.title}>${joinadsDataSource.label}</span>
             ${explicitComparisonDate && comparisonMetrics?.campaigns
               ? html`<span className="chip neutral" title=${`Setas comparam os dados atuais com o dia ${explicitComparisonLabel}`}>Comparando com ${explicitComparisonLabel}</span>`
@@ -3621,7 +3628,9 @@ function MetricasMensagensView({
           </div>
         </div>
         <p className="muted small">
-          ${pageScoped
+          ${messageTypeScoped
+            ? html`<strong>Filtro de tipo/otimizacao ativo:</strong> os numeros abaixo usam somente as campanhas que correspondem ao recorte selecionado.`
+            : pageScoped
             ? html`<strong>Filtro de Página ativo:</strong> os números abaixo usam a atribuição por
                 campanha da página selecionada (não o total por <code>utm_medium</code>, que é global).`
             : html`O resumo oficial usa somente <code>utm_campaign=src_*</code>. O total global de
@@ -3968,6 +3977,7 @@ function Filters({
   domainsLoading,
   pages = [],
   showPageFilter = false,
+  showMessageTypeFilter = false,
 }) {
   const setDate = (key, value) => {
     setFilters((prev) => {
@@ -4096,6 +4106,21 @@ function Filters({
                 ${!pages.length
                   ? html`<span className="muted small">Carregue os dados para listar as páginas.</span>`
                   : null}
+              </label>
+            `
+          : null}
+        ${showMessageTypeFilter
+          ? html`
+              <label className="field">
+                <span>Tipo / otimizacao</span>
+                <select
+                  value=${filters.messageType || ""}
+                  onChange=${(e) => setFilters((prev) => ({ ...prev, messageType: e.target.value }))}
+                >
+                  <option value="">Todas as campanhas de mensagens</option>
+                  <option value="sales">Objetivo Vendas</option>
+                  <option value="conversations">Otimizacao: CONVERSATIONS</option>
+                </select>
               </label>
             `
           : null}
@@ -11282,6 +11307,7 @@ function App() {
     metaAccountId: "act_728792692620145",
     adsetFilter: "",
     pageId: "",
+    messageType: "",
     includeAssets: false,
   });
   const [superFilter, setSuperFilter] = useState([]);
@@ -11646,6 +11672,7 @@ function App() {
       endDate: date,
       metaAccountId: selectedFilters.metaAccountId,
       pageId: selectedFilters.pageId,
+      messageType: selectedFilters.messageType,
       adsetFilter: selectedFilters.adsetFilter,
       taxSignature: [
         settingsData.metaTaxEnabled !== false ? "on" : "off",
@@ -11784,6 +11811,7 @@ function App() {
       .filter((row) => !hiddenCampaigns.has(row.campaign_id))
       .filter((row) => !isGestorSession(session) || rowMatchesDashboardUser(row, session?.username))
       .filter((row) => !selectedFilters.pageId || String(row.page_id || "") === String(selectedFilters.pageId))
+      .filter((row) => matchesMessageCampaignFilter(row, selectedFilters.messageType))
       .filter((row) => {
         const term = String(selectedFilters.adsetFilter || "").trim().toLocaleLowerCase("pt-BR");
         return !term || [row.campaign_name, row.adset_name, row.ad_name]
@@ -15206,7 +15234,7 @@ function App() {
     const pageId = String(activeMessageFilters.pageId || "").trim();
     const base = mergedMeta.filter((row) => {
       if (hiddenCampaigns.has(row.campaign_id)) return false;
-      return isMessageMetricsRow(row);
+      return isMessageMetricsRow(row) && matchesMessageCampaignFilter(row, activeMessageFilters.messageType);
     });
     const scopedBase = isGestorSession(session)
       ? base.filter((row) => rowMatchesDashboardUser(row, session?.username))
@@ -15225,6 +15253,7 @@ function App() {
     mergedMeta,
     activeMessageFilters.adsetFilter,
     activeMessageFilters.pageId,
+    activeMessageFilters.messageType,
     hiddenCampaigns,
     session?.role,
     session?.username,
@@ -15243,12 +15272,14 @@ function App() {
     endDate: activeMessageFilters.endDate,
     metaAccountId: activeMessageFilters.metaAccountId,
     pageId: activeMessageFilters.pageId,
+    messageType: activeMessageFilters.messageType,
     adsetFilter: activeMessageFilters.adsetFilter,
     taxSignature: messageTaxSignature,
     hiddenSignature: messageHiddenSignature,
   });
   const messageRefreshServerVariant = messageMetricsServerVariant({
     pageId: activeMessageFilters.pageId,
+    messageType: activeMessageFilters.messageType,
     adsetFilter: activeMessageFilters.adsetFilter,
     taxSignature: messageTaxSignature,
     hiddenSignature: messageHiddenSignature,
@@ -15294,7 +15325,7 @@ function App() {
         ? null
         : storedCurrent;
       if (!sameCompletedRefresh) {
-        if (!storedCurrent) {
+        if (!storedCurrent && !activeMessageFilters.messageType && !activeMessageFilters.adsetFilter) {
           try {
             const legacy = JSON.parse(localStorage.getItem(legacyMessageRefreshComparisonKey) || "null");
             if (legacy?.campaigns) previous = legacy;
@@ -15864,6 +15895,7 @@ function App() {
             domainsLoading=${domainsLoading}
             pages=${messagePageOptions}
             showPageFilter=${activeTab === "metricas_mensagens"}
+            showMessageTypeFilter=${activeTab === "metricas_mensagens"}
           />
         ` : null}
 
@@ -15902,8 +15934,9 @@ function App() {
                 advertiserRows=${advertiserRows}
                 advertiserDiagnostics=${advertiserDiagnostics}
                 messenleadSources=${messenleadSources}
-                reportFilters=${appliedFilters || filters}
-                pageScoped=${!!filters.pageId}
+                reportFilters=${activeMessageFilters}
+                pageScoped=${!!activeMessageFilters.pageId}
+                messageTypeScoped=${!!activeMessageFilters.messageType}
                 refreshComparisonSnapshot=${messageRefreshComparison}
                 refreshSyncStatus=${messageRefreshSyncStatus}
                 refreshSyncError=${messageRefreshSyncError}
@@ -16065,6 +16098,7 @@ function App() {
           domainsLoading=${domainsLoading}
           pages=${messagePageOptions}
           showPageFilter=${activeTab === "metricas_mensagens"}
+          showMessageTypeFilter=${activeTab === "metricas_mensagens"}
         />
       ` : null}
 
@@ -16132,8 +16166,9 @@ function App() {
             advertiserRows=${advertiserRows}
             advertiserDiagnostics=${advertiserDiagnostics}
             messenleadSources=${messenleadSources}
-            reportFilters=${appliedFilters || filters}
-            pageScoped=${!!filters.pageId}
+            reportFilters=${activeMessageFilters}
+            pageScoped=${!!activeMessageFilters.pageId}
+            messageTypeScoped=${!!activeMessageFilters.messageType}
             refreshComparisonSnapshot=${messageRefreshComparison}
             refreshSyncStatus=${messageRefreshSyncStatus}
             refreshSyncError=${messageRefreshSyncError}
