@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=178";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=179";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { sortMessageCampaignRows } from "./message-metrics.mjs?v=178";
+import { sortMessageCampaignRows } from "./message-metrics.mjs?v=179";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 178;
+const APP_VERSION_BUILD = 179;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -2990,7 +2990,9 @@ function MetricasMensagensView({
   </button></th>`;
   const toggleMessageSort = (key) => setMessageSort((current) => ({
     key,
-    direction: current.key === key && current.direction === "desc" ? "asc" : "desc",
+    direction: current.key === key
+      ? current.direction === "desc" ? "asc" : "desc"
+      : key === "campaign_name" ? "asc" : "desc",
   }));
   const messageSortHeader = (key, headerLabel) => html`<th aria-sort=${
     messageSort.key === key ? (messageSort.direction === "asc" ? "ascending" : "descending") : "none"
@@ -3057,23 +3059,23 @@ function MetricasMensagensView({
           <table>
             <thead>
               <tr>
-                <th>Campanha</th>
-                <th>Impressoes Meta</th>
-                <th>CTR Meta</th>
-                <th>Conversas iniciadas</th>
+                ${messageSortHeader("campaign_name", "Campanha")}
+                ${messageSortHeader("meta_impressions", "Impressoes Meta")}
+                ${messageSortHeader("ctr_meta", "CTR Meta")}
+                ${messageSortHeader("conversations", "Conversas iniciadas")}
                 ${showUserCommission
                   ? null
                   : html`
-                      <th>Custo por resultado Meta</th>
-                      <th>Custo por conversa</th>
-                      <th>Receita por conversa</th>
-                      <th>Lucro por conversa</th>
+                      ${messageSortHeader("meta_cost_per_result", "Custo por resultado Meta")}
+                      ${messageSortHeader("cost_per_conversation", "Custo por conversa")}
+                      ${messageSortHeader("revenue_per_conversation", "Receita por conversa")}
+                      ${messageSortHeader("profit_per_conversation", "Lucro por conversa")}
                     `}
-                <th>Imp. JoinAds</th>
-                <th>Imp. JoinAds / conversa</th>
-                <th>Visitas / conversa</th>
-                <th>Cliques JoinAds</th>
-                ${showUserCommission ? null : html`<th>Gasto Meta total</th>`}
+                ${messageSortHeader("joinads_impressions", "Imp. JoinAds")}
+                ${messageSortHeader("joinads_impressions_per_conversation", "Imp. JoinAds / conversa")}
+                ${messageSortHeader("visits_per_conversation", "Visitas / conversa")}
+                ${messageSortHeader("joinads_clicks", "Cliques JoinAds")}
+                ${showUserCommission ? null : messageSortHeader("spend_brl", "Gasto Meta total")}
                 ${showUserCommission
                   ? html`<th>Lucro do usuario</th>`
                   : html`

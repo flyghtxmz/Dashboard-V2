@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { sortMessageCampaignRows } from "../message-metrics.mjs";
 
 const rows = [
-  { campaign_name: "Campanha 10", revenue_brl: 30, roas: null, margin_pct: -5 },
-  { campaign_name: "Campanha 2", revenue_brl: 80, roas: 2.1, margin_pct: 25 },
-  { campaign_name: "Campanha 1", revenue_brl: 50, roas: 1.2, margin_pct: 10 },
+  { campaign_name: "Campanha 10", revenue_brl: 30, roas: null, margin_pct: -5, meta_impressions: 200, profit_per_conversation: null },
+  { campaign_name: "Campanha 2", revenue_brl: 80, roas: 2.1, margin_pct: 25, meta_impressions: 900, profit_per_conversation: 18 },
+  { campaign_name: "Campanha 1", revenue_brl: 50, roas: 1.2, margin_pct: 10, meta_impressions: 500, profit_per_conversation: 7 },
 ];
 
 test("ordena metricas de mensagens do maior para o menor", () => {
@@ -26,5 +26,23 @@ test("usa receita BRL decrescente quando a coluna e invalida", () => {
   assert.deepEqual(
     sortMessageCampaignRows(rows, { key: "nao-existe", direction: "asc" }).map((row) => row.campaign_name),
     ["Campanha 2", "Campanha 1", "Campanha 10"]
+  );
+});
+
+test("ordena campanha alfabeticamente com numeracao natural", () => {
+  assert.deepEqual(
+    sortMessageCampaignRows(rows, { key: "campaign_name", direction: "asc" }).map((row) => row.campaign_name),
+    ["Campanha 1", "Campanha 2", "Campanha 10"]
+  );
+});
+
+test("ordena as demais metricas agregadas da tabela", () => {
+  assert.deepEqual(
+    sortMessageCampaignRows(rows, { key: "meta_impressions", direction: "desc" }).map((row) => row.campaign_name),
+    ["Campanha 2", "Campanha 1", "Campanha 10"]
+  );
+  assert.deepEqual(
+    sortMessageCampaignRows(rows, { key: "profit_per_conversation", direction: "asc" }).map((row) => row.campaign_name),
+    ["Campanha 1", "Campanha 2", "Campanha 10"]
   );
 });
