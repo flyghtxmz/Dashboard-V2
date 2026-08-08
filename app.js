@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=182";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=183";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { matchesMessageCampaignFilter, sortMessageCampaignRows } from "./message-metrics.mjs?v=180";
+import { matchesMessageCampaignFilter, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=183";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 182;
+const APP_VERSION_BUILD = 183;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -2873,37 +2873,28 @@ function MetricasMensagensView({
   };
   const formatMessageBudget = (adset) => {
     if (!adset) return "-";
-    if (adset.dailyBudgetBrl != null) {
+    if (Number(adset.dailyBudgetBrl || 0) > 0) {
       return `Conjunto: ${currencyBRL.format(adset.dailyBudgetBrl)} / dia`;
     }
-    if (adset.lifetimeBudgetBrl != null) {
+    if (Number(adset.lifetimeBudgetBrl || 0) > 0) {
       return `Conjunto: ${currencyBRL.format(adset.lifetimeBudgetBrl)} (vitalicio)`;
     }
-    if (adset.campaignDailyBudgetBrl != null) {
+    if (Number(adset.campaignDailyBudgetBrl || 0) > 0) {
       return `Campanha: ${currencyBRL.format(adset.campaignDailyBudgetBrl)} / dia`;
     }
-    if (adset.campaignLifetimeBudgetBrl != null) {
+    if (Number(adset.campaignLifetimeBudgetBrl || 0) > 0) {
       return `Campanha: ${currencyBRL.format(adset.campaignLifetimeBudgetBrl)} (vitalicio)`;
     }
     return "Sem valor definido";
   };
-  const getMessageBudgetTarget = (adset) => {
-    if (!adset?.id) return { id: "", scope: "adset" };
-    if (adset.dailyBudgetBrl != null || adset.lifetimeBudgetBrl != null || !adset.campaignId) {
-      return { id: adset.id, scope: "adset" };
-    }
-    if (adset.campaignDailyBudgetBrl != null || adset.campaignLifetimeBudgetBrl != null) {
-      return { id: adset.campaignId, scope: "campaign" };
-    }
-    return { id: adset.id, scope: "adset" };
-  };
+  const getMessageBudgetTarget = resolveMessageBudgetTarget;
   const getMessageBudgetInput = (adset) => {
     if (!adset?.id) return "";
     if (messageBudgetInputs[adset.id] !== undefined) {
       return messageBudgetInputs[adset.id];
     }
-    if (adset.dailyBudgetBrl != null) return adset.dailyBudgetBrl.toFixed(2);
-    if (adset.campaignDailyBudgetBrl != null) return adset.campaignDailyBudgetBrl.toFixed(2);
+    if (Number(adset.dailyBudgetBrl || 0) > 0) return adset.dailyBudgetBrl.toFixed(2);
+    if (Number(adset.campaignDailyBudgetBrl || 0) > 0) return adset.campaignDailyBudgetBrl.toFixed(2);
     return "";
   };
   const getMessageBidStrategy = (adset) =>
@@ -14038,6 +14029,7 @@ function App() {
     const confirmLiveBid = async () => {
       let actual = null;
       let rawActual = null;
+      let actualStrategy = "";
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const params = new URLSearchParams({ adset_id: adsetId, _ts: String(Date.now()) });
         const confirmation = await fetchJson(`${API_BASE}/meta-adset-bid?${params.toString()}`, {
@@ -14045,12 +14037,16 @@ function App() {
           cache: "no-store",
         });
         actual = confirmation?.adset || null;
-        const actualStrategy = String(actual?.bid_strategy || "").toUpperCase();
+        actualStrategy = String(actual?.bid_strategy || "").toUpperCase();
         rawActual = actualStrategy === BID_STRATEGY_COST_CAP
           ? actual?.bid_constraints?.cost_per_result_goal ?? actual?.bid_constraints?.cost_cap ?? actual?.bid_amount
           : actual?.bid_amount ?? actual?.bid_constraints?.bid_cap;
         const amountBrl = rawActual != null ? toNumber(rawActual) / 100 : null;
-        if (!requiresBidValue || (amountBrl != null && Math.abs(amountBrl - bidNumber) < 0.005)) break;
+        const strategyMatches = actualStrategy === bidStrategy;
+        const amountMatches = !requiresBidValue || (
+          amountBrl != null && Math.abs(amountBrl - bidNumber) < 0.005
+        );
+        if (strategyMatches && amountMatches) break;
         if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 700));
       }
       if (!actual) throw new Error("A Meta nao retornou o lance para confirmacao.");
@@ -14067,17 +14063,25 @@ function App() {
             : row
         )
       );
-      return { actual, amountBrl: rawActual != null ? toNumber(rawActual) / 100 : null };
+      return {
+        actual,
+        actualStrategy,
+        amountBrl: rawActual != null ? toNumber(rawActual) / 100 : null,
+      };
     };
 
     const showBidConfirmation = (confirmed) => {
-      const matches = !requiresBidValue || (
+      const strategyMatches = confirmed.actualStrategy === bidStrategy;
+      const amountMatches = !requiresBidValue || (
         confirmed.amountBrl != null && Math.abs(confirmed.amountBrl - bidNumber) < 0.005
       );
+      const matches = strategyMatches && amountMatches;
       const message = matches
         ? requiresBidValue
           ? `Confirmado na Meta: R$ ${confirmed.amountBrl.toFixed(2)}.`
           : "Confirmado na Meta: sem limite definido."
+        : !strategyMatches
+        ? `NAO APLICADO: voce escolheu ${formatBidStrategy(bidStrategy)}, mas a Meta manteve ${formatBidStrategy(confirmed.actualStrategy || "desconhecida")}.`
         : `NAO APLICADO: voce pediu R$ ${bidNumber.toFixed(2)}, mas a Meta manteve R$ ${confirmed.amountBrl != null ? confirmed.amountBrl.toFixed(2) : "0,00"}.`;
       setBidFeedback((prev) => ({ ...prev, [adsetId]: { ok: matches, message } }));
       pushLog(matches ? "meta-bid-confirmed" : "meta-bid-not-applied", { message, data: confirmed.actual });
@@ -14108,12 +14112,14 @@ function App() {
         let campApplied = null;
         let campWarning = "";
         let strategyError = null;
+        let campaignAdsetUpdated = null;
         try {
           const campRes = await fetchJson(`${API_BASE}/meta-campaign-bid`, {
             method: "POST",
             body: JSON.stringify({
               campaign_id: campaignId,
               bid_strategy: bidStrategy,
+              ...(requiresBidValue ? { adset_id: adsetId, bid_amount_brl: bidNumber } : {}),
               soft_fail: true,
             }),
           });
@@ -14126,6 +14132,9 @@ function App() {
             campaignStrategy = String(campRes?.campaign?.bid_strategy || "").toUpperCase();
             campApplied = campRes?.applied ?? null;
             campWarning = campRes?.warning || "";
+            campaignAdsetUpdated = (campRes?.adsets || []).find(
+              (item) => String(item?.id) === String(adsetId)
+            ) || null;
           }
         } catch (err) {
           strategyError = err;
@@ -14133,9 +14142,9 @@ function App() {
 
         // 2) Estrategia e valor no CONJUNTO. O Gerenciador costuma exibir o rotulo pelo conjunto;
         //    se a Meta rejeitar a estrategia aqui, mantemos pelo menos o valor do cap.
-        let adsetUpdated = null;
+        let adsetUpdated = campaignAdsetUpdated;
         let adsetStrategyError = null;
-        if (requiresBidValue) {
+        if (requiresBidValue && !(campApplied === true && adsetUpdated)) {
           try {
             const adsetRes = await fetchJson(`${API_BASE}/meta-adset-bid`, {
               method: "POST",

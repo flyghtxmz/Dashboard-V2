@@ -88,6 +88,21 @@ export function readBudgetDraft(item) {
   return { budget_type: "none", budget_brl: "" };
 }
 
+export function readBidDraft(item, fallbackStrategy = "") {
+  const strategy = String(item?.bid_strategy || fallbackStrategy || "").trim().toUpperCase();
+  const constraints = item?.bid_constraints || {};
+  const rawAmount = strategy === "COST_CAP"
+    ? constraints.cost_per_result_goal ?? constraints.cost_cap ?? item?.bid_amount
+    : strategy === "LOWEST_COST_WITH_BID_CAP"
+      ? item?.bid_amount ?? constraints.bid_cap
+      : null;
+  const amount = Number(rawAmount);
+  return {
+    bid_strategy: strategy || "LOWEST_COST_WITHOUT_CAP",
+    bid_amount_brl: Number.isFinite(amount) && amount > 0 ? (amount / 100).toFixed(2) : "",
+  };
+}
+
 export function buildCampaignCopyStructure(campaign) {
   return (campaign?.adsets || []).map((adset, adsetIndex) => {
     const cjToken = `cj${String(adsetIndex + 1).padStart(2, "0")}`;
@@ -96,6 +111,7 @@ export function buildCampaignCopyStructure(campaign) {
       source_name: String(adset?.name || "Conjunto"),
       new_name: replaceCjToken(adset?.name || "Conjunto", cjToken),
       ...readBudgetDraft(adset),
+      ...readBidDraft(adset, campaign?.bid_strategy),
       countries: (adset?.targeting?.geo_locations?.countries || adset?.countries || [])
         .map((code) => String(code || "").trim().toUpperCase())
         .filter((code) => /^[A-Z]{2}$/.test(code)),

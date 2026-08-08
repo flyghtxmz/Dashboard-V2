@@ -135,6 +135,8 @@ export async function onRequest({ request, env }) {
 
     let data = null;
     let response = null;
+    let adset = null;
+    let confirmed = false;
     const errors = [];
     for (const attempt of attempts) {
       const params = new URLSearchParams();
@@ -146,13 +148,44 @@ export async function onRequest({ request, env }) {
         body: params,
       });
       data = await safeJson(response);
-      if (response.ok) break;
-      errors.push({ attempt, details: data });
+      if (!response.ok) {
+        errors.push({ attempt, details: data });
+        continue;
+      }
+
+      for (let confirmationAttempt = 0; confirmationAttempt < 2; confirmationAttempt += 1) {
+        try {
+          adset = await fetchAdsetSnapshot(token, adset_id);
+        } catch (_) {
+          adset = null;
+        }
+        const actualStrategy = String(adset?.bid_strategy || "").toUpperCase();
+        const actualAmount = bidAmountCents(adset);
+        const strategyMatches = !updateStrategy || actualStrategy === bidStrategy;
+        const amountMatches = !requiresAmount || (
+          actualAmount != null && Number(actualAmount) === Number(amountCents)
+        );
+        if (strategyMatches && amountMatches) {
+          confirmed = true;
+          break;
+        }
+        if (confirmationAttempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 350));
+        }
+      }
+      if (confirmed) break;
+      errors.push({
+        attempt,
+        details: {
+          message: "A Meta respondeu com sucesso, mas nao confirmou a alteracao.",
+          adset,
+        },
+      });
     }
 
-    if (!response?.ok) {
+    if (!response?.ok || !confirmed) {
       const payload = {
-        error: "Erro Meta",
+        error: response?.ok ? "Alteracao nao confirmada pela Meta" : "Erro Meta",
         details: data,
         attempts: errors,
       };
@@ -160,23 +193,16 @@ export async function onRequest({ request, env }) {
         return jsonResponse(200, {
           code: "meta_rejected",
           ok: false,
-          adset: null,
+          adset,
           requested_strategy: updateStrategy ? bidStrategy : null,
           applied: false,
           warning:
             data?.error?.message ||
-            "A Meta recusou alterar a estrategia/valor do conjunto.",
+            "A Meta nao confirmou a estrategia/valor do conjunto.",
           ...payload,
         });
       }
-      return jsonResponse(response?.status || 400, payload);
-    }
-
-    let adset = null;
-    try {
-      adset = await fetchAdsetSnapshot(token, adset_id);
-    } catch (e) {
-      adset = null;
+      return jsonResponse(response?.ok ? 409 : response?.status || 400, payload);
     }
 
     // A Meta retorna 200 mesmo quando ignora a troca de estrategia (comum quando a estrategia e

@@ -79,7 +79,7 @@ export async function onRequest({ request, env }) {
   const end_date = params.get("end_date");
   const force = params.get("force") === "1" || params.get("force") === "true";
   const kv = env.CPA_RULES_KV || env.DASHBOARD_KV;
-  const cacheKey = `meta_structure:v4:${account_id}:${start_date || ""}:${end_date || ""}`;
+  const cacheKey = `meta_structure:v5:${account_id}:${start_date || ""}:${end_date || ""}`;
 
   // ── KV cache read ──────────────────────────────────────
   if (kv && !force) {
@@ -110,7 +110,7 @@ export async function onRequest({ request, env }) {
 
   try {
     // ── 3 parallel paginated fetches — NO nested loops ────
-    const campFields = "id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining";
+    const campFields = "id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy";
     const adsetFields = "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,promoted_object,start_time,end_time";
     const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{id,url_tags,image_hash,thumbnail_url,actor_id,instagram_actor_id,asset_feed_spec,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{page_id,instagram_actor_id,link_data{link,image_hash,picture},photo_data{image_hash},video_data{call_to_action}}}";
     const insightFields = "ad_id,spend,ctr,cpc,cpm,frequency,impressions,video_thruplay_watched_actions";

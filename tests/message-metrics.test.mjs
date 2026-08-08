@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { matchesMessageCampaignFilter, sortMessageCampaignRows } from "../message-metrics.mjs";
+import { matchesMessageCampaignFilter, resolveMessageBudgetTarget, sortMessageCampaignRows } from "../message-metrics.mjs";
 
 const rows = [
   { campaign_name: "Campanha 10", revenue_brl: 30, roas: null, margin_pct: -5, meta_impressions: 200, profit_per_conversation: null },
@@ -58,4 +58,21 @@ test("filtra mensagens por objetivo de vendas ou otimizacao de conversas", () =>
   assert.equal(matchesMessageCampaignFilter(engagement, "conversations"), true);
   assert.equal(matchesMessageCampaignFilter(leads, "conversations"), false);
   assert.equal(matchesMessageCampaignFilter(leads, ""), true);
+});
+
+test("reconhece CBO mesmo quando a Meta devolve orcamento zero no conjunto", () => {
+  assert.deepEqual(resolveMessageBudgetTarget({
+    id: "set-1",
+    campaignId: "cmp-1",
+    dailyBudgetBrl: 0,
+    lifetimeBudgetBrl: null,
+    campaignDailyBudgetBrl: 50,
+  }), { id: "cmp-1", scope: "campaign" });
+
+  assert.deepEqual(resolveMessageBudgetTarget({
+    id: "set-2",
+    campaignId: "cmp-1",
+    dailyBudgetBrl: 20,
+    campaignDailyBudgetBrl: 0,
+  }), { id: "set-2", scope: "adset" });
 });

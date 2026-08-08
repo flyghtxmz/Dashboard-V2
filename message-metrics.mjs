@@ -62,3 +62,16 @@ export function matchesMessageCampaignFilter(row, filter = "") {
   if (selected === "conversations") return optimization.includes("CONVERSATION");
   return true;
 }
+
+export function resolveMessageBudgetTarget(adset) {
+  if (!adset?.id) return { id: "", scope: "adset" };
+  const hasAdsetBudget =
+    Number(adset.dailyBudgetBrl || 0) > 0 || Number(adset.lifetimeBudgetBrl || 0) > 0;
+  const hasCampaignBudget =
+    Number(adset.campaignDailyBudgetBrl || 0) > 0 ||
+    Number(adset.campaignLifetimeBudgetBrl || 0) > 0;
+  if (hasCampaignBudget && !hasAdsetBudget && adset.campaignId) {
+    return { id: adset.campaignId, scope: "campaign" };
+  }
+  return { id: adset.id, scope: "adset" };
+}

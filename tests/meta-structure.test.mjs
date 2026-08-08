@@ -8,7 +8,7 @@ test("preserva campanha e conjunto sem anuncios na estrutura canonica", async ()
     const pathname = new URL(url).pathname;
     if (pathname.endsWith("/campaigns")) {
       return Response.json({
-        data: [{ id: "cmp-1", name: "Vendas site", objective: "OUTCOME_SALES", status: "PAUSED", daily_budget: "4500" }],
+        data: [{ id: "cmp-1", name: "Vendas site", objective: "OUTCOME_SALES", status: "PAUSED", daily_budget: "4500", bid_strategy: "COST_CAP" }],
       });
     }
     if (pathname.endsWith("/adsets")) {
@@ -30,6 +30,7 @@ test("preserva campanha e conjunto sem anuncios na estrutura canonica", async ()
     assert.equal(body.structure.length, 1);
     assert.equal(body.structure[0].objective, "OUTCOME_SALES");
     assert.equal(body.structure[0].daily_budget, "4500");
+    assert.equal(body.structure[0].bid_strategy, "COST_CAP");
     assert.equal(body.structure[0].adsets.length, 1);
     assert.equal(body.structure[0].adsets[0].id, "set-1");
     assert.deepEqual(body.structure[0].adsets[0].ads, []);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCjToken, nextCampaignCopyName, readBudgetDraft, replaceCjToken, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCjToken, nextCampaignCopyName, readBidDraft, readBudgetDraft, replaceCjToken, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
 
 test("incrementa CJ usando o maior conjunto existente na campanha", () => {
   const campaign = {
@@ -89,4 +89,21 @@ test("preserva o orcamento no nivel correto ao duplicar campanha", () => {
   });
   assert.equal(structure[0].budget_type, "daily");
   assert.equal(structure[0].budget_brl, "27.50");
+});
+
+test("preserva a meta de custo ao montar a copia da campanha", () => {
+  assert.deepEqual(readBidDraft({
+    bid_strategy: "COST_CAP",
+    bid_constraints: { cost_per_result_goal: 1850 },
+  }), {
+    bid_strategy: "COST_CAP",
+    bid_amount_brl: "18.50",
+  });
+
+  const structure = buildCampaignCopyStructure({
+    bid_strategy: "COST_CAP",
+    adsets: [{ id: "set-1", name: "produto-cj01", bid_amount: 2200, ads: [] }],
+  });
+  assert.equal(structure[0].bid_strategy, "COST_CAP");
+  assert.equal(structure[0].bid_amount_brl, "22.00");
 });
