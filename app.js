@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 180;
+const APP_VERSION_BUILD = 181;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -10294,8 +10294,8 @@ function ConfiguracoesView({ settings, onSave, saving }) {
           username: user.username,
           password: user.password || "",
           role: user.role,
-          allowedDomains: user.allowedDomains || [],
-          commissionPercent: normalizeCommissionPercent(user.commissionPercent),
+          allowedDomains: user.role === "admin" ? [] : user.allowedDomains || [],
+          commissionPercent: user.role === "admin" ? 0 : normalizeCommissionPercent(user.commissionPercent),
           active: user.active !== false,
         })),
       });
@@ -10441,7 +10441,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
             <div>
               <h3 className="settings-title">Usu\u00e1rios</h3>
               <p className="muted small settings-lead">
-                Cadastre gestores e editores direto pelo dashboard. O admin principal continua separado.
+                Cadastre administradores, gestores e editores direto pelo dashboard. O administrador principal continua separado.
               </p>
             </div>
             <button className="ghost" onClick=${addUser} disabled=${!domains.length}>
@@ -10458,7 +10458,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                         <div>
                           <strong>${user.nome || `Usu\u00e1rio ${index + 1}`}</strong>
                            <div className="muted small">
-                             ${user.username || "sem username"} | ${user.role === "editor" ? "Editor" : "Gestor"} | Comissao ${normalizeCommissionPercent(user.commissionPercent).toFixed(2)}%
+                              ${user.username || "sem username"} | ${user.role === "admin" ? "Administrador" : user.role === "editor" ? "Editor" : "Gestor"} | ${user.role === "admin" ? "Acesso total" : `Comiss\u00e3o ${normalizeCommissionPercent(user.commissionPercent).toFixed(2)}%`}
                            </div>
                         </div>
                         <button className="icon-danger-btn" onClick=${() => removeUser(user.id)}>x</button>
@@ -10497,11 +10497,12 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                             value=${user.role || "gestor"}
                             onChange=${(e) => updateUser(user.id, { role: e.target.value })}
                           >
+                            <option value="admin">Administrador</option>
                             <option value="gestor">Gestor</option>
                             <option value="editor">Editor</option>
                           </select>
                         </div>
-                        <div className="field-stack">
+                        ${user.role !== "admin" ? html`<div className="field-stack">
                           <label className="field-label">Comissao (%)</label>
                           <input
                             type="number"
@@ -10512,7 +10513,10 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                             onInput=${(e) => updateUser(user.id, { commissionPercent: e.target.value })}
                             placeholder="0"
                           />
-                        </div>
+                        </div>` : html`<div className="field-stack">
+                          <label className="field-label">Permiss\u00f5es</label>
+                          <span className="muted small">Acesso completo ao dashboard e \u00e0s configura\u00e7\u00f5es.</span>
+                        </div>`}
                       </div>
                       <label className="checkbox checkbox-row settings-user-active">
                         <input
@@ -10524,7 +10528,9 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                       </label>
                       <div className="field-stack">
                         <label className="field-label">Dom\u00ednios permitidos</label>
-                        <div className="settings-user-domains">
+                        ${user.role === "admin"
+                          ? html`<span className="muted small">Todos os dom\u00ednios, inclusive os adicionados futuramente.</span>`
+                          : html`<div className="settings-user-domains">
                           ${domains.map((domain) => html`
                             <label key=${domain} className="checkbox checkbox-row settings-user-domain">
                               <input
@@ -10535,7 +10541,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                               <span>${domain}</span>
                             </label>
                           `)}
-                        </div>
+                        </div>`}
                       </div>
                       <div className="muted small">
                         \u00daltimo login: ${user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "nunca"}
@@ -10545,7 +10551,7 @@ function ConfiguracoesView({ settings, onSave, saving }) {
                 </div>
               `}
           <p className="muted small" style=${{ marginTop: "8px" }}>
-            Gestor acessa dashboard e cria campanhas. Editor entra em uma \u00e1rea separada.
+            Administrador tem acesso completo e pode gerenciar outros usu\u00e1rios. Gestor acessa dashboard e cria campanhas. Editor entra em uma \u00e1rea separada.
           </p>
         </div>
 

@@ -99,6 +99,7 @@ function buildAdminSession(payload, env) {
 }
 
 function buildUserSession(user, payloadExp) {
+  const isAdminUser = user.role === "admin";
   return {
     kind: "user",
     id: user.id,
@@ -106,8 +107,10 @@ function buildUserSession(user, payloadExp) {
     nome: user.nome || user.username,
     username: user.username,
     email: null,
-    allowedDomains: Array.isArray(user.allowedDomains) ? user.allowedDomains.map(normalizeDomain) : [],
-    commissionPercent: normalizeCommissionPercent(user.commissionPercent),
+    allowedDomains: isAdminUser
+      ? ["*"]
+      : Array.isArray(user.allowedDomains) ? user.allowedDomains.map(normalizeDomain) : [],
+    commissionPercent: isAdminUser ? 0 : normalizeCommissionPercent(user.commissionPercent),
     exp: payloadExp,
   };
 }
@@ -124,7 +127,7 @@ export async function getSession(request, env) {
   const payload = await verifySessionToken(token, env);
   if (!payload) return null;
 
-  if (payload.kind === "admin" || payload.role === "admin") {
+  if (payload.kind === "admin") {
     const validEmail = String(env.AUTH_EMAIL || "").trim();
     if (!validEmail) return null;
     return buildAdminSession(payload, env);

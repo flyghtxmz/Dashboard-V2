@@ -33,6 +33,12 @@ export function normalizeDomain(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+export function normalizeUserRole(value) {
+  if (value === "admin") return "admin";
+  if (value === "editor") return "editor";
+  return "gestor";
+}
+
 export function extractHostname(value) {
   try {
     if (!value) return "";
@@ -101,7 +107,7 @@ function normalizeUsers(values) {
           id: String(item.id || "").trim(),
           nome: String(item.nome || "").trim(),
           username: normalizeUsername(item.username),
-          role: item.role === "editor" ? "editor" : "gestor",
+          role: normalizeUserRole(item.role),
           allowedDomains: uniqueStrings(item.allowedDomains, normalizeDomain),
           commissionPercent: normalizeCommissionPercent(item.commissionPercent),
           active: item.active !== false,

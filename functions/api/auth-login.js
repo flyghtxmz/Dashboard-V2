@@ -134,8 +134,10 @@ export async function onRequestPost(ctx) {
     role: user.role,
     nome: user.nome || user.username,
     username: user.username,
-    allowedDomains: Array.isArray(user.allowedDomains) ? [...user.allowedDomains] : [],
-    commissionPercent: Number.isFinite(Number(user.commissionPercent))
+    allowedDomains: user.role === "admin"
+      ? ["*"]
+      : Array.isArray(user.allowedDomains) ? [...user.allowedDomains] : [],
+    commissionPercent: user.role === "admin" ? 0 : Number.isFinite(Number(user.commissionPercent))
       ? Math.min(Math.max(Number(user.commissionPercent), 0), 100)
       : 0,
     exp: Date.now() + SESSION_MAX_AGE_MS,

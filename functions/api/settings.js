@@ -4,6 +4,7 @@ import {
   getDashboardKv,
   loadSettings,
   normalizeDomain,
+  normalizeUserRole,
   normalizeUsername,
   saveSettings,
   toPublicSettings,
@@ -75,7 +76,7 @@ function sanitizeCommissionPercent(value) {
   return Math.min(numberValue, 100);
 }
 
-async function sanitizeUsers(values, previousUsers, allowedDomains) {
+export async function sanitizeUsers(values, previousUsers, allowedDomains) {
   const seenUsernames = new Set();
   const previousById = new Map((previousUsers || []).map((item) => [item.id, item]));
   const normalizedUsers = [];
@@ -109,10 +110,11 @@ async function sanitizeUsers(values, previousUsers, allowedDomains) {
       throw new Error(`Defina uma senha para o usuario ${username}.`);
     }
 
+    const role = normalizeUserRole(raw?.role);
     const userDomains = uniqueStrings(raw?.allowedDomains, normalizeDomain).filter((domain) =>
       allowedDomains.has(domain)
     );
-    if (!userDomains.length) {
+    if (role !== "admin" && !userDomains.length) {
       throw new Error(`Selecione ao menos um dominio para ${username}.`);
     }
 
@@ -120,9 +122,9 @@ async function sanitizeUsers(values, previousUsers, allowedDomains) {
       id,
       nome,
       username,
-      role: raw?.role === "editor" ? "editor" : "gestor",
-      allowedDomains: userDomains,
-      commissionPercent: sanitizeCommissionPercent(raw?.commissionPercent),
+      role,
+      allowedDomains: role === "admin" ? [] : userDomains,
+      commissionPercent: role === "admin" ? 0 : sanitizeCommissionPercent(raw?.commissionPercent),
       active: raw?.active !== false,
       passwordHash,
       passwordSalt,
