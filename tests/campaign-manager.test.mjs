@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCjToken, nextCampaignCopyName, replaceCjToken, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCjToken, nextCampaignCopyName, readBudgetDraft, replaceCjToken, resolveManagedUrlTags, shiftCjName } from "../campaign-manager.mjs";
 
 test("incrementa CJ usando o maior conjunto existente na campanha", () => {
   const campaign = {
@@ -72,4 +72,21 @@ test("reinicia CJ e AN ao montar a estrutura de uma nova campanha", () => {
   assert.equal(structure[0].ads[0].url_tags, "utm_source=fb");
   assert.deepEqual(structure[0].countries, ["MX"]);
   assert.equal(structure[0].ads[0].page_id, "page-1");
+});
+
+test("preserva o orcamento no nivel correto ao duplicar campanha", () => {
+  assert.deepEqual(readBudgetDraft({ daily_budget: "3500" }), {
+    budget_type: "daily",
+    budget_brl: "35.00",
+  });
+  assert.deepEqual(readBudgetDraft({ lifetime_budget: "12000" }), {
+    budget_type: "lifetime",
+    budget_brl: "120.00",
+  });
+
+  const structure = buildCampaignCopyStructure({
+    adsets: [{ id: "set-1", name: "produto-cj01", daily_budget: "2750", ads: [] }],
+  });
+  assert.equal(structure[0].budget_type, "daily");
+  assert.equal(structure[0].budget_brl, "27.50");
 });

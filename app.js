@@ -11,7 +11,7 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=180";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBudgetDraft, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=182";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
 import { matchesMessageCampaignFilter, sortMessageCampaignRows } from "./message-metrics.mjs?v=180";
 
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 181;
+const APP_VERSION_BUILD = 182;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -4941,6 +4941,13 @@ function GerenciarView({
     if (item?.lifetime_budget != null) return `${currencyBRL.format(Number(item.lifetime_budget) / 100)} total`;
     return "Sem orçamento próprio";
   };
+  const draftBudgetText = (type, value) => {
+    const amount = Number(String(value ?? "").replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) return "Orçamento não informado";
+    return type === "lifetime"
+      ? `${currencyBRL.format(amount)} total`
+      : `${currencyBRL.format(amount)}/dia`;
+  };
   const openCreate = (campaign) => {
     setCreateError("");
     setCreateSuccess("");
@@ -5192,7 +5199,7 @@ function GerenciarView({
                           ${statusText(campaign)}
                         </span>
                       </div>
-                      <span className="muted small">ID ${campaign.id} • ${(campaign.adsets || []).length} conjunto(s)</span>
+                      <span className="muted small">ID ${campaign.id} • ${(campaign.adsets || []).length} conjunto(s) • ${isCbo(campaign) ? `Orçamento da campanha: ${budgetText(campaign)}` : "Orçamento definido por conjunto"}</span>
                       </div>
                     </div>
                     <div className="manager-row-actions">
@@ -5236,6 +5243,10 @@ function GerenciarView({
                             <option value="PAUSED">Pausada</option>
                           </select>
                         </label>
+                        <div className="field">
+                          <span>Orçamento que será copiado</span>
+                          <strong>${isCbo(campaign) ? budgetText(campaign) : "O valor de cada conjunto"}</strong>
+                        </div>
                       </div>
                       <div className="manager-create-actions">
                         <span className="muted small">A campanha original não será alterada.</span>
@@ -5536,12 +5547,16 @@ function GerenciarView({
                 ${draft.mode === "campaign"
                   ? html`<div className="manager-campaign-draft">
                       <div className="draft-fields manager-campaign-draft-fields">
-                        <label className="field"><span>Nome da nova campanha</span><input value=${draft.campaign_new_name} onChange=${(event) => onUpdateDraft(draft.id, { campaign_new_name: event.target.value })} /></label>
-                        <label className="field"><span>Status após publicar</span><select value=${draft.publish_status || "ACTIVE"} onChange=${(event) => onUpdateDraft(draft.id, { publish_status: event.target.value })}><option value="ACTIVE">Ativa</option><option value="PAUSED">Pausada</option></select></label>
-                      </div>
-                      <div className="manager-campaign-draft-summary">
-                        <strong>${(draft.adsets || []).filter((adset) => !adset.removed).length} conjunto(s)</strong>
-                        <span>${(draft.adsets || []).filter((adset) => !adset.removed).reduce((sum, adset) => sum + (adset.ads || []).filter((ad) => !ad.removed).length, 0)} anúncio(s) selecionado(s)</span>
+                         <label className="field"><span>Nome da nova campanha</span><input value=${draft.campaign_new_name} onChange=${(event) => onUpdateDraft(draft.id, { campaign_new_name: event.target.value })} /></label>
+                         <label className="field"><span>Status após publicar</span><select value=${draft.publish_status || "ACTIVE"} onChange=${(event) => onUpdateDraft(draft.id, { publish_status: event.target.value })}><option value="ACTIVE">Ativa</option><option value="PAUSED">Pausada</option></select></label>
+                         ${draft.campaign_budget_type !== "none"
+                           ? html`<label className="field"><span>Orçamento da campanha (${draft.campaign_budget_type === "lifetime" ? "vitalício" : "diário"})</span><input type="number" min="1" step="0.01" value=${draft.campaign_budget_brl || ""} onChange=${(event) => onUpdateDraft(draft.id, { campaign_budget_brl: event.target.value })} /></label>`
+                           : html`<div className="field"><span>Tipo de orçamento</span><strong>Definido em cada conjunto</strong></div>`}
+                       </div>
+                       <div className="manager-campaign-draft-summary">
+                         <strong>${(draft.adsets || []).filter((adset) => !adset.removed).length} conjunto(s)</strong>
+                         <span>${(draft.adsets || []).filter((adset) => !adset.removed).reduce((sum, adset) => sum + (adset.ads || []).filter((ad) => !ad.removed).length, 0)} anúncio(s) selecionado(s)</span>
+                         <span>${draft.campaign_budget_type !== "none" ? `Orçamento da campanha: ${draftBudgetText(draft.campaign_budget_type, draft.campaign_budget_brl)}` : "Orçamento individual por conjunto"}</span>
                       </div>
                       <div className="manager-campaign-draft-tree">
                         ${(draft.adsets || []).map((adset) => html`<details className=${`manager-campaign-draft-adset ${adset.removed ? "is-removed" : ""}`} open key=${adset.source_adset_id}>
@@ -5550,13 +5565,18 @@ function GerenciarView({
                               <input type="checkbox" checked=${!adset.removed} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { removed: !event.target.checked })} />
                             </label>
                             <${ManagerLevelIcon} level="adset" />
-                            <span><strong>${adset.source_name}</strong><small>${(adset.ads || []).filter((ad) => !ad.removed).length}/${(adset.ads || []).length} anúncio(s)</small></span>
+                            <span><strong>${adset.source_name}</strong><small>${(adset.ads || []).filter((ad) => !ad.removed).length}/${(adset.ads || []).length} anúncio(s) • ${draft.campaign_budget_type !== "none" ? "CBO na campanha" : draftBudgetText(adset.budget_type, adset.budget_brl)}</small></span>
                           </summary>
                           <div className="manager-campaign-draft-adset-body">
                             <div className="manager-campaign-draft-adset-fields">
-                              <label className="field"><span>Novo nome do conjunto</span><input disabled=${adset.removed} value=${adset.new_name} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { new_name: event.target.value })} /></label>
-                              <label className="field"><span>País do conjunto</span><select disabled=${adset.removed} value=${adset.countries?.[0] || ""} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { countries: event.target.value ? [event.target.value] : [] })}><option value="">Selecione o país</option>${COUNTRY_LIST.map((country) => html`<option value=${country.code}>${flagEmoji(country.code)} ${country.name}</option>`)}</select></label>
-                            </div>
+                               <label className="field"><span>Novo nome do conjunto</span><input disabled=${adset.removed} value=${adset.new_name} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { new_name: event.target.value })} /></label>
+                               <label className="field"><span>País do conjunto</span><select disabled=${adset.removed} value=${adset.countries?.[0] || ""} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { countries: event.target.value ? [event.target.value] : [] })}><option value="">Selecione o país</option>${COUNTRY_LIST.map((country) => html`<option value=${country.code}>${flagEmoji(country.code)} ${country.name}</option>`)}</select></label>
+                               ${draft.campaign_budget_type === "none"
+                                 ? adset.budget_type !== "none"
+                                   ? html`<label className="field"><span>Orçamento do conjunto (${adset.budget_type === "lifetime" ? "vitalício" : "diário"})</span><input type="number" min="1" step="0.01" disabled=${adset.removed} value=${adset.budget_brl || ""} onChange=${(event) => onUpdateCampaignDraftAdset(draft.id, adset.source_adset_id, { budget_brl: event.target.value })} /></label>`
+                                   : html`<div className="field"><span>Orçamento do conjunto</span><strong>Não informado pela Meta</strong></div>`
+                                 : null}
+                             </div>
                             <div className="manager-draft-ad-list">
                               ${(adset.ads || []).map((ad) => html`<div className=${`manager-draft-ad ${ad.removed || adset.removed ? "is-removed" : ""}`} key=${ad.source_ad_id}>
                                 <div className="manager-draft-ad-source">
@@ -13755,6 +13775,7 @@ function App() {
   };
 
   const addDraftFromCampaign = (campaign, options = {}) => {
+    const campaignBudget = readBudgetDraft(campaign);
     const created = {
       id: `campaign-${campaign.id}-${Date.now()}`,
       mode: "campaign",
@@ -13763,6 +13784,8 @@ function App() {
       source_campaign_name: campaign.name,
       campaign_new_name: String(options.campaignName || nextCampaignCopyName(campaign.name, dupCampaigns)).trim(),
       publish_status: options.status === "PAUSED" ? "PAUSED" : "ACTIVE",
+      campaign_budget_type: campaignBudget.budget_type,
+      campaign_budget_brl: campaignBudget.budget_brl,
       adsets: buildCampaignCopyStructure(campaign),
     };
     setDrafts((prev) => [created, ...prev]);
@@ -14308,10 +14331,22 @@ function App() {
           if (selectedAdsets.some((adset) => !String(adset.new_name || "").trim())) {
             throw new Error("Todos os conjuntos selecionados precisam de um nome.");
           }
-          if (selectedAdsets.some((adset) => !(adset.countries || []).length)) {
-            throw new Error("Selecione o país de todos os conjuntos da nova campanha.");
-          }
-          if (selectedAdsets.some((adset) => (adset.ads || []).some((ad) => !ad.removed && !String(ad.new_name || "").trim()))) {
+           if (selectedAdsets.some((adset) => !(adset.countries || []).length)) {
+             throw new Error("Selecione o país de todos os conjuntos da nova campanha.");
+           }
+           const hasPositiveBudget = (value) => {
+             const amount = Number(String(value ?? "").replace(",", "."));
+             return Number.isFinite(amount) && amount > 0;
+           };
+           if (draft.campaign_budget_type !== "none" && !hasPositiveBudget(draft.campaign_budget_brl)) {
+             throw new Error("Informe um orçamento válido para a nova campanha.");
+           }
+           if (draft.campaign_budget_type === "none" && selectedAdsets.some(
+             (adset) => adset.budget_type !== "none" && !hasPositiveBudget(adset.budget_brl)
+           )) {
+             throw new Error("Informe um orçamento válido para todos os conjuntos selecionados.");
+           }
+           if (selectedAdsets.some((adset) => (adset.ads || []).some((ad) => !ad.removed && !String(ad.new_name || "").trim()))) {
             throw new Error("Todos os anúncios selecionados precisam de um nome.");
           }
 
@@ -14334,12 +14369,24 @@ function App() {
           }
 
           step = "rename-campaign";
-          await fetchJson(`${API_BASE}/meta-rename`, {
-            method: "POST",
-            body: JSON.stringify({ object_id: newCampaignId, name: String(draft.campaign_new_name).trim() }),
-          });
+           await fetchJson(`${API_BASE}/meta-rename`, {
+             method: "POST",
+             body: JSON.stringify({ object_id: newCampaignId, name: String(draft.campaign_new_name).trim() }),
+           });
 
-          for (const adset of selectedAdsets) {
+           if (draft.campaign_budget_type !== "none") {
+             step = "update-copied-campaign-budget";
+             await fetchJson(`${API_BASE}/meta-campaign-budget`, {
+               method: "POST",
+               body: JSON.stringify({
+                 campaign_id: newCampaignId,
+                 budget_type: draft.campaign_budget_type,
+                 budget_brl: draft.campaign_budget_brl,
+               }),
+             });
+           }
+
+           for (const adset of selectedAdsets) {
             let copiedAdsetId = adset.copied_adset_id || "";
             if (!copiedAdsetId) {
               step = "copy-campaign-adset";
@@ -14367,12 +14414,24 @@ function App() {
             });
 
             step = "update-copied-adset-country";
-            await fetchJson(`${API_BASE}/meta-adset-country`, {
-              method: "POST",
-              body: JSON.stringify({ adset_id: copiedAdsetId, countries: adset.countries }),
-            });
+             await fetchJson(`${API_BASE}/meta-adset-country`, {
+               method: "POST",
+               body: JSON.stringify({ adset_id: copiedAdsetId, countries: adset.countries }),
+             });
 
-            for (const ad of (adset.ads || []).filter((item) => !item.removed)) {
+             if (draft.campaign_budget_type === "none" && adset.budget_type !== "none") {
+               step = "update-copied-adset-budget";
+               await fetchJson(`${API_BASE}/meta-adset-budget`, {
+                 method: "POST",
+                 body: JSON.stringify({
+                   adset_id: copiedAdsetId,
+                   budget_type: adset.budget_type,
+                   budget_brl: adset.budget_brl,
+                 }),
+               });
+             }
+
+             for (const ad of (adset.ads || []).filter((item) => !item.removed)) {
               let finalAdId = ad.copied_ad_id || "";
               if (!finalAdId) {
                 step = "create-campaign-ad";

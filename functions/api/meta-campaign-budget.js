@@ -13,21 +13,23 @@ export async function onRequest({ request, env }) {
   }
 
   const body = await readJson(request);
-  const { campaign_id, daily_budget_brl } = body || {};
-  if (!campaign_id || daily_budget_brl === undefined || daily_budget_brl === null) {
+  const { campaign_id } = body || {};
+  const budgetType = body?.budget_type === "lifetime" ? "lifetime" : "daily";
+  const budgetBrl = body?.budget_brl ?? body?.daily_budget_brl;
+  if (!campaign_id || budgetBrl === undefined || budgetBrl === null) {
     return jsonResponse(400, {
-      error: "Parametros obrigatorios: campaign_id, daily_budget_brl",
+      error: "Parametros obrigatorios: campaign_id, budget_brl",
     });
   }
 
-  const budgetNumber = Number(String(daily_budget_brl).replace(",", "."));
+  const budgetNumber = Number(String(budgetBrl).replace(",", "."));
   if (!Number.isFinite(budgetNumber) || budgetNumber <= 0) {
-    return jsonResponse(400, { error: "daily_budget_brl invalido" });
+    return jsonResponse(400, { error: "budget_brl invalido" });
   }
 
   try {
     const params = new URLSearchParams();
-    params.set("daily_budget", String(Math.round(budgetNumber * 100)));
+    params.set(`${budgetType}_budget`, String(Math.round(budgetNumber * 100)));
     params.set("access_token", token);
 
     const response = await fetch(`${API_BASE}/${encodeURIComponent(campaign_id)}`, {
@@ -51,7 +53,7 @@ export async function onRequest({ request, env }) {
       campaign = null;
     }
 
-    return jsonResponse(200, { code: "success", data, campaign });
+    return jsonResponse(200, { code: "success", data, campaign, budget_type: budgetType, budget_brl: budgetNumber });
   } catch (error) {
     return jsonResponse(500, {
       error: "Erro ao atualizar campanha",

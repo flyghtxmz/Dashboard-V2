@@ -76,6 +76,18 @@ export function nextCampaignCopyName(sourceName, campaigns = []) {
   return `${prefix}${String(next).padStart(digits.length, "0")}${suffix}`;
 }
 
+export function readBudgetDraft(item) {
+  const dailyBudget = Number(item?.daily_budget || 0);
+  if (Number.isFinite(dailyBudget) && dailyBudget > 0) {
+    return { budget_type: "daily", budget_brl: (dailyBudget / 100).toFixed(2) };
+  }
+  const lifetimeBudget = Number(item?.lifetime_budget || 0);
+  if (Number.isFinite(lifetimeBudget) && lifetimeBudget > 0) {
+    return { budget_type: "lifetime", budget_brl: (lifetimeBudget / 100).toFixed(2) };
+  }
+  return { budget_type: "none", budget_brl: "" };
+}
+
 export function buildCampaignCopyStructure(campaign) {
   return (campaign?.adsets || []).map((adset, adsetIndex) => {
     const cjToken = `cj${String(adsetIndex + 1).padStart(2, "0")}`;
@@ -83,6 +95,7 @@ export function buildCampaignCopyStructure(campaign) {
       source_adset_id: String(adset?.id || ""),
       source_name: String(adset?.name || "Conjunto"),
       new_name: replaceCjToken(adset?.name || "Conjunto", cjToken),
+      ...readBudgetDraft(adset),
       countries: (adset?.targeting?.geo_locations?.countries || adset?.countries || [])
         .map((code) => String(code || "").trim().toUpperCase())
         .filter((code) => /^[A-Z]{2}$/.test(code)),
