@@ -11,8 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=177";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=178";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
+import { sortMessageCampaignRows } from "./message-metrics.mjs?v=178";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -21,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 177;
+const APP_VERSION_BUILD = 178;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1482,6 +1483,7 @@ function MetricasMensagensView({
   const [messageBidInputs, setMessageBidInputs] = useState({});
   const [messageBidStrategies, setMessageBidStrategies] = useState({});
   const [messageSearch, setMessageSearch] = useState("");
+  const [messageSort, setMessageSort] = useState({ key: "revenue_brl", direction: "desc" });
   const [advertiserSort, setAdvertiserSort] = useState({ key: "revenue", direction: "desc" });
   const exportMessagesExcel = () => {
     const dimensionKey = (value) => String(value || "")
@@ -2192,7 +2194,7 @@ function MetricasMensagensView({
     }))
     .sort((a, b) => b.revenue_brl - a.revenue_brl);
   const normalizedMessageSearch = normalizeKey(messageSearch);
-  const visibleCampaignRows = normalizedMessageSearch
+  const filteredCampaignRows = normalizedMessageSearch
     ? campaignRows.filter((row) => {
         const campaignName = normalizeKey(row.campaign_name || "");
         const sourceValues = Array.from(row.sourceValues || []).map((value) => normalizeKey(value));
@@ -2200,6 +2202,7 @@ function MetricasMensagensView({
           || sourceValues.some((value) => value.includes(normalizedMessageSearch));
       })
     : campaignRows;
+  const visibleCampaignRows = sortMessageCampaignRows(filteredCampaignRows, messageSort);
   const totalsRow = campaignRows.reduce(
     (acc, row) => {
       acc.ads += row.ads.size || 0;
@@ -2985,6 +2988,17 @@ function MetricasMensagensView({
   }><button className="sortable-header" onClick=${() => toggleAdvertiserSort(key)}>
     ${label}<span aria-hidden="true">${advertiserSort.key === key ? (advertiserSort.direction === "asc" ? "▲" : "▼") : "↕"}</span>
   </button></th>`;
+  const toggleMessageSort = (key) => setMessageSort((current) => ({
+    key,
+    direction: current.key === key && current.direction === "desc" ? "asc" : "desc",
+  }));
+  const messageSortHeader = (key, headerLabel) => html`<th aria-sort=${
+    messageSort.key === key ? (messageSort.direction === "asc" ? "ascending" : "descending") : "none"
+  }><button
+    className=${`sortable-header ${messageSort.key === key ? "is-active" : ""}`}
+    onClick=${() => toggleMessageSort(key)}
+    title=${`Ordenar por ${headerLabel}`}
+  >${headerLabel}<span aria-hidden="true">${messageSort.key === key ? (messageSort.direction === "asc" ? "\u25B2" : "\u25BC") : "\u2195"}</span></button></th>`;
   return html`
     <main className="grid">
       <section className="card wide">
@@ -3063,13 +3077,13 @@ function MetricasMensagensView({
                 ${showUserCommission
                   ? html`<th>Lucro do usuario</th>`
                   : html`
-                      <th>Receita USD</th>
-                      <th>Receita BRL</th>
-                      <th>ROAS</th>
-                      <th>Lucro Op.</th>
-                      <th>Margem</th>
+                      ${messageSortHeader("revenue_usd", "Receita USD")}
+                      ${messageSortHeader("revenue_brl", "Receita BRL")}
+                      ${messageSortHeader("roas", "ROAS")}
+                      ${messageSortHeader("profit_brl", "Lucro Op.")}
+                      ${messageSortHeader("margin_pct", "Margem")}
                     `}
-                <th>${label}</th>
+                ${messageSortHeader("ecpm", label)}
                 ${allowBidControl
                   ? html`
                       <th>Orcamento atual</th>

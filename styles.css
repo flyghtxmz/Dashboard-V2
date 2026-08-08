@@ -4535,6 +4535,16 @@ button.ghost.danger {
   opacity: 0.72;
 }
 
+.sortable-header.is-active {
+  color: var(--accent);
+}
+
+.sortable-header:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 @media (max-width: 960px) {
   .manager-filter-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
