@@ -1,5 +1,5 @@
 export const SITE_URL_TAGS =
-  "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_term={{adset.id}}&utm_content={{ad.id}}&placement={{placement}}";
+  "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_term={{adset.id}}_{{ad.id}}&placement={{placement}}";
 
 export function normalizeCountryLabel(value) {
   return String(value || "")

@@ -21,6 +21,81 @@ function customValue(row) {
   return String(row?.custom_value ?? row?.custon_value ?? "").trim();
 }
 
+function addDimensionTotal(map, key, row, metadata = {}) {
+  if (!key) return;
+  const total = map.get(key) || {
+    impressions: 0,
+    clicks: 0,
+    revenue: 0,
+    revenue_client: 0,
+    ecpm: null,
+    ecpm_client: null,
+    ...metadata,
+  };
+  total.impressions += toFiniteNumber(row?.impressions);
+  total.clicks += toFiniteNumber(row?.clicks);
+  total.revenue += toFiniteNumber(row?.revenue ?? row?.earnings);
+  total.revenue_client += toFiniteNumber(row?.revenue_client ?? row?.earnings_client);
+  if (row?.ecpm != null) total.ecpm = toFiniteNumber(row.ecpm);
+  if (row?.ecpm_client != null) total.ecpm_client = toFiniteNumber(row.ecpm_client);
+  map.set(key, total);
+}
+
+/**
+ * Reconhece a UTM de vendas `utm_term=adset_id_ad_id` somente quando os dois
+ * IDs formam um par real devolvido pela Meta. Tambem preserva o formato antigo
+ * `utm_term=adset_id` para que o historico continue atribuido por conjunto.
+ */
+export function buildJoinadsTermAttributionIndexes({
+  metaRows = [],
+  termRows = [],
+  domain = "",
+} = {}) {
+  const pairs = new Map();
+  const validAdsets = new Map();
+  (Array.isArray(metaRows) ? metaRows : []).forEach((row) => {
+    const adsetId = normalize(row?.adset_id);
+    const adId = normalize(row?.ad_id || row?.id);
+    if (adsetId) validAdsets.set(adsetId, String(row?.adset_id || "").trim());
+    if (adsetId && adId) {
+      pairs.set(`${adsetId}_${adId}`, {
+        adsetId: String(row?.adset_id || "").trim(),
+        adId: String(row?.ad_id || row?.id || "").trim(),
+      });
+    }
+  });
+
+  const domainKey = normalize(domain);
+  const byAdId = new Map();
+  const byAdsetId = new Map();
+  (Array.isArray(termRows) ? termRows : []).forEach((row) => {
+    if (!rowDomainMatches(row, domainKey)) return;
+    const rawValue = customValue(row);
+    const value = normalize(rawValue);
+    if (!value) return;
+    const pair = pairs.get(value);
+    if (pair) {
+      const metadata = {
+        data_level: "utm_term_adset_ad_id",
+        source_endpoint: "super-filter",
+        source_value: rawValue,
+      };
+      addDimensionTotal(byAdId, normalize(pair.adId), row, metadata);
+      addDimensionTotal(byAdsetId, normalize(pair.adsetId), row, metadata);
+      return;
+    }
+    if (validAdsets.has(value)) {
+      addDimensionTotal(byAdsetId, value, row, {
+        data_level: "utm_term_adset_id",
+        source_endpoint: "super-filter",
+        source_value: rawValue,
+      });
+    }
+  });
+
+  return { byAdId, byAdsetId };
+}
+
 /**
  * Monta a atribuicao por anuncio usando fontes equivalentes em ordem de
  * prioridade. Cada fonte e agregada separadamente e a primeira que devolver

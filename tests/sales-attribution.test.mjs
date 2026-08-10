@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildDirectSalesCampaignRows,
   buildJoinadsAdAttributionIndex,
+  buildJoinadsTermAttributionIndexes,
   buildMessageJoinadsSummary,
   hasJoinadsAttributionMatch,
 } from "../sales-attribution.mjs";
@@ -185,4 +186,36 @@ test("agrega linhas do mesmo endpoint antes de aplicar a prioridade", () => {
 
   assert.equal(index.get("120").impressions, 7);
   assert.equal(index.get("120").revenue_client, 0.30000000000000004);
+});
+
+test("atribui utm_term composta ao conjunto e ao anuncio sem aceitar pares desconhecidos", () => {
+  const indexes = buildJoinadsTermAttributionIndexes({
+    metaRows: [
+      { adset_id: "12001", ad_id: "13001" },
+      { adset_id: "12001", ad_id: "13002" },
+    ],
+    termRows: [
+      { domain: "site.test", custom_value: "12001_13001", impressions: 8, clicks: 2, revenue_client: 0.4 },
+      { domain: "site.test", custom_value: "12001_99999", impressions: 90, revenue_client: 9 },
+      { domain: "outro.test", custom_value: "12001_13002", impressions: 70, revenue_client: 7 },
+    ],
+    domain: "site.test",
+  });
+
+  assert.equal(indexes.byAdId.get("13001").impressions, 8);
+  assert.equal(indexes.byAdId.get("13001").revenue_client, 0.4);
+  assert.equal(indexes.byAdId.has("13002"), false);
+  assert.equal(indexes.byAdsetId.get("12001").impressions, 8);
+  assert.equal(indexes.byAdsetId.get("12001").data_level, "utm_term_adset_ad_id");
+});
+
+test("mantem utm_term antiga disponivel somente no nivel do conjunto", () => {
+  const indexes = buildJoinadsTermAttributionIndexes({
+    metaRows: [{ adset_id: "12001", ad_id: "13001" }],
+    termRows: [{ custom_value: "12001", impressions: 5, revenue_client: 0.2 }],
+  });
+
+  assert.equal(indexes.byAdId.size, 0);
+  assert.equal(indexes.byAdsetId.get("12001").impressions, 5);
+  assert.equal(indexes.byAdsetId.get("12001").data_level, "utm_term_adset_id");
 });

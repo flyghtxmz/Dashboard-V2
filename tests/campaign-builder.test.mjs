@@ -44,8 +44,8 @@ test("materializa quantidades diferentes de anuncios por conjunto", () => {
 
 test("UTM de site usa IDs estáveis nos três níveis", () => {
   assert.match(SITE_URL_TAGS, /utm_campaign=\{\{campaign\.id\}\}/);
-  assert.match(SITE_URL_TAGS, /utm_term=\{\{adset\.id\}\}/);
-  assert.match(SITE_URL_TAGS, /utm_content=\{\{ad\.id\}\}/);
+  assert.match(SITE_URL_TAGS, /utm_term=\{\{adset\.id\}\}_\{\{ad\.id\}\}/);
+  assert.doesNotMatch(SITE_URL_TAGS, /utm_content=/);
 });
 
 test("numeração continua após exclusões sem reutilizar CJ ou AN", () => {

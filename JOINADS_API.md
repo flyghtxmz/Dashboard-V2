@@ -94,7 +94,7 @@ Essa separação é importante: armazenamento diário consolidado não é o mesm
 O Dashboard usa IDs nas três dimensões principais porque eles continuam estáveis quando uma campanha, conjunto ou anúncio é renomeado:
 
 ```text
-utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_term={{adset.id}}&utm_content={{ad.id}}&placement={{placement}}
+utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_term={{adset.id}}_{{ad.id}}&placement={{placement}}
 ```
 
 Mapeamento:
@@ -102,10 +102,10 @@ Mapeamento:
 - `utm_source`: origem dinâmica informada pela Meta, como Facebook ou Instagram.
 - `utm_medium=paid_social`: separa mídia social paga de tráfego orgânico e Messenger.
 - `utm_campaign`: ID da campanha.
-- `utm_term`: ID do conjunto de anúncios.
-- `utm_content`: ID do anúncio.
+- `utm_term`: IDs do conjunto e do anúncio, separados por `_`.
+- `utm_content`: removida das novas campanhas de vendas para evitar conflito com o valor `organic` observado na JoinAds.
 - `placement`: posicionamento; serve para diagnóstico e não é usado como chave financeira principal.
 
 Para links do fluxo Messenger/Evo, a atribuição persistida por `src_` continua tendo precedência. O padrão acima é destinado principalmente aos anúncios que abrem o site diretamente.
 
-UTMs antigas baseadas em nomes continuam sendo aceitas como fallback quando não são ambíguas. Se dois conjuntos tiverem o mesmo nome, o Dashboard não aplica receita por nome: exige o ID para evitar cruzamento incorreto.
+O Dashboard valida os dois IDs da `utm_term` contra a estrutura real da Meta antes de atribuir receita. O formato anterior (`utm_term={{adset.id}}` e `utm_content={{ad.id}}`) e UTMs antigas baseadas em nomes continuam aceitos como fallback para preservar o histórico. Se dois conjuntos tiverem o mesmo nome, o Dashboard não aplica receita por nome: exige o ID para evitar cruzamento incorreto.

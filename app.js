@@ -10,10 +10,10 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=192";
-import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=192";
+} from "./campaign-builder.mjs?v=193";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=193";
+import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=193";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=193";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 192;
+const APP_VERSION_BUILD = 193;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -6470,6 +6470,9 @@ function getMetaJoinAttributionMeta(row) {
   if (level === "messenlead_source_key") {
     return { label: "src_ confirmado", tone: "good", detail: row.joinads_source_value || "Messenlead" };
   }
+  if (level === "utm_term_adset_ad_id") {
+    return { label: "Anuncio por UTM composta", tone: "good", detail: "utm_term = adset_id_ad_id" };
+  }
   if (level === "utm_content_ad_id") {
     return { label: "Anuncio por ID", tone: "good", detail: "utm_content = ad_id" };
   }
@@ -6493,7 +6496,8 @@ function getMetaJoinAttributionMeta(row) {
 function consolidateMetaJoinRows(rows) {
   const map = new Map();
   const ranks = {
-    messenlead_source_key: 5,
+    messenlead_source_key: 6,
+    utm_term_adset_ad_id: 5,
     utm_content_ad_id: 4,
     utm_content: 3,
     utm_term_summary: 2,
@@ -6676,30 +6680,19 @@ function buildSalesDashboardSnapshot(rows, directCampaignRows = [], directAdsetR
     totalsBucket.joinads_clicks = directTotals.joinads_clicks;
   }
 
-  // O snapshot por conjunto precisa usar a dimensao oficial utm_term=adset_id.
-  // Dados por anuncio nao substituem esta origem porque utm_content pode ainda
-  // estar ausente, e receita de campanha nao deve ser rateada artificialmente.
-  const directAdsetMetrics = new Map();
-  (Array.isArray(directAdsetRows) ? directAdsetRows : []).forEach((row) => {
-    const adsetKey = String(row.custom_value ?? row.custon_value ?? "").trim();
-    if (!adsetKey || !adsetBuckets.has(adsetKey)) return;
-    const item = directAdsetMetrics.get(adsetKey) || {
-      revenue: 0,
-      revenue_client: 0,
-      revenue_client_brl: 0,
-      impressions: 0,
-      clicks: 0,
-    };
-    const revenueClient = toNumber(row.revenue_client ?? row.earnings_client);
-    item.revenue += toNumber(row.revenue ?? row.earnings);
-    item.revenue_client += revenueClient;
-    item.revenue_client_brl += brlRate ? revenueClient * toNumber(brlRate) : 0;
-    item.impressions += toNumber(row.impressions);
-    item.clicks += toNumber(row.clicks);
-    directAdsetMetrics.set(adsetKey, item);
+  // A UTM nova agrega conjunto e anuncio em utm_term; a antiga, contendo apenas
+  // o conjunto, continua valida. O indice valida os pares contra a estrutura Meta.
+  const directTermIndexes = buildJoinadsTermAttributionIndexes({
+    metaRows: consolidated,
+    termRows: directAdsetRows,
   });
-  directAdsetMetrics.forEach((metrics, adsetKey) => {
-    replaceJoinadsMetrics(adsetBuckets.get(adsetKey), metrics);
+  directTermIndexes.byAdsetId.forEach((metrics, adsetKey) => {
+    replaceJoinadsMetrics(adsetBuckets.get(adsetKey), {
+      ...metrics,
+      revenue_client_brl: brlRate
+        ? toNumber(metrics.revenue_client) * toNumber(brlRate)
+        : 0,
+    });
   });
 
   return {
@@ -7857,6 +7850,18 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false, c
       );
       termMap.set(key, entry);
     });
+    const termIndexes = buildJoinadsTermAttributionIndexes({
+      metaRows: rows,
+      termRows: joinadsRows,
+    });
+    termIndexes.byAdsetId.forEach((entry, key) => {
+      termMap.set(key, {
+        impressions: toNumber(entry.impressions),
+        clicks: toNumber(entry.clicks),
+        revenueUsd: toNumber(entry.revenue_client),
+        dataLevel: entry.data_level,
+      });
+    });
 
     return Array.from(groups.values()).map((item) => {
       const idKey = normalizeKey(item.adset_id);
@@ -7877,7 +7882,9 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false, c
         impressions,
         clicks,
         attribution: termById
-          ? "utm_term_id"
+          ? termById.dataLevel === "utm_term_adset_ad_id"
+            ? "utm_term_composite"
+            : "utm_term_id"
           : termByUniqueName
           ? "utm_term_name"
           : item.exactMatched
@@ -7928,6 +7935,7 @@ function MetaJoinAdsetTable({ rows, joinadsRows, brlRate, usePmLabels = false, c
   const totalProfit = totals.revenueBrl - totals.spend;
   const previousTotals = comparisonSnapshot?.totals || null;
   const attributionView = (value) => {
+    if (value === "utm_term_composite") return { label: "Conjunto + anuncios", tone: "good", detail: "utm_term = adset_id_ad_id" };
     if (value === "utm_term_id") return { label: "Conjunto por ID", tone: "good", detail: "utm_term = adset_id" };
     if (value === "utm_term_name") return { label: "Conjunto por nome", tone: "warn", detail: "UTM legada, aceita porque o nome e unico" };
     if (value === "sum_ads") return { label: "Soma dos anuncios", tone: "good", detail: "Total dos anuncios atribuidos individualmente" };
@@ -13598,7 +13606,7 @@ function App() {
       : "{{adset.id}}";
     const adRaw = row.ad_id || row.id;
     const ad = adRaw ? encodeURIComponent(cleanUtmValue(adRaw)) : "{{ad.id}}";
-    return `utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign=${campaign}&utm_term=${adset}&utm_content=${ad}&placement={{placement}}`;
+    return `utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign=${campaign}&utm_term=${adset}_${ad}&placement={{placement}}`;
   };
 
   const stripQuery = (url) => {
@@ -15205,6 +15213,12 @@ function App() {
         { rows: domainFilteredContentKeyValueRows, dataLevel: "utm_content_ad_id", sourceEndpoint: "key-value" },
       ],
     });
+    const termAttribution = buildJoinadsTermAttributionIndexes({
+      metaRows,
+      termRows: domainFilteredTerm,
+      domain: appliedDomain,
+    });
+    const termByAdId = termAttribution.byAdId;
 
     const sourceByAdId = new Map();
     domainFilteredCampaignRows.forEach((row) => {
@@ -15216,9 +15230,9 @@ function App() {
       }
     });
 
-    // Atribuicao persistida por src_ tem precedencia. utm_content e apenas fallback quando
-    // nao existe uma origem Messenlead resolvida para o anuncio.
-    const joinadsByAdId = new Map([...contentByAdId, ...sourceByAdId]);
+    // Em vendas, utm_term=adset_id_ad_id vence o legado em utm_content. Em
+    // mensagens, a origem persistida src_ continua com a maior precedencia.
+    const joinadsByAdId = new Map([...contentByAdId, ...termByAdId, ...sourceByAdId]);
 
     const earningsByDate = {};
     (earnings || []).forEach((row) => {
@@ -15312,7 +15326,10 @@ function App() {
 
       const matchedByResolvedAdId = Object.keys(resolvedJoin).length > 0;
       const matchedByContent = contentSet.has(nameKey) || contentSet.has(adIdKey);
-      const matchedByTerm = termSet.has(adsetIdKey) || termSet.has(adsetKey);
+      const matchedByTerm =
+        termAttribution.byAdsetId.has(adsetIdKey) ||
+        termSet.has(adsetIdKey) ||
+        termSet.has(adsetKey);
       const hasJoinads = hasJoinadsAttributionMatch({
         resolvedAd: matchedByResolvedAdId,
         content: matchedByContent,
