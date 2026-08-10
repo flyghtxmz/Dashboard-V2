@@ -11,9 +11,9 @@ import {
   resolveNicheCountryCodes,
   upsertBuilderAd,
 } from "./campaign-builder.mjs?v=172";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=191";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=192";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=173";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=191";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=192";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 191;
+const APP_VERSION_BUILD = 192;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -11408,6 +11408,7 @@ function App() {
   const [dateComparisonSnapshot, setDateComparisonSnapshot] = useState(null);
   const [dateComparisonError, setDateComparisonError] = useState("");
   const [loadHealth, setLoadHealth] = useState({});
+  const loadRequestIdRef = useRef(0);
   const restoredSnapshotRef = useRef(false);
   const [domains, setDomains] = useState([]);
   const [domainsLoading, setDomainsLoading] = useState(false);
@@ -12048,6 +12049,8 @@ function App() {
     setDateComparisonError("");
     const criticalFailures = [];
     const loadStartedAt = new Date().toISOString();
+    const loadStartedMs = Date.now();
+    const loadRequestId = ++loadRequestIdRef.current;
     let loadedMetaRowsCount = 0;
     const comparisonPromise = filters.compareDate
       ? loadMessageDateComparison(filters.compareDate, { ...filters })
@@ -12101,13 +12104,47 @@ function App() {
         pushLog("earnings-all", err);
         return { data: [] };
       });
-      // super-filter utm_content — sequencial necessário pela lógica de fallback
+      // A decisao de fallback usa os dois resultados, mas as consultas podem rodar juntas.
+      // Inicia a Meta imediatamente. Essas chamadas nao dependem da JoinAds e antes
+      // ficavam paradas ate a atribuicao e os relatorios da JoinAds terminarem.
+      const liveMetaStructureParams = new URLSearchParams({
+        account_id: filters.metaAccountId.trim(),
+        _ts: String(Date.now()),
+      });
+      const editListPromise = fetchJson(
+        `${API_BASE}/meta-ad-edit-list?${liveMetaStructureParams.toString()}`,
+        { force: true, cache: "no-store" }
+      ).catch((err) => {
+        pushLog("meta-edit-list-load", err);
+        return { data: [] };
+      });
+      const metaParams = new URLSearchParams({
+        account_id: filters.metaAccountId.trim(),
+        start_date: filters.startDate,
+        end_date: filters.endDate,
+        include_assets: filters.includeAssets ? "1" : "0",
+        schema: "message-metrics-v2",
+      });
+      if (filters.endDate === formatDate(new Date())) {
+        metaParams.set("_ts", String(Date.now()));
+      }
+      const metaInsightsPromise = fetchJsonWithRetry(
+        `${API_BASE}/meta-insights?${metaParams.toString()}`,
+        {
+          cacheTtlMs: filters.includeAssets ? 2 * 60 * 1000 : 8 * 60 * 1000,
+          cacheKey: `meta-insights:${metaParams.toString()}`,
+        }
+      )
+        .then((data) => ({ data, error: null }))
+        .catch((error) => ({ data: null, error }));
+
       let contentSuperRes = { data: [] };
       let campaignSuperRes = { data: [] };
       let messenleadRes = { sources: [], unresolved: [] };
       let messenleadLeadRes = { leads: [], unresolvedLeadIds: [] };
       let leadResolveDiagnostics = {};
       let termDailyRows = [];
+      let termDailyPromise = null;
       let contentSuperError = null;
       let campaignSuperError = null;
       let superKeyUsed = "utm_content";
@@ -12125,25 +12162,33 @@ function App() {
         custom_key: "utm_campaign",
         group: ["domain", "custom_value"],
       };
-      try {
-        contentSuperRes = await fetchJsonWithRetry(`${API_BASE}/super-filter`, {
+      const [contentSuperResult, campaignSuperResult] = await Promise.all([
+        fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(contentSuperPayload),
-        });
-      } catch (err) {
-        contentSuperError = formatError(err);
-        criticalFailures.push({ source: "joinads-super-filter-content", error: contentSuperError });
-        pushLog("super-filter-content", err);
-      }
-      try {
-        campaignSuperRes = await fetchJsonWithRetry(`${API_BASE}/super-filter`, {
+        })
+          .then((data) => ({ data, error: null }))
+          .catch((error) => ({ data: null, error })),
+        fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(campaignSuperPayload),
-        });
-      } catch (err) {
-        campaignSuperError = formatError(err);
+        })
+          .then((data) => ({ data, error: null }))
+          .catch((error) => ({ data: null, error })),
+      ]);
+      if (contentSuperResult.error) {
+        contentSuperError = formatError(contentSuperResult.error);
+        criticalFailures.push({ source: "joinads-super-filter-content", error: contentSuperError });
+        pushLog("super-filter-content", contentSuperResult.error);
+      } else {
+        contentSuperRes = contentSuperResult.data || { data: [] };
+      }
+      if (campaignSuperResult.error) {
+        campaignSuperError = formatError(campaignSuperResult.error);
         criticalFailures.push({ source: "joinads-super-filter-campaign", error: campaignSuperError });
-        pushLog("super-filter-campaign", err);
+        pushLog("super-filter-campaign", campaignSuperResult.error);
+      } else {
+        campaignSuperRes = campaignSuperResult.data || { data: [] };
       }
       const summarizeSuperFilter = (payload, response, requestError) => {
         const rows = Array.isArray(response?.data) ? response.data : [];
@@ -12219,17 +12264,6 @@ function App() {
       }
 
       // Todas as demais requisições independentes em paralelo (elimina 4 awaits sequenciais)
-      const liveMetaStructureParams = new URLSearchParams({
-        account_id: filters.metaAccountId.trim(),
-        _ts: String(Date.now()),
-      });
-      const editListPromise = fetchJson(
-        `${API_BASE}/meta-ad-edit-list?${liveMetaStructureParams.toString()}`,
-        { force: true, cache: "no-store" }
-      ).catch((err) => {
-        pushLog("meta-edit-list-load", err);
-        return { data: [] };
-      });
       const bidHistoryPromise = session?.role === "admin" || session?.role === "gestor"
         ? fetchJson(`${API_BASE}/meta-bid-history?${new URLSearchParams({
             start_date: filters.startDate,
@@ -12254,6 +12288,7 @@ function App() {
         metaSourceRes,
         metaMediumRes,
         bidHistoryRes,
+        metaInsightsResult,
       ] = await Promise.all([
         topPromise,
         earningsPromise,
@@ -12339,6 +12374,7 @@ function App() {
           }),
         }).catch((err) => { criticalFailures.push({ source: "joinads-utm-medium", error: formatError(err) }); pushLog("meta-utmmedium", err); return { data: [] }; }),
         bidHistoryPromise,
+        metaInsightsPromise,
       ]);
 
       setBidHistoryRows(Array.isArray(bidHistoryRes?.data) ? bidHistoryRes.data : []);
@@ -12516,7 +12552,7 @@ function App() {
           : fallbackLegacyLeadKeySet;
 
         const dailyDates = listIsoDatesInRange(filters.startDate, filters.endDate, 15);
-        const dailyResults = await Promise.all(
+        termDailyPromise = Promise.all(
           dailyDates.map((day) =>
             withTimeout(
               fetchJson(`${API_BASE}/super-filter`, {
@@ -12543,10 +12579,11 @@ function App() {
               []
             )
           )
+        ).then((dailyResults) =>
+          dailyResults
+            .flat()
+            .filter((row) => dailyLeadKeySet.has(normalizeKey(row.custom_value)))
         );
-        termDailyRows = dailyResults
-          .flat()
-          .filter((row) => dailyLeadKeySet.has(normalizeKey(row.custom_value)));
       }
 
       // Reutiliza keyValueContentRes para paramPairs — elimina 2 fetches duplicados ao mesmo endpoint
@@ -12574,23 +12611,8 @@ function App() {
       setParamPairs(Array.from(kvMap.values()));
 
       try {
-        const metaParams = new URLSearchParams({
-          account_id: filters.metaAccountId.trim(),
-          start_date: filters.startDate,
-          end_date: filters.endDate,
-          include_assets: filters.includeAssets ? "1" : "0",
-          schema: "message-metrics-v2",
-        });
-        if (filters.endDate === formatDate(new Date())) {
-          metaParams.set("_ts", String(Date.now()));
-        }
-        const metaRes = await fetchJsonWithRetry(
-          `${API_BASE}/meta-insights?${metaParams.toString()}`,
-          {
-            cacheTtlMs: filters.includeAssets ? 2 * 60 * 1000 : 8 * 60 * 1000,
-            cacheKey: `meta-insights:${metaParams.toString()}`,
-          }
-        );
+        if (metaInsightsResult.error) throw metaInsightsResult.error;
+        const metaRes = metaInsightsResult.data || { data: [] };
         const insightRows = Array.isArray(metaRes?.data) ? metaRes.data : [];
         const structureRows = Array.isArray(editListRes?.data) ? editListRes.data : [];
         const liveStructureByAdset = new Map();
@@ -12710,6 +12732,15 @@ function App() {
       setSuperKey(superKeyUsed || "utm_content");
       setSuperTermRows(superTermRowsData);
       setJoinadsTermDailyRows(termDailyRows);
+      if (termDailyPromise) {
+        termDailyPromise
+          .then((rows) => {
+            if (loadRequestIdRef.current === loadRequestId) {
+              setJoinadsTermDailyRows(rows);
+            }
+          })
+          .catch((err) => pushLog("super-filter-term-daily", err));
+      }
       setTopUrls(Array.isArray(topRes?.data) ? topRes.data : []);
       setEarnings(Array.isArray(earningsRes?.data) ? earningsRes.data : []);
       setEarningsAll(Array.isArray(earningsAllRes?.data) ? earningsAllRes.data : []);
@@ -12787,6 +12818,7 @@ function App() {
         complete: criticalFailures.length === 0,
         startedAt: loadStartedAt,
         completedAt: new Date().toISOString(),
+        durationMs: Date.now() - loadStartedMs,
         failures: criticalFailures,
         sources: {
           metaRows: loadedMetaRowsCount,
