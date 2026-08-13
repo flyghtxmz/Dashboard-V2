@@ -4474,13 +4474,25 @@ button.ghost.danger {
 .refresh-delta {
   display: inline-flex;
   align-items: center;
+  vertical-align: middle;
   margin-left: 6px;
-  padding: 1px 5px;
+  padding: 2px 6px;
   border-radius: 999px;
-  font-size: 0.68rem;
+  border: 1px solid currentColor;
+  font-size: 0.7rem;
   font-weight: 700;
   line-height: 1.35;
   white-space: nowrap;
+}
+
+.metric-value + .refresh-delta {
+  display: flex;
+  width: fit-content;
+  margin: 0 0 5px;
+}
+
+.comparison-state {
+  font-weight: 750;
 }
 
 .refresh-delta.up {
@@ -4496,6 +4508,20 @@ button.ghost.danger {
 .refresh-delta.same {
   color: var(--muted);
   background: var(--panel-3);
+}
+
+@media (max-width: 680px) {
+  .refresh-delta {
+    margin-left: 4px;
+    padding: 2px 5px;
+    font-size: 0.68rem;
+  }
+
+  .comparison-state {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
 }
 
 .message-search-row {

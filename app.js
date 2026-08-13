@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 193;
+const APP_VERSION_BUILD = 194;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1064,6 +1064,21 @@ function isMessageMetricsRow(row) {
   return isEngagementObjective(row?.objective) || hasMessengerSignal(row);
 }
 
+function hasUsableMessageJoinadsAttribution(rows) {
+  const paidMessageRows = (Array.isArray(rows) ? rows : []).filter((row) =>
+    isMessageMetricsRow(row) &&
+    (toNumber(row?.spend_value ?? row?.spend) > 0 || toNumber(row?.meta_impressions_value ?? row?.impressions) > 0)
+  );
+  if (!paidMessageRows.length) return true;
+  return paidMessageRows.some((row) =>
+    row?.joinads_matched && (
+      toNumber(row?.impressions_joinads) > 0 ||
+      toNumber(row?.clicks_joinads) > 0 ||
+      toNumber(row?.revenue_client_value) > 0
+    )
+  );
+}
+
 function isDirectWebsiteSalesRow(row) {
   const objective = String(row?.objective || "").toUpperCase();
   return (objective === "OUTCOME_SALES" || objective === "SALES") && !isMessageMetricsRow(row);
@@ -1282,7 +1297,8 @@ function RefreshDelta({ current, previous, format = "number" }) {
   return html`<span
     className=${`refresh-delta ${up ? "up" : "down"}`}
     title=${`Comparado a ultima atualizacao: ${up ? "aumentou" : "diminuiu"} ${formatted}`}
-  >${up ? "↑" : "↓"} ${formatted}</span>`;
+    aria-label=${`Comparado a ultima atualizacao: ${up ? "aumentou" : "diminuiu"} ${formatted}`}
+  >${up ? "\u2191" : "\u2193"} ${formatted}</span>`;
 }
 
 function buildMessageRefreshSnapshot(rows, reportFilters = {}) {
@@ -1428,6 +1444,7 @@ function MetricasMensagensView({
   refreshComparisonSnapshot = null,
   refreshSyncStatus = "idle",
   refreshSyncError = "",
+  refreshAttributionReady = true,
   dateComparisonSnapshot = null,
   dateComparisonError = "",
 }) {
@@ -3011,22 +3028,25 @@ function MetricasMensagensView({
             <span className=${`chip ${joinadsDataSource.className}`} title=${joinadsDataSource.title}>${joinadsDataSource.label}</span>
             ${explicitComparisonDate && comparisonMetrics?.campaigns
               ? html`<span className="chip neutral" title=${`Setas comparam os dados atuais com o dia ${explicitComparisonLabel}`}>Comparando com ${explicitComparisonLabel}</span>`
-              : !explicitComparisonDate && refreshComparisonSnapshot?.campaigns
-              ? html`<span className="chip good" title="Setas comparam esta carga com a atualizacao completa anterior do mesmo filtro, salva no banco">Comparando com atualizacao anterior</span>`
+              : !explicitComparisonDate && refreshAttributionReady && refreshComparisonSnapshot?.campaigns
+              ? html`<span className="chip good comparison-state" title="Setas comparam esta carga com a ultima atualizacao completa anterior do mesmo filtro.">Comparativo ativo · atualizacao anterior</span>`
               : null}
             ${explicitComparisonDate && dateComparisonError
               ? html`<span className="chip danger" title=${dateComparisonError}>Comparacao indisponivel</span>`
               : null}
-            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "syncing"
+            ${!explicitComparisonDate && !refreshAttributionReady
+              ? html`<span className="chip warn comparison-state" title="A JoinAds ainda nao devolveu atribuicao por src_/UTM suficiente nesta carga. A referencia anterior foi preservada e as setas foram pausadas para evitar comparacao enganosa.">Comparativo pausado: JoinAds parcial</span>`
+              : null}
+            ${!explicitComparisonDate && refreshAttributionReady && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "syncing"
               ? html`<span className="chip neutral">Sincronizando referencia...</span>`
               : null}
-            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "seeded"
+            ${!explicitComparisonDate && refreshAttributionReady && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "seeded"
               ? html`<span className="chip neutral" title="Esta carga criou a primeira referencia compartilhada. A proxima atualizacao mostrara as diferencas.">Base criada agora</span>`
               : null}
-            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && (refreshSyncStatus === "local" || refreshSyncStatus === "error")
+            ${!explicitComparisonDate && refreshAttributionReady && !refreshComparisonSnapshot?.campaigns && (refreshSyncStatus === "local" || refreshSyncStatus === "error")
               ? html`<span className="chip danger" title=${refreshSyncError || "O banco compartilhado nao respondeu; a proxima comparacao ficara restrita a este navegador."}>Referencia apenas local</span>`
               : null}
-            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "idle"
+            ${!explicitComparisonDate && refreshAttributionReady && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "idle"
               ? html`<span className="chip neutral" title="Clique em Carregar dados para criar ou recuperar a referencia do banco.">Comparativo aguardando carga</span>`
               : null}
             <button
@@ -15622,12 +15642,18 @@ function App() {
     metaAccountId: activeMessageFilters.metaAccountId,
     pageId: activeMessageFilters.pageId,
   });
+  const messageComparisonAttributionReady = useMemo(
+    () => hasUsableMessageJoinadsAttribution(metaMessageFiltered),
+    [metaMessageFiltered]
+  );
 
   useEffect(() => {
-    if (!lastRefreshed || !snapshotEligible) {
+    if (!lastRefreshed || !snapshotEligible || !messageComparisonAttributionReady) {
       setMessageRefreshComparison(null);
-      setMessageRefreshSyncStatus("idle");
-      setMessageRefreshSyncError("");
+      setMessageRefreshSyncStatus(messageComparisonAttributionReady ? "idle" : "partial");
+      setMessageRefreshSyncError(messageComparisonAttributionReady
+        ? ""
+        : "A JoinAds nao devolveu atribuicao suficiente nesta carga; a referencia anterior foi preservada.");
       return;
     }
     const currentSnapshot = buildMessageRefreshSnapshot(metaMessageFiltered, activeMessageFilters);
@@ -15705,6 +15731,7 @@ function App() {
   }, [
     lastRefreshed,
     snapshotEligible,
+    messageComparisonAttributionReady,
     metaMessageFiltered,
     messageRefreshComparisonKey,
     messageRefreshServerVariant,
@@ -16271,6 +16298,7 @@ function App() {
                 refreshComparisonSnapshot=${messageRefreshComparison}
                 refreshSyncStatus=${messageRefreshSyncStatus}
                 refreshSyncError=${messageRefreshSyncError}
+                refreshAttributionReady=${messageComparisonAttributionReady}
                 dateComparisonSnapshot=${dateComparisonSnapshot}
                 dateComparisonError=${dateComparisonError}
                 usePmLabels=${true}
@@ -16503,6 +16531,7 @@ function App() {
             refreshComparisonSnapshot=${messageRefreshComparison}
             refreshSyncStatus=${messageRefreshSyncStatus}
             refreshSyncError=${messageRefreshSyncError}
+            refreshAttributionReady=${messageComparisonAttributionReady}
             dateComparisonSnapshot=${dateComparisonSnapshot}
             dateComparisonError=${dateComparisonError}
             usePmLabels=${usePmLabels}
