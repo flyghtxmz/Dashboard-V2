@@ -46,14 +46,20 @@ export async function onRequest({ request, env }) {
   try {
     const adsUrl = `${API_BASE}/${encodeURIComponent(
       account_id
-    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
+    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
     const adsetIds = Array.from(
-      new Set((ads || []).map((ad) => ad.adset_id).filter(Boolean))
+      new Set((ads || [])
+        .filter((ad) => !ad.adset_name && !ad.adset?.name)
+        .map((ad) => ad.adset_id)
+        .filter(Boolean))
     );
     const campaignIds = Array.from(
-      new Set((ads || []).map((ad) => ad.campaign_id).filter(Boolean))
+      new Set((ads || [])
+        .filter((ad) => !ad.campaign_name && !ad.campaign?.name)
+        .map((ad) => ad.campaign_id)
+        .filter(Boolean))
     );
     const nameMap = new Map();
     const chunkSize = 50;
@@ -108,6 +114,10 @@ export async function onRequest({ request, env }) {
         adset_bid_strategy: ad.adset?.bid_strategy || "",
         adset_optimization_goal: ad.adset?.optimization_goal || "",
         adset_bid_constraints: ad.adset?.bid_constraints || null,
+        page_id: ad.adset?.promoted_object?.page_id
+          ? String(ad.adset.promoted_object.page_id)
+          : "",
+        page_name: "",
         campaign_id: ad.campaign_id,
         campaign_name: campaignName,
         objective: ad.campaign?.objective || "",
@@ -126,6 +136,24 @@ export async function onRequest({ request, env }) {
         destination_url: destination || "",
         updated_time: ad.updated_time || "",
       };
+    });
+
+    const pageIds = Array.from(new Set(rows.map((row) => row.page_id).filter(Boolean)));
+    const pageNameMap = new Map();
+    for (let i = 0; i < pageIds.length; i += chunkSize) {
+      const chunk = pageIds.slice(i, i + chunkSize);
+      const res = await fetch(
+        `${API_BASE}/?ids=${chunk.join(",")}&fields=name&access_token=${token}`
+      );
+      const json = await safeJson(res);
+      if (json && typeof json === "object") {
+        Object.entries(json).forEach(([id, value]) => {
+          if (value?.name) pageNameMap.set(id, value.name);
+        });
+      }
+    }
+    rows.forEach((row) => {
+      if (row.page_id) row.page_name = pageNameMap.get(row.page_id) || "";
     });
 
     return jsonResponse(200, { code: "success", data: rows });

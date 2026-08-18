@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 194;
+const APP_VERSION_BUILD = 195;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1301,7 +1301,8 @@ function RefreshDelta({ current, previous, format = "number" }) {
   >${up ? "\u2191" : "\u2193"} ${formatted}</span>`;
 }
 
-function buildMessageRefreshSnapshot(rows, reportFilters = {}) {
+function buildMessageRefreshSnapshot(rows, reportFilters = {}, options = {}) {
+  const joinadsAttributionReady = options.joinadsAttributionReady !== false;
   const campaignMap = new Map();
   (Array.isArray(rows) ? rows : [])
     .filter((row) => isMessageMetricsRow(row))
@@ -1362,6 +1363,14 @@ function buildMessageRefreshSnapshot(rows, reportFilters = {}) {
       ? (item.revenue_usd / item.joinads_impressions) * 1000
       : null,
   }]));
+  if (!joinadsAttributionReady) {
+    Object.values(campaigns).forEach((campaign) => {
+      campaign.joinads_impressions = null;
+      campaign.joinads_clicks = null;
+      campaign.revenue_usd = null;
+      campaign.ecpm = null;
+    });
+  }
   const totals = Array.from(campaignMap.values()).reduce((acc, item) => {
     acc.meta_impressions += item.meta_impressions;
     acc.meta_clicks += item.meta_clicks;
@@ -1396,6 +1405,12 @@ function buildMessageRefreshSnapshot(rows, reportFilters = {}) {
   totals.ecpm = totals.joinads_impressions > 0
     ? (totals.revenue_usd / totals.joinads_impressions) * 1000
     : null;
+  if (!joinadsAttributionReady) {
+    totals.joinads_impressions = null;
+    totals.joinads_clicks = null;
+    totals.revenue_usd = null;
+    totals.ecpm = null;
+  }
   delete totals.meta_cost_weighted;
   delete totals.meta_cost_weight;
   delete totals.meta_cost_sum;
@@ -1405,6 +1420,7 @@ function buildMessageRefreshSnapshot(rows, reportFilters = {}) {
     finalized: reportFilters.startDate === reportFilters.endDate
       ? isJoinadsDateFinalized(reportFilters.endDate)
       : false,
+    joinadsAttributionReady,
     totals,
     campaigns,
   };
@@ -2292,17 +2308,20 @@ function MetricasMensagensView({
     totalsRow.meta_impressions > 0 ? (totalsRow.meta_clicks / totalsRow.meta_impressions) * 100 : null;
   const explicitComparisonDate = reportFilters.compareDate || "";
   const comparisonMetrics = explicitComparisonDate ? dateComparisonSnapshot : refreshComparisonSnapshot;
+  const joinadsComparisonReady = refreshAttributionReady && comparisonMetrics?.joinadsAttributionReady !== false;
+  const joinadsComparisonMetrics = joinadsComparisonReady ? comparisonMetrics : null;
   const explicitComparisonLabel = explicitComparisonDate
     ? explicitComparisonDate.split("-").reverse().join("/")
     : "";
   const previousTotals = comparisonMetrics?.totals || null;
-  const previousTotalsRevenueBrl = previousTotals
-    ? toNumber(previousTotals.revenue_usd) * toNumber(brlRate)
+  const previousJoinadsTotals = joinadsComparisonMetrics?.totals || null;
+  const previousTotalsRevenueBrl = previousJoinadsTotals?.revenue_usd != null
+    ? toNumber(previousJoinadsTotals.revenue_usd) * toNumber(brlRate)
     : null;
-  const previousTotalsRoas = previousTotals && toNumber(previousTotals.spend_brl) > 0
+  const previousTotalsRoas = previousTotalsRevenueBrl != null && toNumber(previousTotals?.spend_brl) > 0
     ? previousTotalsRevenueBrl / toNumber(previousTotals.spend_brl)
     : null;
-  const previousTotalsProfitBrl = previousTotals
+  const previousTotalsProfitBrl = previousTotalsRevenueBrl != null && previousTotals
     ? previousTotalsRevenueBrl - toNumber(previousTotals.spend_brl)
     : null;
   const buildMediumSummary = (mediumName, spendBrl = 0) => {
@@ -3028,25 +3047,24 @@ function MetricasMensagensView({
             <span className=${`chip ${joinadsDataSource.className}`} title=${joinadsDataSource.title}>${joinadsDataSource.label}</span>
             ${explicitComparisonDate && comparisonMetrics?.campaigns
               ? html`<span className="chip neutral" title=${`Setas comparam os dados atuais com o dia ${explicitComparisonLabel}`}>Comparando com ${explicitComparisonLabel}</span>`
-              : !explicitComparisonDate && refreshAttributionReady && refreshComparisonSnapshot?.campaigns
-              ? html`<span className="chip good comparison-state" title="Setas comparam esta carga com a ultima atualizacao completa anterior do mesmo filtro.">Comparativo ativo · atualizacao anterior</span>`
+              : !explicitComparisonDate && refreshComparisonSnapshot?.campaigns
+              ? joinadsComparisonReady
+                ? html`<span className="chip good comparison-state" title="Setas comparam esta carga com a ultima atualizacao completa anterior do mesmo filtro.">Comparativo ativo · atualizacao anterior</span>`
+                : html`<span className="chip warn comparison-state" title="As metricas Meta continuam comparadas. As setas da JoinAds ficam ocultas ate a atribuicao por src_/UTM voltar.">Comparativo parcial · Meta ativa</span>`
               : null}
             ${explicitComparisonDate && dateComparisonError
               ? html`<span className="chip danger" title=${dateComparisonError}>Comparacao indisponivel</span>`
               : null}
-            ${!explicitComparisonDate && !refreshAttributionReady
-              ? html`<span className="chip warn comparison-state" title="A JoinAds ainda nao devolveu atribuicao por src_/UTM suficiente nesta carga. A referencia anterior foi preservada e as setas foram pausadas para evitar comparacao enganosa.">Comparativo pausado: JoinAds parcial</span>`
-              : null}
-            ${!explicitComparisonDate && refreshAttributionReady && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "syncing"
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "syncing"
               ? html`<span className="chip neutral">Sincronizando referencia...</span>`
               : null}
-            ${!explicitComparisonDate && refreshAttributionReady && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "seeded"
-              ? html`<span className="chip neutral" title="Esta carga criou a primeira referencia compartilhada. A proxima atualizacao mostrara as diferencas.">Base criada agora</span>`
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "seeded"
+              ? html`<span className="chip neutral" title="Esta carga criou a primeira referencia compartilhada. A proxima atualizacao mostrara as diferencas.">${refreshAttributionReady ? "Base criada agora" : "Base Meta criada · JoinAds aguardando"}</span>`
               : null}
-            ${!explicitComparisonDate && refreshAttributionReady && !refreshComparisonSnapshot?.campaigns && (refreshSyncStatus === "local" || refreshSyncStatus === "error")
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && (refreshSyncStatus === "local" || refreshSyncStatus === "error")
               ? html`<span className="chip danger" title=${refreshSyncError || "O banco compartilhado nao respondeu; a proxima comparacao ficara restrita a este navegador."}>Referencia apenas local</span>`
               : null}
-            ${!explicitComparisonDate && refreshAttributionReady && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "idle"
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "idle"
               ? html`<span className="chip neutral" title="Clique em Carregar dados para criar ou recuperar a referencia do banco.">Comparativo aguardando carga</span>`
               : null}
             <button
@@ -3131,13 +3149,16 @@ function MetricasMensagensView({
                         ecpm: null,
                       }
                     : null);
-                  const previousRevenueBrl = previousRow
-                    ? toNumber(previousRow.revenue_usd) * toNumber(brlRate)
+                  const previousJoinadsRow = joinadsComparisonMetrics?.campaigns?.[
+                    String(row.campaign_id || row.campaign_name)
+                  ] || null;
+                  const previousRevenueBrl = previousJoinadsRow?.revenue_usd != null
+                    ? toNumber(previousJoinadsRow.revenue_usd) * toNumber(brlRate)
                     : null;
-                  const previousRoas = previousRow && toNumber(previousRow.spend_brl) > 0
+                  const previousRoas = previousRevenueBrl != null && toNumber(previousRow?.spend_brl) > 0
                     ? previousRevenueBrl / toNumber(previousRow.spend_brl)
                     : null;
-                  const previousProfitBrl = previousRow
+                  const previousProfitBrl = previousRevenueBrl != null && previousRow
                     ? previousRevenueBrl - toNumber(previousRow.spend_brl)
                     : null;
                   const userCommission = showUserCommission
@@ -3168,10 +3189,10 @@ function MetricasMensagensView({
                             <td>${row.revenue_per_conversation != null ? currencyBRL.format(row.revenue_per_conversation) : "-"}</td>
                             <td>${row.profit_per_conversation != null ? html`<span className=${row.profit_per_conversation >= 0 ? "pos-pill" : "neg-pill"}>${currencyBRL.format(row.profit_per_conversation)}</span>` : "-"}</td>
                           `}
-                      <td>${number.format(row.joinads_impressions || 0)}<${RefreshDelta} current=${row.joinads_impressions} previous=${previousRow?.joinads_impressions} /></td>
+                      <td>${number.format(row.joinads_impressions || 0)}<${RefreshDelta} current=${row.joinads_impressions} previous=${previousJoinadsRow?.joinads_impressions} /></td>
                       <td>${row.joinads_impressions_per_conversation != null ? row.joinads_impressions_per_conversation.toFixed(2) : "-"}</td>
                       <td>${row.visits_per_conversation != null ? row.visits_per_conversation.toFixed(2) : "-"}</td>
-                      <td>${number.format(row.joinads_clicks || 0)}<${RefreshDelta} current=${row.joinads_clicks} previous=${previousRow?.joinads_clicks} /></td>
+                      <td>${number.format(row.joinads_clicks || 0)}<${RefreshDelta} current=${row.joinads_clicks} previous=${previousJoinadsRow?.joinads_clicks} /></td>
                       ${showUserCommission ? null : html`<td>
                         ${currencyBRL.format(row.spend_brl || 0)}
                         <${RefreshDelta} current=${row.spend_brl} previous=${previousRow?.spend_brl} format="brl" />
@@ -3180,13 +3201,13 @@ function MetricasMensagensView({
                       ${showUserCommission
                         ? html`<td>${userCommission != null ? currencyBRL.format(userCommission) : "-"}</td>`
                         : html`
-                            <td>${currencyUSD.format(row.revenue_usd || 0)}<${RefreshDelta} current=${row.revenue_usd} previous=${previousRow?.revenue_usd} format="usd" /></td>
+                            <td>${currencyUSD.format(row.revenue_usd || 0)}<${RefreshDelta} current=${row.revenue_usd} previous=${previousJoinadsRow?.revenue_usd} format="usd" /></td>
                             <td>${currencyBRL.format(row.revenue_brl || 0)}<${RefreshDelta} current=${row.revenue_brl} previous=${previousRevenueBrl} format="brl" /></td>
                             <td>${row.roas != null ? html`<span className=${row.roas >= 1 ? "pos" : "neg"}>${row.roas.toFixed(2)}x</span>` : "-"}<${RefreshDelta} current=${row.roas} previous=${previousRoas} format="roas" /></td>
                             <td><span className=${row.profit_brl > 0 ? "pos" : row.profit_brl < 0 ? "neg" : ""}>${currencyBRL.format(row.profit_brl || 0)}</span><${RefreshDelta} current=${row.profit_brl} previous=${previousProfitBrl} format="brl" /></td>
                             <td>${row.margin_pct != null ? html`<span className=${row.margin_pct >= 0 ? "pos" : "neg"}>${row.margin_pct.toFixed(1)}%</span>` : "-"}</td>
                           `}
-                      <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}<${RefreshDelta} current=${row.ecpm} previous=${previousRow?.ecpm} format="usd" /></td>
+                      <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}<${RefreshDelta} current=${row.ecpm} previous=${previousJoinadsRow?.ecpm} format="usd" /></td>
                       ${allowBidControl
                         ? html`
                             <td>
@@ -3361,21 +3382,21 @@ function MetricasMensagensView({
                             <td><strong>${totalsRow.revenue_per_conversation != null ? currencyBRL.format(totalsRow.revenue_per_conversation) : "-"}</strong></td>
                             <td><strong>${totalsRow.profit_per_conversation != null ? currencyBRL.format(totalsRow.profit_per_conversation) : "-"}</strong></td>
                           `}
-                      <td><strong>${number.format(totalsRow.joinads_impressions)}</strong><${RefreshDelta} current=${totalsRow.joinads_impressions} previous=${previousTotals?.joinads_impressions} /></td>
+                      <td><strong>${number.format(totalsRow.joinads_impressions)}</strong><${RefreshDelta} current=${totalsRow.joinads_impressions} previous=${previousJoinadsTotals?.joinads_impressions} /></td>
                       <td><strong>${totalsRow.joinads_impressions_per_conversation != null ? totalsRow.joinads_impressions_per_conversation.toFixed(2) : "-"}</strong></td>
                       <td><strong>${totalsRow.visits_per_conversation != null ? totalsRow.visits_per_conversation.toFixed(2) : "-"}</strong></td>
-                      <td><strong>${number.format(totalsRow.joinads_clicks)}</strong><${RefreshDelta} current=${totalsRow.joinads_clicks} previous=${previousTotals?.joinads_clicks} /></td>
+                      <td><strong>${number.format(totalsRow.joinads_clicks)}</strong><${RefreshDelta} current=${totalsRow.joinads_clicks} previous=${previousJoinadsTotals?.joinads_clicks} /></td>
                       ${showUserCommission ? null : html`<td><strong>${currencyBRL.format(totalsRow.spend_brl)}</strong><${RefreshDelta} current=${totalsRow.spend_brl} previous=${previousTotals?.spend_brl} format="brl" /></td>`}
                       ${showUserCommission
                         ? html`<td><strong>${currencyBRL.format(calculateUserCommission(totalsRow.revenue_brl, commissionPercent) || 0)}</strong></td>`
                         : html`
-                            <td><strong>${currencyUSD.format(totalsRow.revenue_usd)}</strong><${RefreshDelta} current=${totalsRow.revenue_usd} previous=${previousTotals?.revenue_usd} format="usd" /></td>
+                            <td><strong>${currencyUSD.format(totalsRow.revenue_usd)}</strong><${RefreshDelta} current=${totalsRow.revenue_usd} previous=${previousJoinadsTotals?.revenue_usd} format="usd" /></td>
                             <td><strong>${currencyBRL.format(totalsRow.revenue_brl)}</strong><${RefreshDelta} current=${totalsRow.revenue_brl} previous=${previousTotalsRevenueBrl} format="brl" /></td>
                             <td><strong>${totalsRow.roas != null ? `${totalsRow.roas.toFixed(2)}x` : "-"}</strong><${RefreshDelta} current=${totalsRow.roas} previous=${previousTotalsRoas} format="roas" /></td>
                             <td><strong>${currencyBRL.format(totalsRow.profit_brl)}</strong><${RefreshDelta} current=${totalsRow.profit_brl} previous=${previousTotalsProfitBrl} format="brl" /></td>
                             <td><strong>${totalsRow.margin_pct != null ? `${totalsRow.margin_pct.toFixed(1)}%` : "-"}</strong></td>
                           `}
-                      <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong><${RefreshDelta} current=${totalsRow.ecpm} previous=${previousTotals?.ecpm} format="usd" /></td>
+                      <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong><${RefreshDelta} current=${totalsRow.ecpm} previous=${previousJoinadsTotals?.ecpm} format="usd" /></td>
                       ${allowBidControl ? html`<td></td><td></td><td></td><td></td>` : null}
                       <td></td>
                     </tr>
@@ -12153,6 +12174,8 @@ function App() {
         include_assets: filters.includeAssets ? "1" : "0",
         schema: "message-metrics-v2",
       });
+      const useFastMetaSummary = filters.startDate === filters.endDate && !filters.includeAssets;
+      if (useFastMetaSummary) metaParams.set("summary_only", "1");
       if (filters.endDate === formatDate(new Date())) {
         metaParams.set("_ts", String(Date.now()));
       }
@@ -12163,7 +12186,25 @@ function App() {
           cacheKey: `meta-insights:${metaParams.toString()}`,
         }
       )
-        .then((data) => ({ data, error: null }))
+        .then((data) => {
+          const quickRows = Array.isArray(data?.data) ? data.data : [];
+          if (useFastMetaSummary && loadRequestIdRef.current === loadRequestId && quickRows.length) {
+            const previewRows = quickRows.map((row) => ({ ...row, meta_source: "insights_preview" }));
+            setSuperFilter([]);
+            setJoinadsContentRows([]);
+            setJoinadsContentCountryRows([]);
+            setJoinadsContentKeyValueRows([]);
+            setJoinadsCampaignRows([]);
+            setKeyValueContent([]);
+            setSuperTermRows([]);
+            setEarnings([]);
+            setEarningsAll([]);
+            setMetaRows(previewRows);
+            setMetaLtvRows(previewRows);
+            setAppliedFilters({ ...filters });
+          }
+          return { data, error: null };
+        })
         .catch((error) => ({ data: null, error }));
 
       let contentSuperRes = { data: [] };
@@ -12644,19 +12685,39 @@ function App() {
         const insightRows = Array.isArray(metaRes?.data) ? metaRes.data : [];
         const structureRows = Array.isArray(editListRes?.data) ? editListRes.data : [];
         const liveStructureByAdset = new Map();
+        const liveStructureByAd = new Map();
         structureRows.forEach((row) => {
           const key = String(row.adset_id || "");
           if (key && !liveStructureByAdset.has(key)) liveStructureByAdset.set(key, row);
+          const adKey = String(row.ad_id || row.id || "");
+          if (adKey) liveStructureByAd.set(adKey, row);
         });
         const withLiveBid = (row) => {
-          const live = liveStructureByAdset.get(String(row.adset_id || ""));
+          const live = liveStructureByAd.get(String(row.ad_id || ""))
+            || liveStructureByAdset.get(String(row.adset_id || ""));
           if (!live) return row;
           return {
             ...row,
-            adset_bid_amount: live.adset_bid_amount ?? null,
+            ad_status: live.status || row.ad_status || "",
+            effective_status: live.effective_status || row.effective_status || "",
+            adset_status: live.adset_status || row.adset_status || "",
+            adset_effective_status: live.adset_effective_status || row.adset_effective_status || "",
+            adset_daily_budget: live.adset_daily_budget ?? row.adset_daily_budget ?? null,
+            adset_lifetime_budget: live.adset_lifetime_budget ?? row.adset_lifetime_budget ?? null,
+            adset_budget_remaining: live.adset_budget_remaining ?? row.adset_budget_remaining ?? null,
+            adset_bid_amount: live.adset_bid_amount ?? row.adset_bid_amount ?? null,
             adset_bid_strategy: live.campaign_bid_strategy || live.adset_bid_strategy || "",
-            adset_optimization_goal: live.adset_optimization_goal || "",
-            adset_bid_constraints: live.adset_bid_constraints ?? null,
+            adset_optimization_goal: live.adset_optimization_goal || row.adset_optimization_goal || "",
+            adset_bid_constraints: live.adset_bid_constraints ?? row.adset_bid_constraints ?? null,
+            campaign_status: live.campaign_status || row.campaign_status || "",
+            campaign_effective_status: live.campaign_effective_status || row.campaign_effective_status || "",
+            campaign_daily_budget: live.campaign_daily_budget ?? row.campaign_daily_budget ?? null,
+            campaign_lifetime_budget: live.campaign_lifetime_budget ?? row.campaign_lifetime_budget ?? null,
+            campaign_budget_remaining: live.campaign_budget_remaining ?? row.campaign_budget_remaining ?? null,
+            page_id: row.page_id || live.page_id || "",
+            page_name: row.page_name || live.page_name || "",
+            destination_url: row.destination_url || live.destination_url || live.url || "",
+            url_tags: row.url_tags || live.url_tags || "",
           };
         };
         const buildMessageFallbackRows = (rowsForRange, fallbackDate) => {
@@ -15648,15 +15709,15 @@ function App() {
   );
 
   useEffect(() => {
-    if (!lastRefreshed || !snapshotEligible || !messageComparisonAttributionReady) {
+    if (!lastRefreshed || !snapshotEligible) {
       setMessageRefreshComparison(null);
-      setMessageRefreshSyncStatus(messageComparisonAttributionReady ? "idle" : "partial");
-      setMessageRefreshSyncError(messageComparisonAttributionReady
-        ? ""
-        : "A JoinAds nao devolveu atribuicao suficiente nesta carga; a referencia anterior foi preservada.");
+      setMessageRefreshSyncStatus("idle");
+      setMessageRefreshSyncError("");
       return;
     }
-    const currentSnapshot = buildMessageRefreshSnapshot(metaMessageFiltered, activeMessageFilters);
+    const currentSnapshot = buildMessageRefreshSnapshot(metaMessageFiltered, activeMessageFilters, {
+      joinadsAttributionReady: messageComparisonAttributionReady,
+    });
     if (!Object.keys(currentSnapshot.campaigns).length) {
       setMessageRefreshComparison(null);
       setMessageRefreshSyncStatus("idle");
