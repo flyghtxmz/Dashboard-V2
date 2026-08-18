@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 195;
+const APP_VERSION_BUILD = 196;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -12101,10 +12101,40 @@ function App() {
     const loadStartedMs = Date.now();
     const loadRequestId = ++loadRequestIdRef.current;
     let loadedMetaRowsCount = 0;
+    let quickMetaPreviewLoaded = false;
+    let acceptQuickMetaPreview = true;
+    const boundedLoad = (
+      source,
+      promise,
+      { timeoutMs = 18000, fallback = { data: [] }, critical = true } = {}
+    ) => new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(value);
+      };
+      const fail = (error) => {
+        if (settled) return;
+        const message = formatError(error) || `Tempo limite excedido em ${source}.`;
+        if (critical) criticalFailures.push({ source, error: message });
+        pushLog(source, error);
+        finish({ ...fallback, _dashboardError: message });
+      };
+      const timer = window.setTimeout(() => {
+        fail(new Error(`${source} demorou mais de ${Math.round(timeoutMs / 1000)} segundos.`));
+      }, timeoutMs);
+      Promise.resolve(promise).then(finish, fail);
+    });
     const comparisonPromise = filters.compareDate
-      ? loadMessageDateComparison(filters.compareDate, { ...filters })
-          .then((snapshot) => ({ snapshot, error: "" }))
-          .catch((err) => ({ snapshot: null, error: formatError(err), rawError: err }))
+      ? withTimeout(
+          loadMessageDateComparison(filters.compareDate, { ...filters })
+            .then((snapshot) => ({ snapshot, error: "" }))
+            .catch((err) => ({ snapshot: null, error: formatError(err), rawError: err })),
+          20000,
+          { snapshot: null, error: "A comparacao anterior demorou demais e foi ignorada nesta carga." }
+        )
       : Promise.resolve({ snapshot: null, error: "" });
 
     try {
@@ -12112,7 +12142,7 @@ function App() {
       // estao visiveis permanecem na tela ate a nova carga terminar. O cache diario interno
       // da JoinAds continua sendo tratado pelos endpoints do backend.
 
-      const topPromise = fetchJson(
+      const topPromise = boundedLoad("joinads-top-url", fetchJson(
         `${API_BASE}/top-url?${new URLSearchParams({
           start_date: filters.startDate,
           end_date: filters.endDate,
@@ -12124,10 +12154,11 @@ function App() {
           force: true,
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `top-url:${filters.domain}:${filters.startDate}:${filters.endDate}`,
-        }
+        }),
+        { fallback: { data: [] } }
       );
 
-      const earningsPromise = fetchJson(
+      const earningsPromise = boundedLoad("joinads-earnings", fetchJson(
         `${API_BASE}/earnings?${new URLSearchParams({
           start_date: filters.startDate,
           end_date: filters.endDate,
@@ -12137,9 +12168,10 @@ function App() {
           force: true,
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `earnings:${filters.domain}:${filters.startDate}:${filters.endDate}`,
-        }
+        }),
+        { fallback: { data: [] } }
       );
-      const earningsAllPromise = fetchJson(
+      const earningsAllPromise = boundedLoad("joinads-earnings-all", fetchJson(
         `${API_BASE}/earnings?${new URLSearchParams({
           start_date: filters.startDate,
           end_date: filters.endDate,
@@ -12148,11 +12180,9 @@ function App() {
           force: true,
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `earnings:all:${filters.startDate}:${filters.endDate}`,
-        }
-      ).catch((err) => {
-        pushLog("earnings-all", err);
-        return { data: [] };
-      });
+        }),
+        { fallback: { data: [] }, critical: false }
+      );
       // A decisao de fallback usa os dois resultados, mas as consultas podem rodar juntas.
       // Inicia a Meta imediatamente. Essas chamadas nao dependem da JoinAds e antes
       // ficavam paradas ate a atribuicao e os relatorios da JoinAds terminarem.
@@ -12160,13 +12190,10 @@ function App() {
         account_id: filters.metaAccountId.trim(),
         _ts: String(Date.now()),
       });
-      const editListPromise = fetchJson(
+      const editListPromise = boundedLoad("meta-edit-list-load", fetchJson(
         `${API_BASE}/meta-ad-edit-list?${liveMetaStructureParams.toString()}`,
         { force: true, cache: "no-store" }
-      ).catch((err) => {
-        pushLog("meta-edit-list-load", err);
-        return { data: [] };
-      });
+      ), { timeoutMs: 20000, fallback: { data: [] }, critical: false });
       const metaParams = new URLSearchParams({
         account_id: filters.metaAccountId.trim(),
         start_date: filters.startDate,
@@ -12188,7 +12215,14 @@ function App() {
       )
         .then((data) => {
           const quickRows = Array.isArray(data?.data) ? data.data : [];
-          if (useFastMetaSummary && loadRequestIdRef.current === loadRequestId && quickRows.length) {
+          if (
+            acceptQuickMetaPreview
+            && useFastMetaSummary
+            && loadRequestIdRef.current === loadRequestId
+            && quickRows.length
+          ) {
+            quickMetaPreviewLoaded = true;
+            loadedMetaRowsCount = quickRows.length;
             const previewRows = quickRows.map((row) => ({ ...row, meta_source: "insights_preview" }));
             setSuperFilter([]);
             setJoinadsContentRows([]);
@@ -12206,6 +12240,11 @@ function App() {
           return { data, error: null };
         })
         .catch((error) => ({ data: null, error }));
+      const boundedMetaInsightsPromise = withTimeout(
+        metaInsightsPromise,
+        30000,
+        { data: null, error: new Error("Meta Insights demorou mais de 30 segundos.") }
+      );
 
       let contentSuperRes = { data: [] };
       let campaignSuperRes = { data: [] };
@@ -12232,32 +12271,24 @@ function App() {
         group: ["domain", "custom_value"],
       };
       const [contentSuperResult, campaignSuperResult] = await Promise.all([
-        fetchJsonWithRetry(`${API_BASE}/super-filter`, {
+        boundedLoad("joinads-super-filter-content", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(contentSuperPayload),
-        })
-          .then((data) => ({ data, error: null }))
-          .catch((error) => ({ data: null, error })),
-        fetchJsonWithRetry(`${API_BASE}/super-filter`, {
+        }), { timeoutMs: 15000, fallback: { data: [] } }),
+        boundedLoad("joinads-super-filter-campaign", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(campaignSuperPayload),
-        })
-          .then((data) => ({ data, error: null }))
-          .catch((error) => ({ data: null, error })),
+        }), { timeoutMs: 15000, fallback: { data: [] } }),
       ]);
-      if (contentSuperResult.error) {
-        contentSuperError = formatError(contentSuperResult.error);
-        criticalFailures.push({ source: "joinads-super-filter-content", error: contentSuperError });
-        pushLog("super-filter-content", contentSuperResult.error);
+      if (contentSuperResult?._dashboardError) {
+        contentSuperError = contentSuperResult._dashboardError;
       } else {
-        contentSuperRes = contentSuperResult.data || { data: [] };
+        contentSuperRes = contentSuperResult || { data: [] };
       }
-      if (campaignSuperResult.error) {
-        campaignSuperError = formatError(campaignSuperResult.error);
-        criticalFailures.push({ source: "joinads-super-filter-campaign", error: campaignSuperError });
-        pushLog("super-filter-campaign", campaignSuperResult.error);
+      if (campaignSuperResult?._dashboardError) {
+        campaignSuperError = campaignSuperResult._dashboardError;
       } else {
-        campaignSuperRes = campaignSuperResult.data || { data: [] };
+        campaignSuperRes = campaignSuperResult || { data: [] };
       }
       const summarizeSuperFilter = (payload, response, requestError) => {
         const rows = Array.isArray(response?.data) ? response.data : [];
@@ -12320,28 +12351,27 @@ function App() {
             .filter((value) => value.startsWith("src_"))
         )
       );
-      if (sourceKeys.length) {
-        try {
-          messenleadRes = await fetchJsonWithRetry(`${API_BASE}/messenlead-resolve`, {
+      const messenleadSourcePromise = sourceKeys.length
+        ? boundedLoad("messenlead-source-resolution", fetchJsonWithRetry(`${API_BASE}/messenlead-resolve`, {
             method: "POST",
             body: JSON.stringify({ sourceKeys }),
-          });
-        } catch (err) {
-          criticalFailures.push({ source: "messenlead-source-resolution", error: formatError(err) });
-          pushLog("messenlead-resolve", err);
-        }
-      }
+          }), {
+            timeoutMs: 12000,
+            fallback: { sources: [], unresolved: sourceKeys },
+          })
+        : Promise.resolve({ sources: [], unresolved: [] });
 
       // Todas as demais requisições independentes em paralelo (elimina 4 awaits sequenciais)
       const bidHistoryPromise = session?.role === "admin" || session?.role === "gestor"
-        ? fetchJson(`${API_BASE}/meta-bid-history?${new URLSearchParams({
+        ? boundedLoad("meta-bid-history-load", fetchJson(`${API_BASE}/meta-bid-history?${new URLSearchParams({
             start_date: filters.startDate,
             end_date: filters.endDate,
             account_id: filters.metaAccountId.trim(),
             _ts: String(Date.now()),
-          }).toString()}`, { force: true, cache: "no-store" }).catch((err) => {
-            pushLog("meta-bid-history-load", err);
-            return { data: [], available: false };
+          }).toString()}`, { force: true, cache: "no-store" }), {
+            timeoutMs: 12000,
+            fallback: { data: [], available: false },
+            critical: false,
           })
         : Promise.resolve({ data: [], available: false });
 
@@ -12358,12 +12388,13 @@ function App() {
         metaMediumRes,
         bidHistoryRes,
         metaInsightsResult,
+        messenleadSourceRes,
       ] = await Promise.all([
         topPromise,
         earningsPromise,
         earningsAllPromise,
         editListPromise,
-        fetchJson(`${API_BASE}/super-filter`, {
+        boundedLoad("joinads-utm-term", fetchJson(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
             start_date: filters.startDate,
@@ -12372,8 +12403,8 @@ function App() {
             custom_key: "utm_term",
             group: ["domain", "custom_value"],
           }),
-        }).catch((err) => { pushLog("super-filter-term", err); return { data: [] }; }),
-        fetchJsonWithRetry(
+        }), { timeoutMs: 15000, fallback: { data: [] }, critical: false }),
+        boundedLoad("joinads-key-value-country", fetchJsonWithRetry(
           `${API_BASE}/key-value-country?${new URLSearchParams({
             start_date: filters.startDate,
             end_date: filters.endDate,
@@ -12387,8 +12418,8 @@ function App() {
             cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
-        ).catch((err) => { criticalFailures.push({ source: "joinads-key-value-country", error: formatError(err) }); pushLog("key-value-country", err); return { data: [], _dashboardError: formatError(err) }; }),
-        fetchJson(
+        ), { timeoutMs: 18000, fallback: { data: [] } }),
+        boundedLoad("joinads-key-value-country-content", fetchJson(
           `${API_BASE}/key-value-country?${new URLSearchParams({
             start_date: filters.startDate,
             end_date: filters.endDate,
@@ -12401,11 +12432,8 @@ function App() {
             cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-country-content:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
-        ).catch((err) => {
-          pushLog("key-value-country-content", err);
-          return { data: [], _dashboardError: formatError(err) };
-        }),
-        fetchJson(
+        ), { timeoutMs: 18000, fallback: { data: [] }, critical: false }),
+        boundedLoad("joinads-key-value-content", fetchJson(
           `${API_BASE}/key-value?${new URLSearchParams({
             start_date: filters.startDate,
             end_date: filters.endDate,
@@ -12418,11 +12446,8 @@ function App() {
             cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-content:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
-        ).catch((err) => {
-          pushLog("key-value-content", err);
-          return { data: [], _dashboardError: formatError(err) };
-        }),
-        fetchJsonWithRetry(`${API_BASE}/super-filter`, {
+        ), { timeoutMs: 18000, fallback: { data: [] }, critical: false }),
+        boundedLoad("joinads-utm-source", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
             start_date: filters.startDate,
@@ -12431,8 +12456,8 @@ function App() {
             custom_key: "utm_source",
             group: ["domain", "custom_value"],
           }),
-        }).catch((err) => { criticalFailures.push({ source: "joinads-utm-source", error: formatError(err) }); pushLog("meta-utmsource", err); return { data: [] }; }),
-        fetchJsonWithRetry(`${API_BASE}/super-filter`, {
+        }), { timeoutMs: 15000, fallback: { data: [] } }),
+        boundedLoad("joinads-utm-medium", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
             start_date: filters.startDate,
@@ -12441,10 +12466,14 @@ function App() {
             custom_key: "utm_medium",
             group: ["domain", "custom_value"],
           }),
-        }).catch((err) => { criticalFailures.push({ source: "joinads-utm-medium", error: formatError(err) }); pushLog("meta-utmmedium", err); return { data: [] }; }),
+        }), { timeoutMs: 15000, fallback: { data: [] } }),
         bidHistoryPromise,
-        metaInsightsPromise,
+        boundedMetaInsightsPromise,
+        messenleadSourcePromise,
       ]);
+      acceptQuickMetaPreview = false;
+
+      messenleadRes = messenleadSourceRes || { sources: [], unresolved: [] };
 
       setBidHistoryRows(Array.isArray(bidHistoryRes?.data) ? bidHistoryRes.data : []);
 
@@ -12562,11 +12591,18 @@ function App() {
         leadIdSamples: leadIds.slice(0, 30),
       };
       if (leadIds.length) {
-        try {
-          messenleadLeadRes = await fetchJson(`${API_BASE}/messenlead-resolve`, {
+        messenleadLeadRes = await boundedLoad(
+          "messenlead-lead-resolution",
+          fetchJson(`${API_BASE}/messenlead-resolve`, {
             method: "POST",
             body: JSON.stringify({ leadIds }),
-          });
+          }),
+          {
+            timeoutMs: 12000,
+            fallback: { leads: [], unresolvedLeadIds: leadIds },
+          }
+        );
+        if (!messenleadLeadRes?._dashboardError) {
           const resolvedLeadSamples = (Array.isArray(messenleadLeadRes?.leads)
             ? messenleadLeadRes.leads
             : [])
@@ -12594,14 +12630,11 @@ function App() {
             endpointDiagnostics: messenleadLeadRes?.leadDiagnostics || null,
             resolvedLeadSamples,
           };
-        } catch (err) {
-          pushLog("messenlead-leads-resolve", err);
+        } else {
           leadResolveDiagnostics = {
             ...leadResolveDiagnostics,
             status: "erro",
-            errorStatus: err?.status || null,
-            error: formatError(err),
-            errorData: err?.data || null,
+            error: messenleadLeadRes._dashboardError,
           };
         }
 
@@ -12787,8 +12820,10 @@ function App() {
       } catch (err) {
         criticalFailures.push({ source: "meta-insights", error: formatError(err) });
         pushLog("meta", err);
-        setMetaRows([]);
-        setMetaLtvRows([]);
+        if (!quickMetaPreviewLoaded) {
+          setMetaRows([]);
+          setMetaLtvRows([]);
+        }
         setMetaDiagnostics({
           accountId: filters.metaAccountId.trim(),
           startDate: filters.startDate,
@@ -12943,13 +12978,14 @@ function App() {
       setTopUrls([]);
       setEarnings([]);
       setEarningsAll([]);
-      setMetaRows([]);
+      if (!quickMetaPreviewLoaded) setMetaRows([]);
       setParamPairs([]);
       setKeyValueContent([]);
       setMetaSourceRows([]);
       setSuperTermRows([]);
       setDateComparisonSnapshot(null);
     } finally {
+      acceptQuickMetaPreview = false;
       setLoading(false);
     }
   };
