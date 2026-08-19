@@ -54,6 +54,8 @@ export async function onRequest({ request, env }) {
   const refreshId = clean(body?.refresh_id, 150);
   const variant = clean(body?.variant, 5000);
   const legacyVariant = clean(body?.legacy_variant, 5000);
+  const comparisonScope = clean(body?.comparison_scope, 80);
+  const preserveCurrent = body?.preserve_current === true;
   const snapshot = body?.snapshot;
   const previousSnapshot = body?.previous_snapshot?.campaigns && body?.previous_snapshot?.totals
     ? body.previous_snapshot
@@ -63,6 +65,9 @@ export async function onRequest({ request, env }) {
   }
   const dateRange = validateDateRange(startDate, endDate, 15);
   if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
+  if (comparisonScope && (comparisonScope !== "rolling-live-day-v1" || startDate !== endDate)) {
+    return jsonResponse(400, { error: "Escopo de comparacao invalido." });
+  }
   if (session.role !== "admin") {
     const settings = await loadSettings(env);
     if (!settings.metaAccountId || String(settings.metaAccountId) !== accountId) {
@@ -78,7 +83,33 @@ export async function onRequest({ request, env }) {
   await ensureSchema(db);
   const userKey = `${session.role}:${session.id || session.username || session.email || "user"}`;
   const domain = domainAccess.domains[0];
-  const snapshotKey = await hashKey([userKey, domain, accountId, startDate, endDate, variant].join("|"));
+  const dateScope = comparisonScope || `${startDate}|${endDate}`;
+  const snapshotKey = await hashKey([userKey, domain, accountId, dateScope, variant].join("|"));
+  if (preserveCurrent) {
+    let preservedRow = await db.prepare(
+      "SELECT current_payload, previous_payload, refresh_id, updated_at FROM message_refresh_snapshots WHERE snapshot_key = ?1"
+    ).bind(snapshotKey).first();
+    if (!preservedRow && comparisonScope) {
+      const exactSnapshotKey = await hashKey([userKey, domain, accountId, startDate, endDate, variant].join("|"));
+      preservedRow = await db.prepare(
+        "SELECT current_payload, previous_payload, refresh_id, updated_at FROM message_refresh_snapshots WHERE snapshot_key = ?1"
+      ).bind(exactSnapshotKey).first();
+    }
+    const preservedSnapshot = parseSnapshot(preservedRow?.current_payload)
+      || parseSnapshot(preservedRow?.previous_payload)
+      || previousSnapshot
+      || null;
+    return jsonResponse(200, {
+      ok: true,
+      refreshId: preservedRow?.refresh_id || refreshId,
+      current: parseSnapshot(preservedRow?.current_payload),
+      previous: preservedSnapshot,
+      updatedAt: preservedRow?.updated_at || null,
+      storage: "d1",
+      comparisonScope: comparisonScope || "exact-range",
+      preserved: true,
+    });
+  }
   let seedPreviousSnapshot = previousSnapshot;
   let migratedLegacy = false;
   if (!seedPreviousSnapshot && legacyVariant && legacyVariant !== variant) {
@@ -112,6 +143,14 @@ export async function onRequest({ request, env }) {
         WHEN message_refresh_snapshots.refresh_id = excluded.refresh_id THEN message_refresh_snapshots.refresh_id
         ELSE excluded.refresh_id
       END,
+      start_date = CASE
+        WHEN message_refresh_snapshots.refresh_id = excluded.refresh_id THEN message_refresh_snapshots.start_date
+        ELSE excluded.start_date
+      END,
+      end_date = CASE
+        WHEN message_refresh_snapshots.refresh_id = excluded.refresh_id THEN message_refresh_snapshots.end_date
+        ELSE excluded.end_date
+      END,
       updated_at = CASE
         WHEN message_refresh_snapshots.refresh_id = excluded.refresh_id THEN message_refresh_snapshots.updated_at
         ELSE excluded.updated_at
@@ -127,6 +166,7 @@ export async function onRequest({ request, env }) {
     previous: parseSnapshot(row?.previous_payload),
     updatedAt: row?.updated_at || now,
     storage: "d1",
+    comparisonScope: comparisonScope || "exact-range",
     migratedLegacy,
   });
 }

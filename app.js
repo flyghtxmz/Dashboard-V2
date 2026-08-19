@@ -10,10 +10,10 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=197";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=197";
-import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=197";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=197";
+} from "./campaign-builder.mjs?v=198";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=198";
+import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=198";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=198";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 197;
+const APP_VERSION_BUILD = 198;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -374,16 +374,18 @@ function messageMetricsStorageKey({
   adsetFilter,
   taxSignature,
   hiddenSignature,
+  rollingCurrentDay = true,
 }) {
   const scope = typeof window !== "undefined"
     ? window.__cd_session_scope__ || "anon"
     : "anon";
+  const liveDailyScope = rollingCurrentDay && startDate === endDate && endDate === formatDate(new Date());
   return [
     "__messages_refresh_metrics_v3__",
     scope,
     domain || "sem-dominio",
-    startDate || "sem-inicio",
-    endDate || "sem-fim",
+    liveDailyScope ? "dia-atual-continuo" : startDate || "sem-inicio",
+    liveDailyScope ? "dia-atual-continuo" : endDate || "sem-fim",
     metaAccountId || "sem-conta",
     pageId || "todas-paginas",
     messageType || "todos-tipos",
@@ -391,6 +393,12 @@ function messageMetricsStorageKey({
     taxSignature || "imposto-padrao",
     hiddenSignature || "nenhuma-oculta",
   ].join(":");
+}
+
+function messageMetricsComparisonScope({ startDate, endDate }) {
+  return startDate === endDate && endDate === formatDate(new Date())
+    ? "rolling-live-day-v1"
+    : "";
 }
 
 function legacyMessageMetricsStorageKey({ domain, startDate, endDate, metaAccountId, pageId }) {
@@ -1427,6 +1435,8 @@ function buildMessageRefreshSnapshot(rows, reportFilters = {}, options = {}) {
   delete totals.meta_cost_count;
   return {
     savedAt: new Date().toISOString(),
+    startDate: reportFilters.startDate || "",
+    endDate: reportFilters.endDate || "",
     finalized: reportFilters.startDate === reportFilters.endDate
       ? isJoinadsDateFinalized(reportFilters.endDate)
       : false,
@@ -3070,6 +3080,9 @@ function MetricasMensagensView({
               : null}
             ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "seeded"
               ? html`<span className="chip neutral" title="Esta carga criou a primeira referencia compartilhada. A proxima atualizacao mostrara as diferencas.">${refreshAttributionReady ? "Base criada agora" : "Base Meta criada · JoinAds aguardando"}</span>`
+              : null}
+            ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && refreshSyncStatus === "partial"
+              ? html`<span className="chip warn" title=${refreshSyncError || "A carga parcial nao substituiu a ultima referencia valida."}>Carga parcial · referência preservada</span>`
               : null}
             ${!explicitComparisonDate && !refreshComparisonSnapshot?.campaigns && (refreshSyncStatus === "local" || refreshSyncStatus === "error")
               ? html`<span className="chip danger" title=${refreshSyncError || "O banco compartilhado nao respondeu; a proxima comparacao ficara restrita a este navegador."}>Referencia apenas local</span>`
@@ -11492,6 +11505,7 @@ function App() {
   const [error, setError] = useState("");
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [snapshotEligible, setSnapshotEligible] = useState(false);
+  const [messageSnapshotEligible, setMessageSnapshotEligible] = useState(false);
   const [messageRefreshComparison, setMessageRefreshComparison] = useState(null);
   const [messageRefreshSyncStatus, setMessageRefreshSyncStatus] = useState("idle");
   const [messageRefreshSyncError, setMessageRefreshSyncError] = useState("");
@@ -11586,6 +11600,7 @@ function App() {
     setError("");
     setLastRefreshed(null);
     setSnapshotEligible(false);
+    setMessageSnapshotEligible(false);
     setMessageRefreshComparison(null);
     setMessageRefreshSyncStatus("idle");
     setMessageRefreshSyncError("");
@@ -12137,7 +12152,6 @@ function App() {
 
     setLoading(true);
     setError("");
-    setSnapshotEligible(false);
     setDateComparisonSnapshot(null);
     setDateComparisonError("");
     const criticalFailures = [];
@@ -13009,6 +13023,7 @@ function App() {
       if (comparisonResult.rawError) pushLog("comparacao-data", comparisonResult.rawError);
       setLoadHealth(completedHealth);
       setSnapshotEligible(completedHealth.complete);
+      setMessageSnapshotEligible(loadedMetaRowsCount > 0);
       if (!completedHealth.complete) {
         setError(`Carga parcial: ${criticalFailures.map((item) => item.source).join(", ")}. Os dados foram exibidos apenas para diagnostico e nao foram salvos como definitivos.`);
       }
@@ -13175,6 +13190,7 @@ function App() {
     if (snapshot.filters) setFilters((prev) => ({ ...prev, ...snapshot.filters }));
     if (snapshot.lastRefreshed) {
       setSnapshotEligible(d.loadHealth?.complete === true);
+      setMessageSnapshotEligible(arr(d.metaRows).length > 0);
       restoredSnapshotRef.current = true;
       const dt = new Date(snapshot.lastRefreshed);
       if (!Number.isNaN(dt.getTime())) setLastRefreshed(dt);
@@ -15788,6 +15804,22 @@ function App() {
     taxSignature: messageTaxSignature,
     hiddenSignature: messageHiddenSignature,
   });
+  const messageRefreshExactComparisonKey = messageMetricsStorageKey({
+    domain: activeMessageFilters.domain,
+    startDate: activeMessageFilters.startDate,
+    endDate: activeMessageFilters.endDate,
+    metaAccountId: activeMessageFilters.metaAccountId,
+    pageId: activeMessageFilters.pageId,
+    messageType: activeMessageFilters.messageType,
+    adsetFilter: activeMessageFilters.adsetFilter,
+    taxSignature: messageTaxSignature,
+    hiddenSignature: messageHiddenSignature,
+    rollingCurrentDay: false,
+  });
+  const messageRefreshComparisonScope = messageMetricsComparisonScope({
+    startDate: activeMessageFilters.startDate,
+    endDate: activeMessageFilters.endDate,
+  });
   const messageRefreshServerVariant = messageMetricsServerVariant({
     pageId: activeMessageFilters.pageId,
     messageType: activeMessageFilters.messageType,
@@ -15808,7 +15840,7 @@ function App() {
   );
 
   useEffect(() => {
-    if (!lastRefreshed || !snapshotEligible) {
+    if (!lastRefreshed || !messageSnapshotEligible) {
       setMessageRefreshComparison(null);
       setMessageRefreshSyncStatus("idle");
       setMessageRefreshSyncError("");
@@ -15829,7 +15861,10 @@ function App() {
     let cancelled = false;
     let previous = null;
     try {
-      const stored = JSON.parse(localStorage.getItem(messageRefreshComparisonKey) || "null");
+      let stored = JSON.parse(localStorage.getItem(messageRefreshComparisonKey) || "null");
+      if (!stored && messageRefreshExactComparisonKey !== messageRefreshComparisonKey) {
+        stored = JSON.parse(localStorage.getItem(messageRefreshExactComparisonKey) || "null");
+      }
       const storedCurrent = stored?.current?.campaigns
         ? stored.current
         : stored?.campaigns
@@ -15841,7 +15876,7 @@ function App() {
         : sameCompletedRefresh
         ? null
         : storedCurrent;
-      if (!sameCompletedRefresh) {
+      if (!sameCompletedRefresh && snapshotEligible) {
         if (!storedCurrent && !activeMessageFilters.messageType && !activeMessageFilters.adsetFilter) {
           try {
             const legacy = JSON.parse(localStorage.getItem(legacyMessageRefreshComparisonKey) || "null");
@@ -15863,6 +15898,32 @@ function App() {
       setMessageRefreshComparison(null);
     }
 
+    if (!snapshotEligible) {
+      setMessageRefreshSyncStatus("partial");
+      setMessageRefreshSyncError("A carga atual ficou parcial; a última referência válida foi preservada.");
+      fetchJson(`${API_BASE}/message-refresh-snapshot`, {
+        method: "POST",
+        body: JSON.stringify({
+          domain: activeMessageFilters.domain,
+          account_id: activeMessageFilters.metaAccountId,
+          start_date: activeMessageFilters.startDate,
+          end_date: activeMessageFilters.endDate,
+          refresh_id: refreshToken,
+          variant: messageRefreshServerVariant,
+          comparison_scope: messageRefreshComparisonScope,
+          snapshot: currentSnapshot,
+          previous_snapshot: previous?.campaigns ? previous : null,
+          preserve_current: true,
+        }),
+      }).then((response) => {
+        if (cancelled) return;
+        if (response?.previous?.campaigns) setMessageRefreshComparison(response.previous);
+      }).catch(() => {
+        // A referencia local ja foi mantida; a indisponibilidade remota nao apaga os badges.
+      });
+      return () => { cancelled = true; };
+    }
+
     setMessageRefreshSyncStatus("syncing");
     setMessageRefreshSyncError("");
     fetchJson(`${API_BASE}/message-refresh-snapshot`, {
@@ -15875,6 +15936,7 @@ function App() {
         refresh_id: refreshToken,
         variant: messageRefreshServerVariant,
         legacy_variant: messageRefreshComparisonKey,
+        comparison_scope: messageRefreshComparisonScope,
         snapshot: currentSnapshot,
         previous_snapshot: previous?.campaigns ? previous : null,
       }),
@@ -15891,9 +15953,12 @@ function App() {
   }, [
     lastRefreshed,
     snapshotEligible,
+    messageSnapshotEligible,
     messageComparisonAttributionReady,
     metaMessageFiltered,
     messageRefreshComparisonKey,
+    messageRefreshExactComparisonKey,
+    messageRefreshComparisonScope,
     messageRefreshServerVariant,
     legacyMessageRefreshComparisonKey,
   ]);
