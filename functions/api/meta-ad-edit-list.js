@@ -27,6 +27,18 @@ function extractUrl(spec) {
   return "";
 }
 
+function extractCreativeText(creative) {
+  const spec = creative?.object_story_spec || {};
+  const feed = creative?.asset_feed_spec || {};
+  const firstFeedText = (items) =>
+    (Array.isArray(items) ? items : []).find((item) => String(item?.text || "").trim())?.text || "";
+  return {
+    primary_text: String(spec?.link_data?.message ?? spec?.video_data?.message ?? spec?.template_data?.message ?? spec?.photo_data?.caption ?? firstFeedText(feed?.bodies) ?? ""),
+    headline: String(spec?.link_data?.name ?? spec?.video_data?.title ?? spec?.template_data?.name ?? firstFeedText(feed?.titles) ?? ""),
+    description: String(spec?.link_data?.description ?? spec?.video_data?.link_description ?? spec?.template_data?.description ?? firstFeedText(feed?.descriptions) ?? ""),
+  };
+}
+
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
   if (!token) {
@@ -46,7 +58,7 @@ export async function onRequest({ request, env }) {
   try {
     const adsUrl = `${API_BASE}/${encodeURIComponent(
       account_id
-    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{link_data{link},video_data{call_to_action}}}&limit=200&access_token=${token}`;
+    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,asset_feed_spec,object_story_spec}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
     const adsetIds = Array.from(
@@ -97,6 +109,7 @@ export async function onRequest({ request, env }) {
         ad?.creative?.link_url ||
         ad?.creative?.object_url ||
         extractUrl(spec);
+      const creativeText = extractCreativeText(ad?.creative);
       return {
         id: ad.id,
         ad_id: ad.id,
@@ -135,6 +148,7 @@ export async function onRequest({ request, env }) {
           "",
         destination_url: destination || "",
         updated_time: ad.updated_time || "",
+        ...creativeText,
       };
     });
 

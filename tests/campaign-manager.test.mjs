@@ -74,6 +74,27 @@ test("reinicia CJ e AN ao montar a estrutura de uma nova campanha", () => {
   assert.equal(structure[0].ads[0].page_id, "page-1");
 });
 
+test("leva os textos do anuncio-modelo para o rascunho da campanha", () => {
+  const structure = buildCampaignCopyStructure({ adsets: [{
+    id: "set-1",
+    name: "produto-cj01",
+    ads: [{
+      id: "ad-1",
+      name: "produto-cj01-an01",
+      primary_text: "Texto principal original",
+      headline: "Titulo original",
+      description: "Descricao original",
+    }],
+  }] });
+  const ad = structure[0].ads[0];
+  assert.equal(ad.primary_text, "Texto principal original");
+  assert.equal(ad.headline, "Titulo original");
+  assert.equal(ad.description, "Descricao original");
+  assert.equal(ad.original_primary_text, "Texto principal original");
+  assert.equal(ad.original_headline, "Titulo original");
+  assert.equal(ad.original_description, "Descricao original");
+});
+
 test("preserva o orcamento no nivel correto ao duplicar campanha", () => {
   assert.deepEqual(readBudgetDraft({ daily_budget: "3500" }), {
     budget_type: "daily",

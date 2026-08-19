@@ -1,6 +1,105 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyCreativePageOverride, applyReplacementImageHash, collectCreativeImageHashes, creativeContainsImageHash, onRequest, resolveCreativeUrlTags } from "../functions/api/meta-ad-create.js";
+import { applyCreativePageOverride, applyCreativeTextOverrides, applyReplacementImageHash, collectCreativeImageHashes, creativeContainsImageHash, onRequest, resolveCreativeUrlTags } from "../functions/api/meta-ad-create.js";
+
+test("substitui os textos do criativo sem alterar o modelo original", () => {
+  const original = {
+    page_id: "page-1",
+    link_data: {
+      message: "Texto antigo",
+      name: "Titulo antigo",
+      description: "Descricao antiga",
+    },
+  };
+  const result = applyCreativeTextOverrides(original, null, {
+    primary_text: "Texto novo",
+    headline: "Titulo novo",
+    description: "Descricao nova",
+  });
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.unsupported, []);
+  assert.equal(result.objectStorySpec.link_data.message, "Texto novo");
+  assert.equal(result.objectStorySpec.link_data.name, "Titulo novo");
+  assert.equal(result.objectStorySpec.link_data.description, "Descricao nova");
+  assert.equal(original.link_data.message, "Texto antigo");
+});
+
+test("substitui textos em todos os ativos do asset feed preservando rotulos", () => {
+  const result = applyCreativeTextOverrides(null, {
+    bodies: [{ text: "Antigo 1", adlabels: [{ name: "body-1" }] }, { text: "Antigo 2" }],
+    titles: [{ text: "Titulo antigo" }],
+    descriptions: [{ text: "Descricao antiga" }],
+  }, {
+    primary_text: "Principal novo",
+    headline: "Titulo novo",
+    description: "Descricao nova",
+  });
+  assert.deepEqual(result.assetFeedSpec.bodies.map((item) => item.text), ["Principal novo", "Principal novo"]);
+  assert.deepEqual(result.assetFeedSpec.bodies[0].adlabels, [{ name: "body-1" }]);
+  assert.equal(result.assetFeedSpec.titles[0].text, "Titulo novo");
+  assert.equal(result.assetFeedSpec.descriptions[0].text, "Descricao nova");
+});
+
+test("publica os textos editados no novo criativo", async () => {
+  const originalFetch = globalThis.fetch;
+  let adCreated = false;
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes("/source-ad?")) {
+      return Response.json({
+        name: "Modelo",
+        account_id: "123",
+        creative: {
+          actor_id: "page-1",
+          object_story_id: "page-1_post-1",
+          object_story_spec: {
+            page_id: "page-1",
+            link_data: {
+              link: "https://example.com",
+              image_hash: "hash-1",
+              message: "Texto antigo",
+              name: "Titulo antigo",
+              description: "Descricao antiga",
+            },
+          },
+        },
+      });
+    }
+    if (target.endsWith("/act_123/adcreatives")) {
+      assert.equal(options.body.has("object_story_id"), false);
+      const sentSpec = JSON.parse(options.body.get("object_story_spec"));
+      assert.equal(sentSpec.link_data.message, "Texto novo");
+      assert.equal(sentSpec.link_data.name, "Titulo novo");
+      assert.equal(sentSpec.link_data.description, "Descricao nova");
+      return Response.json({ id: "creative-new" });
+    }
+    if (target.endsWith("/act_123/ads")) {
+      adCreated = true;
+      return Response.json({ id: "ad-new" });
+    }
+    return Response.json({}, { status: 404 });
+  };
+
+  try {
+    const response = await onRequest({
+      request: new Request("https://example.com/api/meta-ad-create", {
+        method: "POST",
+        body: JSON.stringify({
+          ad_id: "source-ad",
+          adset_id: "target-adset",
+          primary_text: "Texto novo",
+          headline: "Titulo novo",
+          description: "Descricao nova",
+        }),
+      }),
+      env: { META_ACCESS_TOKEN: "token" },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(adCreated, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("troca a imagem do criativo modelo sem alterar o objeto original", () => {
   const original = {

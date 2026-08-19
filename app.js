@@ -10,10 +10,10 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=193";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=193";
-import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=193";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=193";
+} from "./campaign-builder.mjs?v=197";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=197";
+import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=197";
+import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=197";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,12 +22,22 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 196;
+const APP_VERSION_BUILD = 197;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 const FX_FETCH_TIMEOUT_MS = 9000;
 const OPTIONAL_LTV_DAYS = [4, 5, 6, 7];
+const CREATIVE_TEXT_FIELDS = ["primary_text", "headline", "description"];
+
+const creativeTextOverridesForAd = (ad) => Object.fromEntries(
+  CREATIVE_TEXT_FIELDS
+    .filter((field) => String(ad?.[field] ?? "") !== String(ad?.[`original_${field}`] ?? ad?.[field] ?? ""))
+    .map((field) => [field, String(ad?.[field] ?? "")])
+);
+
+const hasCreativeTextOverrides = (ad) =>
+  Object.keys(creativeTextOverridesForAd(ad)).length > 0;
 
 const currencyUSD = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -4802,6 +4812,27 @@ function ManagerLevelIcon({ level }) {
   return html`<svg className="manager-level-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9h16M8 7h.01" /></svg>`;
 }
 
+function ManagerDraftAdTextFields({ ad, disabled, onChange }) {
+  return html`<div className="manager-draft-copy-fields">
+    <div className="manager-draft-copy-head">
+      <strong>Textos do anúncio</strong>
+      ${hasCreativeTextOverrides(ad) ? html`<span>Texto alterado</span>` : html`<small>Copiados do anúncio-modelo</small>`}
+    </div>
+    <label className="field manager-draft-primary-text">
+      <span>Texto principal</span>
+      <textarea rows="4" disabled=${disabled} value=${ad.primary_text || ""} onChange=${(event) => onChange({ primary_text: event.target.value })}></textarea>
+    </label>
+    <label className="field">
+      <span>Título</span>
+      <input disabled=${disabled} value=${ad.headline || ""} onChange=${(event) => onChange({ headline: event.target.value })} />
+    </label>
+    <label className="field">
+      <span>Descrição</span>
+      <input disabled=${disabled} value=${ad.description || ""} onChange=${(event) => onChange({ description: event.target.value })} />
+    </label>
+  </div>`;
+}
+
 function GerenciarView({
   campaigns,
   loading,
@@ -5069,6 +5100,9 @@ function GerenciarView({
       name: nextAnName(baseName, allNames),
       thumbnail_url: ad.thumbnail_url || "",
       url_tags: ad.url_tags || "",
+      primary_text: ad.primary_text || "",
+      headline: ad.headline || "",
+      description: ad.description || "",
       creative_override: null,
     };
   };
@@ -5683,6 +5717,11 @@ function GerenciarView({
                                     ${(pages || []).map((page) => html`<option value=${page.id}>${page.name || page.id}${page.name ? ` • ${page.id}` : ""}</option>`)}
                                   </select>
                                 </label>
+                                <${ManagerDraftAdTextFields}
+                                  ad=${ad}
+                                  disabled=${ad.removed || adset.removed}
+                                  onChange=${(patch) => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, patch)}
+                                />
                                 ${!ad.removed && !adset.removed ? html`<div className="manager-draft-creative">
                                   <${CampaignMediaPicker} accountId=${accountId} type="image" selectedKey=${ad.replacement_image_hash || ""} onSelect=${(item) => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { replacement_image_hash: item.key, replacement_image_url: item.url || "" })} />
                                   ${ad.replacement_image_hash ? html`<button className="ghost small" onClick=${() => onUpdateCampaignDraftAd(draft.id, adset.source_adset_id, ad.source_ad_id, { replacement_image_hash: "", replacement_image_url: "" })}>Usar imagem original</button>` : null}
@@ -5710,6 +5749,11 @@ function GerenciarView({
                       </div>
                       <input value=${ad.new_name} disabled=${ad.removed} onChange=${(e) => onUpdateDraftAd(draft.id, ad.id, { new_name: e.target.value })} />
                       <button className="ghost small" onClick=${() => onToggleDraftAd(draft.id, ad.id)}>${ad.removed ? "Restaurar" : "Remover"}</button>
+                      <${ManagerDraftAdTextFields}
+                        ad=${ad}
+                        disabled=${ad.removed}
+                        onChange=${(patch) => onUpdateDraftAd(draft.id, ad.id, patch)}
+                      />
                       ${!ad.removed ? html`<div className="manager-draft-creative">
                         <${CampaignMediaPicker}
                           accountId=${accountId}
@@ -13955,6 +13999,12 @@ function App() {
           replacement_image_hash: creativeOverrides[ad.id]?.key || "",
           replacement_image_url: creativeOverrides[ad.id]?.url || "",
           url_tags: ad.url_tags || "",
+          primary_text: ad.primary_text || "",
+          headline: ad.headline || "",
+          description: ad.description || "",
+          original_primary_text: ad.primary_text || "",
+          original_headline: ad.headline || "",
+          original_description: ad.description || "",
         }))),
         ...additionalAds.map((ad) => ({
           id: ad.draft_id,
@@ -13966,6 +14016,12 @@ function App() {
           replacement_image_hash: ad.creative_override?.key || "",
           replacement_image_url: ad.creative_override?.url || ad.thumbnail_url || "",
           url_tags: ad.url_tags || "",
+          primary_text: ad.primary_text || "",
+          headline: ad.headline || "",
+          description: ad.description || "",
+          original_primary_text: ad.primary_text || "",
+          original_headline: ad.headline || "",
+          original_description: ad.description || "",
         })),
       ],
     };
@@ -14566,8 +14622,11 @@ function App() {
       const replacesCreative = (draft.ads || []).some(
         (ad) => !ad.removed && ad.replacement_image_hash
       );
+      const replacesCreativeText = (draft.ads || []).some(
+        (ad) => !ad.removed && hasCreativeTextOverrides(ad)
+      );
       const hasAdditionalAds = (draft.ads || []).some((ad) => !ad.removed && ad.is_additional);
-      const requiresManualAds = isSalesDraft || replacesCreative || hasAdditionalAds;
+      const requiresManualAds = isSalesDraft || replacesCreative || replacesCreativeText || hasAdditionalAds;
       let manualCopyAds = requiresManualAds;
       let adCopyMode = requiresManualAds ? "create" : "copy";
       try {
@@ -14760,6 +14819,7 @@ function App() {
                     replacement_image_hash: ad.replacement_image_hash || "",
                     page_id: adsetPage.changed ? adsetPage.pageId : "",
                     instagram_actor_id: adsetPage.changed ? ad.instagram_actor_id || "" : "",
+                    ...creativeTextOverridesForAd(ad),
                     utm_tags: resolveManagedUrlTags({
                       trafficType: draft.traffic_type,
                       sourceUrlTags: ad.url_tags || "",
@@ -14842,7 +14902,7 @@ function App() {
             const sourceAdId = ad.source_ad_id || ad.id;
             const newName = String(ad.new_name || ad.name || "Novo anúncio").trim();
             let createdAdId = "";
-            const canCopyCreativeDirectly = draft.traffic_type === "messages" && !ad.replacement_image_hash;
+            const canCopyCreativeDirectly = draft.traffic_type === "messages" && !ad.replacement_image_hash && !hasCreativeTextOverrides(ad);
 
             if (canCopyCreativeDirectly) {
               step = "copy-ad-in-existing-adset";
@@ -14882,6 +14942,7 @@ function App() {
                     status: "ACTIVE",
                     sanitize_video_placements: true,
                     replacement_image_hash: ad.replacement_image_hash || "",
+                    ...creativeTextOverridesForAd(ad),
                     utm_tags: urlTagsForAd(ad),
                   }),
                 })
@@ -15075,6 +15136,7 @@ function App() {
                         status: managerPublishStatus,
                         sanitize_video_placements: true,
                         replacement_image_hash: ad.replacement_image_hash || "",
+                        ...creativeTextOverridesForAd(ad),
                         utm_tags: urlTagsForAd(ad),
                       }),
                     })
@@ -15132,6 +15194,7 @@ function App() {
                             status: managerPublishStatus,
                             sanitize_video_placements: true,
                             replacement_image_hash: ad.replacement_image_hash || "",
+                            ...creativeTextOverridesForAd(ad),
                             utm_tags: urlTagsForAd(ad),
                           }),
                         })

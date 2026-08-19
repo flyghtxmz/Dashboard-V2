@@ -152,6 +152,61 @@ export function resolveCreativeUrlTags(body, creative) {
   return String(value ?? "").trim().replace(/^\?/, "");
 }
 
+export function applyCreativeTextOverrides(objectStorySpec, assetFeedSpec, overrides = {}) {
+  const keys = ["primary_text", "headline", "description"];
+  const requested = keys.filter((key) => Object.prototype.hasOwnProperty.call(overrides, key));
+  if (!requested.length) {
+    return { objectStorySpec, assetFeedSpec, changed: false, unsupported: [] };
+  }
+
+  const nextStory = objectStorySpec ? structuredClone(objectStorySpec) : null;
+  const nextFeed = assetFeedSpec ? structuredClone(assetFeedSpec) : null;
+  const touched = new Set();
+  const setStoryValue = (container, field, key, value) => {
+    if (!container || typeof container !== "object") return;
+    container[field] = String(value ?? "");
+    touched.add(key);
+  };
+  const setFeedValues = (field, key, value) => {
+    if (!nextFeed || !Array.isArray(nextFeed[field])) return;
+    const text = String(value ?? "");
+    nextFeed[field] = nextFeed[field].length
+      ? nextFeed[field].map((item) => ({ ...item, text }))
+      : [{ text }];
+    touched.add(key);
+  };
+
+  if (Object.prototype.hasOwnProperty.call(overrides, "primary_text")) {
+    const value = overrides.primary_text;
+    setStoryValue(nextStory?.link_data, "message", "primary_text", value);
+    setStoryValue(nextStory?.video_data, "message", "primary_text", value);
+    setStoryValue(nextStory?.template_data, "message", "primary_text", value);
+    setStoryValue(nextStory?.photo_data, "caption", "primary_text", value);
+    setFeedValues("bodies", "primary_text", value);
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "headline")) {
+    const value = overrides.headline;
+    setStoryValue(nextStory?.link_data, "name", "headline", value);
+    setStoryValue(nextStory?.video_data, "title", "headline", value);
+    setStoryValue(nextStory?.template_data, "name", "headline", value);
+    setFeedValues("titles", "headline", value);
+  }
+  if (Object.prototype.hasOwnProperty.call(overrides, "description")) {
+    const value = overrides.description;
+    setStoryValue(nextStory?.link_data, "description", "description", value);
+    setStoryValue(nextStory?.video_data, "link_description", "description", value);
+    setStoryValue(nextStory?.template_data, "description", "description", value);
+    setFeedValues("descriptions", "description", value);
+  }
+
+  return {
+    objectStorySpec: nextStory,
+    assetFeedSpec: nextFeed,
+    changed: touched.size > 0,
+    unsupported: requested.filter((key) => !touched.has(key)),
+  };
+}
+
 export function applyCreativePageOverride(objectStorySpec, pageId, instagramActorId = "") {
   const nextPageId = String(pageId || "").trim();
   if (!nextPageId) return { objectStorySpec, changed: false, unsupported: false };
@@ -387,6 +442,11 @@ export async function onRequest({ request, env }) {
     page_id,
     instagram_actor_id,
   } = body || {};
+  const creativeTextOverrides = Object.fromEntries(
+    ["primary_text", "headline", "description"]
+      .filter((key) => Object.prototype.hasOwnProperty.call(body || {}, key))
+      .map((key) => [key, body[key]])
+  );
   if (!ad_id || (!adset_id && !apply_to_existing)) {
     return jsonResponse(400, {
       error: apply_to_existing
@@ -451,6 +511,23 @@ export async function onRequest({ request, env }) {
       }
       objectStorySpec = replacement.objectStorySpec;
       assetFeedSpec = replacement.assetFeedSpec;
+      objectStoryId = null;
+    }
+
+    if (Object.keys(creativeTextOverrides).length) {
+      const textResult = applyCreativeTextOverrides(
+        objectStorySpec,
+        assetFeedSpec,
+        creativeTextOverrides
+      );
+      if (!textResult.changed || textResult.unsupported.length) {
+        return jsonResponse(400, {
+          error: "Este criativo nao permite editar todos os textos automaticamente. Escolha outro anuncio como modelo.",
+          unsupported_fields: textResult.unsupported,
+        });
+      }
+      objectStorySpec = textResult.objectStorySpec;
+      assetFeedSpec = textResult.assetFeedSpec;
       objectStoryId = null;
     }
 

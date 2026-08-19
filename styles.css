@@ -1233,6 +1233,38 @@ button.ghost.danger {
   background: var(--card);
   color: var(--ink);
 }
+.manager-draft-copy-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr) minmax(180px, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 72%, var(--card));
+}
+.manager-draft-copy-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.manager-draft-copy-head small {
+  color: var(--muted);
+}
+.manager-draft-copy-head span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--card));
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+.manager-draft-copy-fields textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+}
 .manager-draft-ad.is-removed {
   opacity: 0.58;
 }
@@ -2009,6 +2041,13 @@ button.ghost.danger {
   .manager-campaign-draft-adset-fields,
   .is-campaign-draft .manager-draft-ad {
     grid-template-columns: 1fr;
+  }
+  .manager-draft-copy-fields {
+    grid-template-columns: 1fr;
+  }
+  .manager-draft-primary-text,
+  .manager-draft-copy-head {
+    grid-column: 1;
   }
   .manager-template-list {
     grid-template-columns: 1fr;

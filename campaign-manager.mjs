@@ -134,6 +134,12 @@ export function buildCampaignCopyStructure(campaign) {
           page_id: String(ad?.page_id || ""),
           original_page_id: String(ad?.page_id || ""),
           instagram_actor_id: String(ad?.instagram_actor_id || ""),
+          primary_text: String(ad?.primary_text || ""),
+          headline: String(ad?.headline || ""),
+          description: String(ad?.description || ""),
+          original_primary_text: String(ad?.primary_text || ""),
+          original_headline: String(ad?.headline || ""),
+          original_description: String(ad?.description || ""),
         };
       }),
     };

@@ -66,6 +66,37 @@ function extractCreativeImageHash(creative) {
   );
 }
 
+export function extractCreativeText(creative) {
+  const spec = creative?.object_story_spec || {};
+  const feed = creative?.asset_feed_spec || {};
+  const firstFeedText = (items) =>
+    (Array.isArray(items) ? items : []).find((item) => String(item?.text || "").trim())?.text || "";
+  return {
+    primary_text: String(
+      spec?.link_data?.message ??
+        spec?.video_data?.message ??
+        spec?.template_data?.message ??
+        spec?.photo_data?.caption ??
+        firstFeedText(feed?.bodies) ??
+        ""
+    ),
+    headline: String(
+      spec?.link_data?.name ??
+        spec?.video_data?.title ??
+        spec?.template_data?.name ??
+        firstFeedText(feed?.titles) ??
+        ""
+    ),
+    description: String(
+      spec?.link_data?.description ??
+        spec?.video_data?.link_description ??
+        spec?.template_data?.description ??
+        firstFeedText(feed?.descriptions) ??
+        ""
+    ),
+  };
+}
+
 export async function onRequest({ request, env }) {
   const token = getMetaToken(env);
   if (!token) return jsonResponse(500, { error: "META_ACCESS_TOKEN nao configurado" });
@@ -79,7 +110,7 @@ export async function onRequest({ request, env }) {
   const end_date = params.get("end_date");
   const force = params.get("force") === "1" || params.get("force") === "true";
   const kv = env.CPA_RULES_KV || env.DASHBOARD_KV;
-  const cacheKey = `meta_structure:v5:${account_id}:${start_date || ""}:${end_date || ""}`;
+  const cacheKey = `meta_structure:v6:${account_id}:${start_date || ""}:${end_date || ""}`;
 
   // ── KV cache read ──────────────────────────────────────
   if (kv && !force) {
@@ -112,7 +143,7 @@ export async function onRequest({ request, env }) {
     // ── 3 parallel paginated fetches — NO nested loops ────
     const campFields = "id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy";
     const adsetFields = "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,promoted_object,start_time,end_time";
-    const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{id,url_tags,image_hash,thumbnail_url,actor_id,instagram_actor_id,asset_feed_spec,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec{page_id,instagram_actor_id,link_data{link,image_hash,picture},photo_data{image_hash},video_data{call_to_action}}}";
+    const adFields = "id,name,status,effective_status,adset_id,campaign_id,updated_time,creative{id,url_tags,image_hash,thumbnail_url,actor_id,instagram_actor_id,asset_feed_spec,object_story_id,effective_object_story_id,link_url,object_url,object_story_spec}";
     const insightFields = "ad_id,spend,ctr,cpc,cpm,frequency,impressions,video_thruplay_watched_actions";
     const imageFields = "hash,url,url_128";
 
@@ -159,6 +190,7 @@ export async function onRequest({ request, env }) {
       const ins = insightMap.get(ad.id) || {};
       const spec = ad?.creative?.object_story_spec || {};
       const imageHash = extractCreativeImageHash(ad?.creative);
+      const creativeText = extractCreativeText(ad?.creative);
       const accountImage = imageByHash.get(imageHash);
       const url = extractUrl(spec);
       const destination =
@@ -199,6 +231,7 @@ export async function onRequest({ request, env }) {
           spec?.link_data?.picture ||
           ad?.creative?.thumbnail_url ||
           "",
+        ...creativeText,
         updated_time: ad.updated_time || "",
         // insights (last 30d)
         spend: ins.spend || null,
@@ -216,6 +249,7 @@ export async function onRequest({ request, env }) {
       if (!adsByAdset.has(ad.adset_id)) adsByAdset.set(ad.adset_id, []);
       const spec = ad?.creative?.object_story_spec || {};
       const imageHash = extractCreativeImageHash(ad?.creative);
+      const creativeText = extractCreativeText(ad?.creative);
       const accountImage = imageByHash.get(imageHash);
       adsByAdset.get(ad.adset_id).push({
         id: ad.id,
@@ -236,6 +270,7 @@ export async function onRequest({ request, env }) {
           spec?.link_data?.picture ||
           ad?.creative?.thumbnail_url ||
           "",
+        ...creativeText,
       });
     });
     const adsetsByCampaign = new Map();

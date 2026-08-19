@@ -1,6 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { onRequest } from "../functions/api/meta-structure.js";
+import { extractCreativeText, onRequest } from "../functions/api/meta-structure.js";
+
+test("extrai os textos de criativos comuns e dinamicos", () => {
+  assert.deepEqual(extractCreativeText({ object_story_spec: { link_data: {
+    message: "Principal",
+    name: "Titulo",
+    description: "Descricao",
+  } } }), {
+    primary_text: "Principal",
+    headline: "Titulo",
+    description: "Descricao",
+  });
+  assert.deepEqual(extractCreativeText({ asset_feed_spec: {
+    bodies: [{ text: "Principal dinamico" }],
+    titles: [{ text: "Titulo dinamico" }],
+    descriptions: [{ text: "Descricao dinamica" }],
+  } }), {
+    primary_text: "Principal dinamico",
+    headline: "Titulo dinamico",
+    description: "Descricao dinamica",
+  });
+});
 
 test("preserva campanha e conjunto sem anuncios na estrutura canonica", async () => {
   const originalFetch = globalThis.fetch;
@@ -56,6 +77,13 @@ test("resolve o preview pelo image_hash real da biblioteca da conta", async () =
           thumbnail_url: "https://meta.test/preview-antigo.jpg",
           actor_id: "page-1",
           instagram_actor_id: "ig-1",
+          object_story_spec: {
+            link_data: {
+              message: "Texto do modelo",
+              name: "Titulo do modelo",
+              description: "Descricao do modelo",
+            },
+          },
         },
       }] });
     }
@@ -81,6 +109,9 @@ test("resolve o preview pelo image_hash real da biblioteca da conta", async () =
     assert.equal(ad.thumbnail_url, "https://meta.test/imagem-correta.jpg");
     assert.equal(ad.page_id, "page-1");
     assert.equal(ad.instagram_actor_id, "ig-1");
+    assert.equal(ad.primary_text, "Texto do modelo");
+    assert.equal(ad.headline, "Titulo do modelo");
+    assert.equal(ad.description, "Descricao do modelo");
   } finally {
     globalThis.fetch = originalFetch;
   }
