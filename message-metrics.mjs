@@ -86,6 +86,55 @@ export function resolveMessageBidConfirmationStrategy({
   return cbo ? campaignValue || adsetValue : adsetValue;
 }
 
+export function finalizeMessageCampaignAttribution(row = {}) {
+  const hasAttribution = row.has_joinads_attribution === true;
+  if (!hasAttribution) {
+    return {
+      ...row,
+      joinads_impressions: null,
+      joinads_clicks: null,
+      revenue_usd: null,
+      revenue_brl: null,
+      roas: null,
+      profit_brl: null,
+      ecpm: null,
+      joinads_impressions_per_conversation: null,
+      visits_per_conversation: null,
+      revenue_per_conversation: null,
+      profit_per_conversation: null,
+      margin_pct: null,
+      attribution_status: "unavailable",
+    };
+  }
+
+  const spend = Number(row.spend_brl || 0);
+  const conversations = Number(row.conversations || 0);
+  const impressions = Number(row.joinads_impressions || 0);
+  const clicks = Number(row.joinads_clicks || 0);
+  const revenueUsd = Number(row.revenue_usd || 0);
+  const revenueBrl = Number(row.revenue_brl || 0);
+  const profitBrl = revenueBrl - spend;
+  return {
+    ...row,
+    roas: spend > 0 ? revenueBrl / spend : null,
+    profit_brl: profitBrl,
+    ecpm: impressions > 0 ? revenueUsd / impressions * 1000 : null,
+    joinads_impressions_per_conversation: conversations > 0 ? impressions / conversations : null,
+    visits_per_conversation: conversations > 0 ? clicks / conversations : null,
+    revenue_per_conversation: conversations > 0 ? revenueBrl / conversations : null,
+    profit_per_conversation: conversations > 0 ? profitBrl / conversations : null,
+    margin_pct: revenueBrl > 0 ? profitBrl / revenueBrl * 100 : null,
+    attribution_status: "attributed",
+  };
+}
+
+export function hasCompleteMessageCampaignAttribution(rows = []) {
+  const paidRows = (Array.isArray(rows) ? rows : []).filter((row) =>
+    Number(row?.spend_brl || 0) > 0 || Number(row?.meta_impressions || 0) > 0
+  );
+  return paidRows.length === 0 || paidRows.every((row) => row?.has_joinads_attribution === true);
+}
+
 export function classifyMessageBidConfirmation({
   requestedStrategy = "",
   actualStrategy = "",

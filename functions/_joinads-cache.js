@@ -1,6 +1,7 @@
 const TIME_ZONE = "America/Sao_Paulo";
 const DEFAULT_FINAL_HOUR = 10;
 const CACHE_SCHEMA = "joinads-daily-v2";
+const DEFAULT_STORAGE_TIMEOUT_MS = 1200;
 const inFlight = new Map();
 
 function isRetryableJoinadsError(error) {
@@ -188,8 +189,10 @@ export async function refreshJoinadsDailyCache({ env, reportName, day, identity,
 
 export async function fetchJoinadsDailyCached({ env, reportName, startDate, endDate, identity, fetchDay, validatePayload }) {
   const storage = getStorage(env);
-  if (!storage.db && !storage.kv) throw new Error("JOINADS_DAILY_STORAGE_NOT_CONFIGURED");
-  if (storage.db) await ensureSchema(storage.db);
+  const storageTimeoutMs = Math.max(
+    100,
+    Number(env.JOINADS_CACHE_OPERATION_TIMEOUT_MS || DEFAULT_STORAGE_TIMEOUT_MS)
+  );
   const nowLocal = localParts();
   const yesterday = shiftDay(nowLocal.iso, -1);
   const finalHour = Math.min(23, Math.max(0, Number(env.REPORT_YESTERDAY_FINAL_HOUR ?? DEFAULT_FINAL_HOUR)));
@@ -201,6 +204,69 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
   const provisionalDays = [];
   const fallbackDays = [];
   const dayAudit = [];
+  const storageFailures = [];
+  const recordStorageFailure = (operation, day, error) => {
+    if (storageFailures.length >= 20) return;
+    storageFailures.push({
+      operation,
+      day,
+      message: String(error?.message || error || "Falha desconhecida no cache"),
+    });
+  };
+  const runStorageOperation = (operation, day, task) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error(`Cache ${operation} excedeu ${storageTimeoutMs}ms`);
+      error.code = "JOINADS_CACHE_TIMEOUT";
+      reject(error);
+    }, storageTimeoutMs);
+    Promise.resolve()
+      .then(task)
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timer));
+  });
+  const safeRead = async (key, day) => {
+    if (!storage.db && !storage.kv) return null;
+    try {
+      return await runStorageOperation("read", day, () => readStored(storage, key));
+    } catch (error) {
+      recordStorageFailure("read", day, error);
+      return null;
+    }
+  };
+  const safeDelete = async (key, day) => {
+    if (!storage.db && !storage.kv) return false;
+    try {
+      await runStorageOperation("delete", day, () => deleteStored(storage, key));
+      return true;
+    } catch (error) {
+      recordStorageFailure("delete", day, error);
+      return false;
+    }
+  };
+  const safeWrite = async (key, day, payload, provisional) => {
+    if (!storage.db && !storage.kv) return false;
+    try {
+      await runStorageOperation("write", day, () =>
+        writeStored(storage, key, reportName, day, payload, { provisional })
+      );
+      return true;
+    } catch (error) {
+      recordStorageFailure("write", day, error);
+      return false;
+    }
+  };
+  const validateStoredEnvelope = async (envelope, key, day) => {
+    if (!envelope) return null;
+    const valid =
+      envelope.schema === CACHE_SCHEMA &&
+      envelope.reportName === reportName &&
+      envelope.reportDate === day &&
+      envelope.payload &&
+      isValidPayload(envelope.payload, validatePayload, day);
+    if (valid) return envelope;
+    await safeDelete(key, day);
+    return null;
+  };
   const worker = async () => {
     while (cursor < days.length) {
       const index = cursor++;
@@ -209,19 +275,12 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
       const provisionalYesterday = day === yesterday && nowLocal.hour < finalHour;
       const finalizable = day < yesterday || (day === yesterday && nowLocal.hour >= finalHour);
       const key = await hashKey({ schema: CACHE_SCHEMA, reportName, day, identity });
-      let storedEnvelope = await readStored(storage, key);
+      // O dia atual deve ir primeiro a JoinAds. Ler o D1 antes da API fazia uma
+      // instabilidade do cache bloquear dados ao vivo que estavam saudaveis.
+      let storedEnvelope = liveToday
+        ? null
+        : await validateStoredEnvelope(await safeRead(key, day), key, day);
       let envelope = finalizable && storedEnvelope?.provisional !== true ? storedEnvelope : null;
-      if (storedEnvelope && (
-        storedEnvelope.schema !== CACHE_SCHEMA ||
-        storedEnvelope.reportName !== reportName ||
-        storedEnvelope.reportDate !== day ||
-        !storedEnvelope.payload ||
-        !isValidPayload(storedEnvelope.payload, validatePayload, day)
-      )) {
-        await deleteStored(storage, key);
-        storedEnvelope = null;
-        envelope = null;
-      }
       let payload = envelope?.payload || null;
       if (payload) {
         hits.push(day);
@@ -243,6 +302,11 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
         }
         const valid = isValidPayload(payload, validatePayload, day);
         const liveSummary = valid ? summarizePayload(payload) : null;
+        // O cache so e consultado no dia atual quando a API falha ou volta zerada.
+        // Assim ele continua servindo como protecao sem ficar no caminho da carga viva.
+        if ((!valid || liveSummary.totals.revenue <= 0) && !storedEnvelope) {
+          storedEnvelope = await validateStoredEnvelope(await safeRead(key, day), key, day);
+        }
         const storedRevenue = Number(storedEnvelope?.totals?.revenue || 0);
         const suspiciousEmptyRevenue = valid && liveSummary.totals.revenue <= 0 && storedRevenue > 0;
         const canUseSameDayFallback = !!storedEnvelope?.payload && (suspiciousEmptyRevenue || !valid);
@@ -267,8 +331,16 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
         } else {
           apiDays.push(day);
           if (provisionalYesterday) provisionalDays.push(day);
-          await writeStored(storage, key, reportName, day, payload, { provisional: !finalizable });
-          dayAudit.push({ day, origin: "api", rowCount: liveSummary.rowCount, totals: liveSummary.totals, savedAt: new Date().toISOString() });
+          const savedAt = new Date().toISOString();
+          const cacheSaved = await safeWrite(key, day, payload, !finalizable);
+          dayAudit.push({
+            day,
+            origin: "api",
+            rowCount: liveSummary.rowCount,
+            totals: liveSummary.totals,
+            savedAt,
+            cacheSaved,
+          });
         }
       }
       results[index] = payload;
@@ -285,6 +357,8 @@ export async function fetchJoinadsDailyCached({ env, reportName, startDate, endD
       sameDayFallbackDays: Array.from(new Set(fallbackDays)).sort(),
       provisionalDays: Array.from(new Set(provisionalDays)).sort(),
       dayAudit: dayAudit.sort((a, b) => a.day.localeCompare(b.day)),
+      storageHealthy: storageFailures.length === 0,
+      storageFailures,
     },
   };
 }

@@ -10,10 +10,10 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=198";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=198";
-import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=198";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=198";
+} from "./campaign-builder.mjs?v=199";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=199";
+import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=199";
+import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=199";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 198;
+const APP_VERSION_BUILD = 199;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1506,11 +1506,20 @@ function MetricasMensagensView({
   const joinadsApiDays = cacheDays("apiDays");
   const joinadsProvisionalDays = cacheDays("provisionalDays");
   const joinadsDatabaseDays = cacheDays("cacheHitDays");
+  const joinadsStorageFailures = cacheDiagnostics.flatMap((item) =>
+    Array.isArray(item?.storageFailures) ? item.storageFailures : []
+  );
   const joinadsDataSource = joinadsFallbackDays.length
     ? {
         label: "JoinAds: fallback temporario",
         className: "danger",
         title: `A API falhou ou voltou zerada; preservado o ultimo valor valido dos dias: ${joinadsFallbackDays.join(", ")}.`,
+      }
+    : joinadsStorageFailures.length && (joinadsProvisionalDays.length || joinadsApiDays.length)
+    ? {
+        label: "JoinAds: API ao vivo · cache instavel",
+        className: "warn",
+        title: `A JoinAds respondeu ao vivo, mas ${joinadsStorageFailures.length} operacao(oes) do cache falharam. Os dados foram exibidos sem depender do D1.`,
       }
     : joinadsProvisionalDays.length || joinadsApiDays.length
     ? {
@@ -2134,6 +2143,7 @@ function MetricasMensagensView({
             attributionLevels: new Set(),
             sourceValues: new Set(),
             countedJoinadsAds: new Set(),
+            has_joinads_attribution: false,
           };
         const revenueUsd = toNumber(row.revenue_client_value);
         const revenueBrl = row.revenue_client_brl_value != null
@@ -2221,16 +2231,14 @@ function MetricasMensagensView({
         }
         if (row.data_level) item.attributionLevels.add(row.data_level);
         if (row.joinads_source_value) item.sourceValues.add(row.joinads_source_value);
+        if (row.joinads_matched) item.has_joinads_attribution = true;
         map.set(key, item);
         return map;
       }, new Map())
       .values()
   )
-    .map((row) => ({
+    .map((row) => finalizeMessageCampaignAttribution({
       ...row,
-      roas: row.spend_brl > 0 ? row.revenue_brl / row.spend_brl : null,
-      profit_brl: row.revenue_brl - row.spend_brl,
-      ecpm: row.joinads_impressions > 0 ? (row.revenue_usd / row.joinads_impressions) * 1000 : null,
       meta_cost_per_result:
         row.meta_cost_weight > 0
           ? row.meta_cost_weighted / row.meta_cost_weight
@@ -2239,18 +2247,11 @@ function MetricasMensagensView({
           : null,
       cost_per_conversation:
         row.conversations > 0 ? row.spend_brl / row.conversations : null,
-      joinads_impressions_per_conversation:
-        row.conversations > 0 ? row.joinads_impressions / row.conversations : null,
-      revenue_per_conversation:
-        row.conversations > 0 ? row.revenue_brl / row.conversations : null,
-      profit_per_conversation:
-        row.conversations > 0 ? (row.revenue_brl - row.spend_brl) / row.conversations : null,
-      visits_per_conversation:
-        row.conversations > 0 ? row.joinads_clicks / row.conversations : null,
-      margin_pct: row.revenue_brl > 0 ? ((row.revenue_brl - row.spend_brl) / row.revenue_brl) * 100 : null,
       ctr_meta: row.meta_impressions > 0 ? (row.meta_clicks / row.meta_impressions) * 100 : null,
     }))
     .sort((a, b) => b.revenue_brl - a.revenue_brl);
+  const campaignAttributionComplete =
+    refreshAttributionReady && hasCompleteMessageCampaignAttribution(campaignRows);
   const normalizedMessageSearch = normalizeKey(messageSearch);
   const filteredCampaignRows = normalizedMessageSearch
     ? campaignRows.filter((row) => {
@@ -2326,6 +2327,20 @@ function MetricasMensagensView({
     totalsRow.revenue_brl > 0 ? (totalsRow.profit_brl / totalsRow.revenue_brl) * 100 : null;
   totalsRow.ctr_meta =
     totalsRow.meta_impressions > 0 ? (totalsRow.meta_clicks / totalsRow.meta_impressions) * 100 : null;
+  if (!campaignAttributionComplete) {
+    totalsRow.joinads_impressions = null;
+    totalsRow.joinads_clicks = null;
+    totalsRow.revenue_usd = null;
+    totalsRow.revenue_brl = null;
+    totalsRow.roas = null;
+    totalsRow.profit_brl = null;
+    totalsRow.ecpm = null;
+    totalsRow.joinads_impressions_per_conversation = null;
+    totalsRow.visits_per_conversation = null;
+    totalsRow.revenue_per_conversation = null;
+    totalsRow.profit_per_conversation = null;
+    totalsRow.margin_pct = null;
+  }
   const explicitComparisonDate = reportFilters.compareDate || "";
   const comparisonMetrics = explicitComparisonDate ? dateComparisonSnapshot : refreshComparisonSnapshot;
   const joinadsComparisonReady = refreshAttributionReady && comparisonMetrics?.joinadsAttributionReady !== false;
@@ -2419,16 +2434,37 @@ function MetricasMensagensView({
       ecpm: totalsRow.ecpm,
     };
   }
+  if (!campaignAttributionComplete) {
+    messengerMedium = {
+      ...messengerMedium,
+      impressions: null,
+      clicks: null,
+      revenue_usd: null,
+      revenue_brl: null,
+      profit_brl: null,
+      roas: null,
+      ecpm: null,
+    };
+  }
   const paidMessengerRevenueUsd = messageScopeFiltered
     ? totalsRow.revenue_usd
     : Math.max(totalsRow.revenue_usd, messengerGlobal.revenue_usd - campaignOriginTotals.evoOrganic.revenueUsd);
   const paidMessengerImpressions = messageScopeFiltered
     ? totalsRow.joinads_impressions
     : Math.max(totalsRow.joinads_impressions, messengerGlobal.impressions - campaignOriginTotals.evoOrganic.impressions);
-  const realRevenueCoverage = paidMessengerRevenueUsd > 0 ? totalsRow.revenue_usd / paidMessengerRevenueUsd : null;
-  const realImpressionCoverage = paidMessengerImpressions > 0 ? totalsRow.joinads_impressions / paidMessengerImpressions : null;
-  const economicRoas = totalsRow.spend_brl > 0 ? paidMessengerRevenueUsd * toNumber(brlRate) / totalsRow.spend_brl : null;
-  const economicProfitBrl = paidMessengerRevenueUsd * toNumber(brlRate) - totalsRow.spend_brl;
+  const realRevenueCoverage = campaignAttributionComplete && paidMessengerRevenueUsd > 0
+    ? totalsRow.revenue_usd / paidMessengerRevenueUsd
+    : null;
+  const realImpressionCoverage = campaignAttributionComplete && paidMessengerImpressions > 0
+    ? totalsRow.joinads_impressions / paidMessengerImpressions
+    : null;
+  const economicEstimateAvailable = messengerGlobal.rows.length > 0;
+  const economicRoas = economicEstimateAvailable && totalsRow.spend_brl > 0
+    ? paidMessengerRevenueUsd * toNumber(brlRate) / totalsRow.spend_brl
+    : null;
+  const economicProfitBrl = economicEstimateAvailable
+    ? paidMessengerRevenueUsd * toNumber(brlRate) - totalsRow.spend_brl
+    : null;
   const unclassifiedMessengerRevenueUsd = messageScopeFiltered ? 0 : Math.max(
     0,
     messengerGlobal.revenue_usd - campaignOriginTotals.src.revenueUsd -
@@ -3065,6 +3101,9 @@ function MetricasMensagensView({
             ${pageScoped ? html`<span className="chip neutral">Pagina filtrada</span>` : null}
             ${messageTypeScoped ? html`<span className="chip neutral">${reportFilters.messageType === "sales" ? "Objetivo Vendas" : "Otimizacao CONVERSATIONS"}</span>` : null}
             <span className=${`chip ${joinadsDataSource.className}`} title=${joinadsDataSource.title}>${joinadsDataSource.label}</span>
+            ${campaignRows.length && !campaignAttributionComplete
+              ? html`<span className="chip danger" title="Os totais da JoinAds chegaram, mas a atribuicao src_/UTM por campanha nao ficou completa. Valores economicos nao serao calculados como zero.">Atribuicao por campanha indisponivel</span>`
+              : null}
             ${explicitComparisonDate && comparisonMetrics?.campaigns
               ? html`<span className="chip neutral" title=${`Setas comparam os dados atuais com o dia ${explicitComparisonLabel}`}>Comparando com ${explicitComparisonLabel}</span>`
               : !explicitComparisonDate && refreshComparisonSnapshot?.campaigns
@@ -3212,10 +3251,10 @@ function MetricasMensagensView({
                             <td>${row.revenue_per_conversation != null ? currencyBRL.format(row.revenue_per_conversation) : "-"}</td>
                             <td>${row.profit_per_conversation != null ? html`<span className=${row.profit_per_conversation >= 0 ? "pos-pill" : "neg-pill"}>${currencyBRL.format(row.profit_per_conversation)}</span>` : "-"}</td>
                           `}
-                      <td>${number.format(row.joinads_impressions || 0)}<${RefreshDelta} current=${row.joinads_impressions} previous=${previousJoinadsRow?.joinads_impressions} /></td>
+                      <td>${row.joinads_impressions != null ? number.format(row.joinads_impressions) : "-"}<${RefreshDelta} current=${row.joinads_impressions} previous=${previousJoinadsRow?.joinads_impressions} /></td>
                       <td>${row.joinads_impressions_per_conversation != null ? row.joinads_impressions_per_conversation.toFixed(2) : "-"}</td>
                       <td>${row.visits_per_conversation != null ? row.visits_per_conversation.toFixed(2) : "-"}</td>
-                      <td>${number.format(row.joinads_clicks || 0)}<${RefreshDelta} current=${row.joinads_clicks} previous=${previousJoinadsRow?.joinads_clicks} /></td>
+                      <td>${row.joinads_clicks != null ? number.format(row.joinads_clicks) : "-"}<${RefreshDelta} current=${row.joinads_clicks} previous=${previousJoinadsRow?.joinads_clicks} /></td>
                       ${showUserCommission ? null : html`<td>
                         ${currencyBRL.format(row.spend_brl || 0)}
                         <${RefreshDelta} current=${row.spend_brl} previous=${previousRow?.spend_brl} format="brl" />
@@ -3224,10 +3263,10 @@ function MetricasMensagensView({
                       ${showUserCommission
                         ? html`<td>${userCommission != null ? currencyBRL.format(userCommission) : "-"}</td>`
                         : html`
-                            <td>${currencyUSD.format(row.revenue_usd || 0)}<${RefreshDelta} current=${row.revenue_usd} previous=${previousJoinadsRow?.revenue_usd} format="usd" /></td>
-                            <td>${currencyBRL.format(row.revenue_brl || 0)}<${RefreshDelta} current=${row.revenue_brl} previous=${previousRevenueBrl} format="brl" /></td>
+                            <td>${row.revenue_usd != null ? currencyUSD.format(row.revenue_usd) : "-"}<${RefreshDelta} current=${row.revenue_usd} previous=${previousJoinadsRow?.revenue_usd} format="usd" /></td>
+                            <td>${row.revenue_brl != null ? currencyBRL.format(row.revenue_brl) : "-"}<${RefreshDelta} current=${row.revenue_brl} previous=${previousRevenueBrl} format="brl" /></td>
                             <td>${row.roas != null ? html`<span className=${row.roas >= 1 ? "pos" : "neg"}>${row.roas.toFixed(2)}x</span>` : "-"}<${RefreshDelta} current=${row.roas} previous=${previousRoas} format="roas" /></td>
-                            <td><span className=${row.profit_brl > 0 ? "pos" : row.profit_brl < 0 ? "neg" : ""}>${currencyBRL.format(row.profit_brl || 0)}</span><${RefreshDelta} current=${row.profit_brl} previous=${previousProfitBrl} format="brl" /></td>
+                            <td>${row.profit_brl != null ? html`<span className=${row.profit_brl > 0 ? "pos" : row.profit_brl < 0 ? "neg" : ""}>${currencyBRL.format(row.profit_brl)}</span>` : "-"}<${RefreshDelta} current=${row.profit_brl} previous=${previousProfitBrl} format="brl" /></td>
                             <td>${row.margin_pct != null ? html`<span className=${row.margin_pct >= 0 ? "pos" : "neg"}>${row.margin_pct.toFixed(1)}%</span>` : "-"}</td>
                           `}
                       <td>${row.ecpm != null ? currencyUSD.format(row.ecpm) : "-"}<${RefreshDelta} current=${row.ecpm} previous=${previousJoinadsRow?.ecpm} format="usd" /></td>
@@ -3405,18 +3444,18 @@ function MetricasMensagensView({
                             <td><strong>${totalsRow.revenue_per_conversation != null ? currencyBRL.format(totalsRow.revenue_per_conversation) : "-"}</strong></td>
                             <td><strong>${totalsRow.profit_per_conversation != null ? currencyBRL.format(totalsRow.profit_per_conversation) : "-"}</strong></td>
                           `}
-                      <td><strong>${number.format(totalsRow.joinads_impressions)}</strong><${RefreshDelta} current=${totalsRow.joinads_impressions} previous=${previousJoinadsTotals?.joinads_impressions} /></td>
+                      <td><strong>${totalsRow.joinads_impressions != null ? number.format(totalsRow.joinads_impressions) : "-"}</strong><${RefreshDelta} current=${totalsRow.joinads_impressions} previous=${previousJoinadsTotals?.joinads_impressions} /></td>
                       <td><strong>${totalsRow.joinads_impressions_per_conversation != null ? totalsRow.joinads_impressions_per_conversation.toFixed(2) : "-"}</strong></td>
                       <td><strong>${totalsRow.visits_per_conversation != null ? totalsRow.visits_per_conversation.toFixed(2) : "-"}</strong></td>
-                      <td><strong>${number.format(totalsRow.joinads_clicks)}</strong><${RefreshDelta} current=${totalsRow.joinads_clicks} previous=${previousJoinadsTotals?.joinads_clicks} /></td>
+                      <td><strong>${totalsRow.joinads_clicks != null ? number.format(totalsRow.joinads_clicks) : "-"}</strong><${RefreshDelta} current=${totalsRow.joinads_clicks} previous=${previousJoinadsTotals?.joinads_clicks} /></td>
                       ${showUserCommission ? null : html`<td><strong>${currencyBRL.format(totalsRow.spend_brl)}</strong><${RefreshDelta} current=${totalsRow.spend_brl} previous=${previousTotals?.spend_brl} format="brl" /></td>`}
                       ${showUserCommission
                         ? html`<td><strong>${currencyBRL.format(calculateUserCommission(totalsRow.revenue_brl, commissionPercent) || 0)}</strong></td>`
                         : html`
-                            <td><strong>${currencyUSD.format(totalsRow.revenue_usd)}</strong><${RefreshDelta} current=${totalsRow.revenue_usd} previous=${previousJoinadsTotals?.revenue_usd} format="usd" /></td>
-                            <td><strong>${currencyBRL.format(totalsRow.revenue_brl)}</strong><${RefreshDelta} current=${totalsRow.revenue_brl} previous=${previousTotalsRevenueBrl} format="brl" /></td>
+                            <td><strong>${totalsRow.revenue_usd != null ? currencyUSD.format(totalsRow.revenue_usd) : "-"}</strong><${RefreshDelta} current=${totalsRow.revenue_usd} previous=${previousJoinadsTotals?.revenue_usd} format="usd" /></td>
+                            <td><strong>${totalsRow.revenue_brl != null ? currencyBRL.format(totalsRow.revenue_brl) : "-"}</strong><${RefreshDelta} current=${totalsRow.revenue_brl} previous=${previousTotalsRevenueBrl} format="brl" /></td>
                             <td><strong>${totalsRow.roas != null ? `${totalsRow.roas.toFixed(2)}x` : "-"}</strong><${RefreshDelta} current=${totalsRow.roas} previous=${previousTotalsRoas} format="roas" /></td>
-                            <td><strong>${currencyBRL.format(totalsRow.profit_brl)}</strong><${RefreshDelta} current=${totalsRow.profit_brl} previous=${previousTotalsProfitBrl} format="brl" /></td>
+                            <td><strong>${totalsRow.profit_brl != null ? currencyBRL.format(totalsRow.profit_brl) : "-"}</strong><${RefreshDelta} current=${totalsRow.profit_brl} previous=${previousTotalsProfitBrl} format="brl" /></td>
                             <td><strong>${totalsRow.margin_pct != null ? `${totalsRow.margin_pct.toFixed(1)}%` : "-"}</strong></td>
                           `}
                       <td><strong>${totalsRow.ecpm != null ? currencyUSD.format(totalsRow.ecpm) : "-"}</strong><${RefreshDelta} current=${totalsRow.ecpm} previous=${previousJoinadsTotals?.ecpm} format="usd" /></td>
@@ -3695,23 +3734,23 @@ function MetricasMensagensView({
           <div className="metric-card">
             <div className="metric-label">Impressoes JoinAds</div>
             <${MetricInfo} text="Total de impressoes JoinAds registradas nas origens persistidas utm_campaign=src_. Nao inclui campanhas numericas de vendas para o site, organic_ nem trafego sem classificacao." />
-            <div className="metric-value">${number.format(messengerMedium.impressions || 0)}</div>
+            <div className="metric-value">${messengerMedium.impressions != null ? number.format(messengerMedium.impressions) : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Cliques JoinAds</div>
             <${MetricInfo} text="Total de cliques JoinAds registrados nas origens utm_campaign=src_. Nao sao cliques do anuncio Meta; sao interacoes com os anuncios monetizados no site." />
-            <div className="metric-value">${number.format(messengerMedium.clicks || 0)}</div>
+            <div className="metric-value">${messengerMedium.clicks != null ? number.format(messengerMedium.clicks) : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita Messenger USD</div>
             <div className="metric-helper">Somente origens utm_campaign=src_*</div>
             <${MetricInfo} text="Receita cliente em USD informada pela JoinAds exclusivamente para origens src_. Campanhas numericas de vendas, organic_ e trafego sem classificacao nao entram neste valor." />
-            <div className="metric-value">${currencyUSD.format(messengerMedium.revenue_usd || 0)}</div>
+            <div className="metric-value">${messengerMedium.revenue_usd != null ? currencyUSD.format(messengerMedium.revenue_usd) : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Receita BRL</div>
             <${MetricInfo} text="Receita cliente das origens src_ convertida de USD para BRL pela cotacao exibida. Formula: receita cliente USD de mensagens x cambio USD/BRL." />
-            <div className="metric-value">${currencyBRL.format(messengerMedium.revenue_brl || 0)}</div>
+            <div className="metric-value">${messengerMedium.revenue_brl != null ? currencyBRL.format(messengerMedium.revenue_brl) : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Gasto Meta total</div>
@@ -3734,12 +3773,12 @@ function MetricasMensagensView({
           <div className="metric-card">
             <div className="metric-label">Lucro atribuído</div>
             <${MetricInfo} text="Resultado comprovadamente atribuido. Formula: receita cliente BRL ligada aos src_ das campanhas - gasto Meta total com impostos." />
-            <div className="metric-value">${currencyBRL.format(totalsRow.profit_brl || 0)}</div>
+            <div className="metric-value">${totalsRow.profit_brl != null ? currencyBRL.format(totalsRow.profit_brl) : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Lucro econômico estimado</div>
             <${MetricInfo} text="Cenario economico estimado. Formula: receita BRL potencialmente paga do Messenger - gasto Meta total com impostos. A sobra sem classificacao nao e distribuida entre campanhas." />
-            <div className="metric-value">${currencyBRL.format(economicProfitBrl || 0)}</div>
+            <div className="metric-value">${economicProfitBrl != null ? currencyBRL.format(economicProfitBrl) : "-"}</div>
           </div>
           <div className="metric-card">
             <div className="metric-label">Cobertura real da receita</div>
@@ -12150,6 +12189,26 @@ function App() {
       return;
     }
 
+    const preserveCurrentJoinads = !!appliedFilters &&
+      appliedFilters.startDate === filters.startDate &&
+      appliedFilters.endDate === filters.endDate &&
+      normalizeKey(appliedFilters.domain) === normalizeKey(filters.domain) &&
+      normalizeKey(appliedFilters.metaAccountId) === normalizeKey(filters.metaAccountId);
+    const preservedJoinads = {
+      topUrls: preserveCurrentJoinads ? topUrls : [],
+      earnings: preserveCurrentJoinads ? earnings : [],
+      earningsAll: preserveCurrentJoinads ? earningsAll : [],
+      content: preserveCurrentJoinads ? joinadsContentRows : [],
+      contentCountry: preserveCurrentJoinads ? joinadsContentCountryRows : [],
+      contentKeyValue: preserveCurrentJoinads ? joinadsContentKeyValueRows : [],
+      campaign: preserveCurrentJoinads ? joinadsCampaignRows : [],
+      medium: preserveCurrentJoinads ? joinadsMediumRows : [],
+      source: preserveCurrentJoinads ? metaSourceRows : [],
+      term: preserveCurrentJoinads ? superTermRows : [],
+      keyValue: preserveCurrentJoinads ? keyValueContent : [],
+      sources: preserveCurrentJoinads ? messenleadSources : [],
+    };
+
     setLoading(true);
     setError("");
     setDateComparisonSnapshot(null);
@@ -12213,7 +12272,7 @@ function App() {
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `top-url:${filters.domain}:${filters.startDate}:${filters.endDate}`,
         }),
-        { fallback: { data: [] } }
+        { fallback: { data: preservedJoinads.topUrls } }
       );
 
       const earningsPromise = boundedLoad("joinads-earnings", fetchJson(
@@ -12227,8 +12286,13 @@ function App() {
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `earnings:${filters.domain}:${filters.startDate}:${filters.endDate}`,
         }),
-        { fallback: { data: [] } }
-      );
+        { fallback: { data: preservedJoinads.earnings } }
+      ).then((result) => {
+        if (loadRequestIdRef.current === loadRequestId && Array.isArray(result?.data) && result.data.length) {
+          setEarnings(result.data);
+        }
+        return result;
+      });
       const earningsAllPromise = boundedLoad("joinads-earnings-all", fetchJson(
         `${API_BASE}/earnings?${new URLSearchParams({
           start_date: filters.startDate,
@@ -12239,8 +12303,13 @@ function App() {
           cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
           cacheKey: `earnings:all:${filters.startDate}:${filters.endDate}`,
         }),
-        { fallback: { data: [] }, critical: false }
-      );
+        { fallback: { data: preservedJoinads.earningsAll }, critical: false }
+      ).then((result) => {
+        if (loadRequestIdRef.current === loadRequestId && Array.isArray(result?.data) && result.data.length) {
+          setEarningsAll(result.data);
+        }
+        return result;
+      });
       // A decisao de fallback usa os dois resultados, mas as consultas podem rodar juntas.
       // Inicia a Meta imediatamente. Essas chamadas nao dependem da JoinAds e antes
       // ficavam paradas ate a atribuicao e os relatorios da JoinAds terminarem.
@@ -12282,15 +12351,17 @@ function App() {
             quickMetaPreviewLoaded = true;
             loadedMetaRowsCount = quickRows.length;
             const previewRows = quickRows.map((row) => ({ ...row, meta_source: "insights_preview" }));
-            setSuperFilter([]);
-            setJoinadsContentRows([]);
-            setJoinadsContentCountryRows([]);
-            setJoinadsContentKeyValueRows([]);
-            setJoinadsCampaignRows([]);
-            setKeyValueContent([]);
-            setSuperTermRows([]);
-            setEarnings([]);
-            setEarningsAll([]);
+            if (!preserveCurrentJoinads) {
+              setSuperFilter([]);
+              setJoinadsContentRows([]);
+              setJoinadsContentCountryRows([]);
+              setJoinadsContentKeyValueRows([]);
+              setJoinadsCampaignRows([]);
+              setKeyValueContent([]);
+              setSuperTermRows([]);
+              setEarnings([]);
+              setEarningsAll([]);
+            }
             setMetaRows(previewRows);
             setMetaLtvRows(previewRows);
             setAppliedFilters({ ...filters });
@@ -12332,19 +12403,21 @@ function App() {
         boundedLoad("joinads-super-filter-content", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(contentSuperPayload),
-        }), { timeoutMs: 15000, fallback: { data: [] } }),
+        }), { timeoutMs: 15000, fallback: { data: preservedJoinads.content } }),
         boundedLoad("joinads-super-filter-campaign", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(campaignSuperPayload),
-        }), { timeoutMs: 15000, fallback: { data: [] } }),
+        }), { timeoutMs: 15000, fallback: { data: preservedJoinads.campaign } }),
       ]);
       if (contentSuperResult?._dashboardError) {
         contentSuperError = contentSuperResult._dashboardError;
+        contentSuperRes = { data: Array.isArray(contentSuperResult.data) ? contentSuperResult.data : [] };
       } else {
         contentSuperRes = contentSuperResult || { data: [] };
       }
       if (campaignSuperResult?._dashboardError) {
         campaignSuperError = campaignSuperResult._dashboardError;
+        campaignSuperRes = { data: Array.isArray(campaignSuperResult.data) ? campaignSuperResult.data : [] };
       } else {
         campaignSuperRes = campaignSuperResult || { data: [] };
       }
@@ -12415,7 +12488,7 @@ function App() {
             body: JSON.stringify({ sourceKeys }),
           }), {
             timeoutMs: 12000,
-            fallback: { sources: [], unresolved: sourceKeys },
+            fallback: { sources: preservedJoinads.sources, unresolved: sourceKeys },
           })
         : Promise.resolve({ sources: [], unresolved: [] });
 
@@ -12461,7 +12534,7 @@ function App() {
             custom_key: "utm_term",
             group: ["domain", "custom_value"],
           }),
-        }), { timeoutMs: 15000, fallback: { data: [] }, critical: false }),
+        }), { timeoutMs: 15000, fallback: { data: preservedJoinads.term }, critical: false }),
         boundedLoad("joinads-key-value-country", fetchJsonWithRetry(
           `${API_BASE}/key-value-country?${new URLSearchParams({
             start_date: filters.startDate,
@@ -12476,7 +12549,7 @@ function App() {
             cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
-        ), { timeoutMs: 18000, fallback: { data: [] } }),
+        ), { timeoutMs: 18000, fallback: { data: preservedJoinads.keyValue } }),
         boundedLoad("joinads-key-value-country-content", fetchJson(
           `${API_BASE}/key-value-country?${new URLSearchParams({
             start_date: filters.startDate,
@@ -12490,7 +12563,7 @@ function App() {
             cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-country-content:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
-        ), { timeoutMs: 18000, fallback: { data: [] }, critical: false }),
+        ), { timeoutMs: 18000, fallback: { data: preservedJoinads.contentCountry }, critical: false }),
         boundedLoad("joinads-key-value-content", fetchJson(
           `${API_BASE}/key-value?${new URLSearchParams({
             start_date: filters.startDate,
@@ -12504,7 +12577,7 @@ function App() {
             cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
             cacheKey: `key-value-content:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
           }
-        ), { timeoutMs: 18000, fallback: { data: [] }, critical: false }),
+        ), { timeoutMs: 18000, fallback: { data: preservedJoinads.contentKeyValue }, critical: false }),
         boundedLoad("joinads-utm-source", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -12514,7 +12587,7 @@ function App() {
             custom_key: "utm_source",
             group: ["domain", "custom_value"],
           }),
-        }), { timeoutMs: 15000, fallback: { data: [] } }),
+        }), { timeoutMs: 15000, fallback: { data: preservedJoinads.source } }),
         boundedLoad("joinads-utm-medium", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify({
@@ -12524,7 +12597,7 @@ function App() {
             custom_key: "utm_medium",
             group: ["domain", "custom_value"],
           }),
-        }), { timeoutMs: 15000, fallback: { data: [] } }),
+        }), { timeoutMs: 15000, fallback: { data: preservedJoinads.medium } }),
         bidHistoryPromise,
         boundedMetaInsightsPromise,
         messenleadSourcePromise,

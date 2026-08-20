@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyMessageBidConfirmation, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "../message-metrics.mjs";
+import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "../message-metrics.mjs";
 
 const rows = [
   { campaign_name: "Campanha 10", revenue_brl: 30, roas: null, margin_pct: -5, meta_impressions: 200, profit_per_conversation: null },
@@ -107,4 +107,53 @@ test("nao classifica campo omitido pela Meta como lance recusado", () => {
     actualAmount: 0.12,
     requiresAmount: true,
   }), "rejected_strategy");
+});
+
+test("nao transforma atribuicao ausente em receita zero e prejuizo falso", () => {
+  const row = finalizeMessageCampaignAttribution({
+    campaign_name: "Carla | Chile | Messenger | Vendas (01)",
+    has_joinads_attribution: false,
+    spend_brl: 5.54,
+    conversations: 19,
+    joinads_impressions: 0,
+    joinads_clicks: 0,
+    revenue_usd: 0,
+    revenue_brl: 0,
+  });
+
+  assert.equal(row.attribution_status, "unavailable");
+  assert.equal(row.joinads_impressions, null);
+  assert.equal(row.revenue_usd, null);
+  assert.equal(row.roas, null);
+  assert.equal(row.profit_brl, null);
+  assert.equal(row.profit_per_conversation, null);
+});
+
+test("calcula resultado somente quando a campanha tem atribuicao JoinAds", () => {
+  const row = finalizeMessageCampaignAttribution({
+    has_joinads_attribution: true,
+    spend_brl: 10,
+    conversations: 5,
+    joinads_impressions: 1000,
+    joinads_clicks: 25,
+    revenue_usd: 4,
+    revenue_brl: 20,
+  });
+
+  assert.equal(row.attribution_status, "attributed");
+  assert.equal(row.roas, 2);
+  assert.equal(row.profit_brl, 10);
+  assert.equal(row.revenue_per_conversation, 4);
+  assert.equal(row.profit_per_conversation, 2);
+  assert.equal(row.ecpm, 4);
+});
+
+test("considera o consolidado incompleto quando existe campanha paga sem atribuicao", () => {
+  assert.equal(hasCompleteMessageCampaignAttribution([
+    { spend_brl: 10, meta_impressions: 100, has_joinads_attribution: true },
+    { spend_brl: 5, meta_impressions: 50, has_joinads_attribution: false },
+  ]), false);
+  assert.equal(hasCompleteMessageCampaignAttribution([
+    { spend_brl: 10, meta_impressions: 100, has_joinads_attribution: true },
+  ]), true);
 });
