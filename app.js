@@ -10,10 +10,10 @@ import {
   normalizeCountryLabel,
   resolveNicheCountryCodes,
   upsertBuilderAd,
-} from "./campaign-builder.mjs?v=199";
-import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=199";
-import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, hasJoinadsAttributionMatch } from "./sales-attribution.mjs?v=199";
-import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=199";
+} from "./campaign-builder.mjs?v=200";
+import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=200";
+import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, buildMessenleadSourceAttributionIndex, hasJoinadsAttributionMatch, selectMessageSourceRows, selectPreferredJoinadsDimensionRows } from "./sales-attribution.mjs?v=200";
+import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=200";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 199;
+const APP_VERSION_BUILD = 200;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -12605,6 +12605,59 @@ function App() {
       acceptQuickMetaPreview = false;
 
       messenleadRes = messenleadSourceRes || { sources: [], unresolved: [] };
+      const selectedMessageSourceRows = selectMessageSourceRows({
+        primaryRows: campaignSuperRes?.data,
+        fallbackRows: keyValueContentRes?.data,
+        domain: filters.domain.trim(),
+      });
+      const allMessageSourceKeys = Array.from(new Set(
+        selectedMessageSourceRows
+          .map((row) => normalizeKey(row.custom_value ?? row.custon_value))
+          .filter((value) => value.startsWith("src_"))
+      ));
+      const resolvedMessageSourceKeys = new Set(
+        (Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : [])
+          .map((item) => normalizeKey(item?.sourceKey))
+          .filter(Boolean)
+      );
+      const supplementalSourceKeys = allMessageSourceKeys.filter(
+        (sourceKey) => !resolvedMessageSourceKeys.has(sourceKey)
+      );
+      if (supplementalSourceKeys.length) {
+        const supplementalSourceRes = await boundedLoad(
+          "messenlead-source-resolution-key-value",
+          fetchJsonWithRetry(`${API_BASE}/messenlead-resolve`, {
+            method: "POST",
+            body: JSON.stringify({ sourceKeys: supplementalSourceKeys }),
+          }),
+          {
+            timeoutMs: 12000,
+            fallback: {
+              sources: Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : preservedJoinads.sources,
+              unresolved: supplementalSourceKeys,
+            },
+          }
+        );
+        const mergedSources = new Map();
+        [
+          ...(Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : []),
+          ...(Array.isArray(supplementalSourceRes?.sources) ? supplementalSourceRes.sources : []),
+        ].forEach((item) => {
+          const key = normalizeKey(item?.sourceKey);
+          if (key && item?.adId) mergedSources.set(key, item);
+        });
+        const mergedUnresolved = new Set([
+          ...(Array.isArray(messenleadRes?.unresolved) ? messenleadRes.unresolved : []),
+          ...(Array.isArray(supplementalSourceRes?.unresolved) ? supplementalSourceRes.unresolved : []),
+        ].map(normalizeKey).filter((key) => key && !mergedSources.has(key)));
+        messenleadRes = {
+          ...messenleadRes,
+          ...supplementalSourceRes,
+          sources: Array.from(mergedSources.values()),
+          unresolved: Array.from(mergedUnresolved),
+          sourceKeysFromKeyValue: allMessageSourceKeys.length,
+        };
+      }
 
       setBidHistoryRows(Array.isArray(bidHistoryRes?.data) ? bidHistoryRes.data : []);
 
@@ -15417,11 +15470,6 @@ function App() {
       return domainKey ? d === domainKey : true;
     });
     const kvContent = Array.isArray(keyValueContent) ? keyValueContent : [];
-    const sourceKeyToAdId = new Map(
-      (messenleadSources || [])
-        .filter((item) => item?.sourceKey && item?.adId)
-        .map((item) => [normalizeKey(item.sourceKey), normalizeKey(item.adId)])
-    );
     const metaAdIds = new Set(
       (metaRows || []).map((row) => normalizeKey(row.ad_id || "")).filter(Boolean)
     );
@@ -15450,29 +15498,6 @@ function App() {
       return domainKey ? d === domainKey : true;
     });
 
-    const addJoinadsByAdId = (map, adId, row, dataLevel, sourceValue) => {
-      const key = normalizeKey(adId);
-      if (!key) return;
-      const entry =
-        map.get(key) || {
-          impressions: 0,
-          clicks: 0,
-          revenue: 0,
-          revenue_client: 0,
-          ecpm: null,
-          ecpm_client: null,
-          data_level: dataLevel,
-          source_value: sourceValue || "",
-        };
-      entry.impressions += toNumber(row.impressions);
-      entry.clicks += toNumber(row.clicks);
-      entry.revenue += toNumber(row.revenue);
-      entry.revenue_client += toNumber(row.revenue_client);
-      if (row.ecpm != null) entry.ecpm = toNumber(row.ecpm);
-      if (row.ecpm_client != null) entry.ecpm_client = toNumber(row.ecpm_client);
-      map.set(key, entry);
-    };
-
     const contentByAdId = buildJoinadsAdAttributionIndex({
       adIds: Array.from(metaAdIds),
       domain: appliedDomain,
@@ -15489,14 +15514,12 @@ function App() {
     });
     const termByAdId = termAttribution.byAdId;
 
-    const sourceByAdId = new Map();
-    domainFilteredCampaignRows.forEach((row) => {
-      const sourceKey = normalizeKey(row.custom_value);
-      if (!sourceKey.startsWith("src_")) return;
-      const adId = sourceKeyToAdId.get(sourceKey);
-      if (adId && metaAdIds.has(adId)) {
-        addJoinadsByAdId(sourceByAdId, adId, row, "messenlead_source_key", row.custom_value);
-      }
+    const sourceByAdId = buildMessenleadSourceAttributionIndex({
+      primaryRows: domainFilteredCampaignRows,
+      fallbackRows: kvContent,
+      mappings: messenleadSources,
+      adIds: Array.from(metaAdIds),
+      domain: appliedDomain,
     });
 
     // Em vendas, utm_term=adset_id_ad_id vence o legado em utm_content. Em
@@ -15767,10 +15790,18 @@ function App() {
     adDestMap,
   ]);
 
+  const messageCampaignAttributionRows = useMemo(
+    () => selectPreferredJoinadsDimensionRows({
+      primaryRows: joinadsCampaignRows,
+      fallbackRows: keyValueContent,
+      domain: appliedFilters?.domain || filters.domain || "",
+    }),
+    [joinadsCampaignRows, keyValueContent, appliedFilters, filters.domain]
+  );
   const messengerAttributionAudit = useMemo(
     () =>
       buildMessengerAttributionAudit({
-        campaignRows: joinadsCampaignRows,
+        campaignRows: messageCampaignAttributionRows,
         contentRows: joinadsContentRows,
         metaRows,
         messenleadSources,
@@ -15779,7 +15810,7 @@ function App() {
         brlRate,
       }),
     [
-      joinadsCampaignRows,
+      messageCampaignAttributionRows,
       joinadsContentRows,
       metaRows,
       messenleadSources,
@@ -16586,7 +16617,7 @@ function App() {
           : html`
               <${MetricasMensagensView}
                 rows=${metaMessageFiltered}
-                joinadsDetailRows=${keyValueContent}
+                joinadsDetailRows=${messageCampaignAttributionRows}
                 advertiserRows=${advertiserRows}
                 advertiserDiagnostics=${advertiserDiagnostics}
                 messenleadSources=${messenleadSources}
@@ -16819,7 +16850,7 @@ function App() {
         : activeTab === "metricas_mensagens"
         ? html`<${MetricasMensagensView}
             rows=${metaMessageFiltered}
-            joinadsDetailRows=${keyValueContent}
+            joinadsDetailRows=${messageCampaignAttributionRows}
             advertiserRows=${advertiserRows}
             advertiserDiagnostics=${advertiserDiagnostics}
             messenleadSources=${messenleadSources}

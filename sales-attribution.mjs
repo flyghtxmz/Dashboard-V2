@@ -153,6 +153,60 @@ export function isMessageCampaignValue(value) {
 }
 
 /**
+ * Une os relatorios equivalentes por src_ sem duplicar receita. Linhas do
+ * super-filter vencem para a mesma origem; key-value cobre origens ausentes.
+ */
+export function selectPreferredJoinadsDimensionRows({
+  primaryRows = [],
+  fallbackRows = [],
+  domain = "",
+} = {}) {
+  const domainKey = normalize(domain);
+  const filterRows = (rows) => (Array.isArray(rows) ? rows : []).filter((row) =>
+    rowDomainMatches(row, domainKey) && normalize(customValue(row))
+  );
+  const primary = filterRows(primaryRows);
+  const primaryKeys = new Set(primary.map((row) => normalize(customValue(row))));
+  return [
+    ...primary,
+    ...filterRows(fallbackRows).filter((row) => !primaryKeys.has(normalize(customValue(row)))),
+  ];
+}
+
+export function selectMessageSourceRows(options = {}) {
+  return selectPreferredJoinadsDimensionRows(options).filter((row) =>
+    isMessageCampaignValue(customValue(row))
+  );
+}
+
+export function buildMessenleadSourceAttributionIndex({
+  primaryRows = [],
+  fallbackRows = [],
+  mappings = [],
+  adIds = [],
+  domain = "",
+} = {}) {
+  const validAdIds = new Set((Array.isArray(adIds) ? adIds : []).map(normalize).filter(Boolean));
+  const sourceToAd = new Map(
+    (Array.isArray(mappings) ? mappings : [])
+      .filter((item) => item?.sourceKey && item?.adId)
+      .map((item) => [normalize(item.sourceKey), normalize(item.adId)])
+  );
+  const byAdId = new Map();
+  selectMessageSourceRows({ primaryRows, fallbackRows, domain }).forEach((row) => {
+    const sourceKey = normalize(customValue(row));
+    const adId = sourceToAd.get(sourceKey);
+    if (!adId || (validAdIds.size && !validAdIds.has(adId))) return;
+    addDimensionTotal(byAdId, adId, row, {
+      data_level: "messenlead_source_key",
+      source_endpoint: "utm_campaign",
+      source_value: customValue(row),
+    });
+  });
+  return byAdId;
+}
+
+/**
  * Informa se existe alguma correspondencia segura com a JoinAds. A presenca
  * global de linhas em outra dimensao (por exemplo utm_content=organic) nunca
  * pode apagar uma correspondencia exata por utm_term=adset_id.

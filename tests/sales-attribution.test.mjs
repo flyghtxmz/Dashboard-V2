@@ -5,7 +5,9 @@ import {
   buildJoinadsAdAttributionIndex,
   buildJoinadsTermAttributionIndexes,
   buildMessageJoinadsSummary,
+  buildMessenleadSourceAttributionIndex,
   hasJoinadsAttributionMatch,
+  selectPreferredJoinadsDimensionRows,
 } from "../sales-attribution.mjs";
 
 const ad = (overrides = {}) => ({
@@ -14,6 +16,42 @@ const ad = (overrides = {}) => ({
   ad_id: "ad-1",
   joinads_matched: false,
   ...overrides,
+});
+
+test("usa key-value por src_ quando o super-filter nao entrega a origem", () => {
+  const byAdId = buildMessenleadSourceAttributionIndex({
+    primaryRows: [],
+    fallbackRows: [{
+      name: "es.remediototal.com.br",
+      custom_key: "utm_campaign",
+      custom_value: "src_1ba4bqn1aw",
+      impressions: 2754,
+      clicks: 318,
+      earnings: 17.53,
+      earnings_client: 14.9,
+    }],
+    mappings: [{ sourceKey: "src_1ba4bqn1aw", adId: "120249496335650378" }],
+    adIds: ["120249496335650378"],
+    domain: "es.remediototal.com.br",
+  });
+
+  assert.equal(byAdId.get("120249496335650378").impressions, 2754);
+  assert.equal(byAdId.get("120249496335650378").revenue, 17.53);
+  assert.equal(byAdId.get("120249496335650378").revenue_client, 14.9);
+  assert.equal(byAdId.get("120249496335650378").data_level, "messenlead_source_key");
+});
+
+test("completa origens ausentes com key-value sem duplicar as existentes", () => {
+  const rows = selectPreferredJoinadsDimensionRows({
+    primaryRows: [{ custom_value: "src_a", revenue_client: 5 }],
+    fallbackRows: [
+      { custom_value: "src_a", earnings_client: 5 },
+      { custom_value: "src_b", earnings_client: 3 },
+      { custom_value: "organic_1", earnings_client: 1 },
+    ],
+  });
+
+  assert.deepEqual(rows.map((row) => row.custom_value), ["src_a", "src_b", "organic_1"]);
 });
 
 test("usa utm_campaign uma unica vez em campanha com varios anuncios", () => {
