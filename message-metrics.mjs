@@ -51,6 +51,22 @@ export function sortMessageCampaignRows(rows, sorting = {}) {
   });
 }
 
+export function messageCampaignRowKey(row = {}, index = 0) {
+  const campaignId = String(row?.campaign_id || "").trim();
+  if (campaignId) return `campaign:${campaignId}`;
+  const campaignName = String(row?.campaign_name || "sem-campanha").trim();
+  return `campaign-name:${campaignName}:${index}`;
+}
+
+export function shouldIncludeMessageStructureFallback(row = {}) {
+  const status = String(row?.effective_status || row?.status || "")
+    .trim()
+    .toUpperCase();
+  // Mantem compatibilidade caso a Meta omita o status. Quando ele existe, uma
+  // linha estrutural sem insights so e util na tabela se o anuncio estiver ativo.
+  return !status || status === "ACTIVE";
+}
+
 export function matchesMessageCampaignFilter(row, filter = "") {
   const selected = String(filter || "").trim().toLowerCase();
   if (!selected) return true;

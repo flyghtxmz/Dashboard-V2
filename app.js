@@ -13,7 +13,7 @@ import {
 } from "./campaign-builder.mjs?v=200";
 import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=200";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, buildMessenleadSourceAttributionIndex, hasJoinadsAttributionMatch, selectMessageSourceRows, selectPreferredJoinadsDimensionRows } from "./sales-attribution.mjs?v=200";
-import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=200";
+import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, messageCampaignRowKey, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, shouldIncludeMessageStructureFallback, sortMessageCampaignRows } from "./message-metrics.mjs?v=201";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -2262,6 +2262,11 @@ function MetricasMensagensView({
       })
     : campaignRows;
   const visibleCampaignRows = sortMessageCampaignRows(filteredCampaignRows, messageSort);
+  const visibleCampaignNameCounts = visibleCampaignRows.reduce((counts, row) => {
+    const name = normalizeKey(row.campaign_name || "");
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+    return counts;
+  }, new Map());
   const totalsRow = campaignRows.reduce(
     (acc, row) => {
       acc.ads += row.ads.size || 0;
@@ -3197,7 +3202,7 @@ function MetricasMensagensView({
             <tbody>
               ${visibleCampaignRows.length === 0
                 ? html`<tr><td colSpan=${showUserCommission ? 11 : allowBidControl ? 24 : 20} className="muted">${normalizedMessageSearch ? "Nenhuma campanha ou src_ corresponde a busca." : "Sem campanhas de mensagem para o periodo."}</td></tr>`
-                : visibleCampaignRows.map((row) => {
+                : visibleCampaignRows.map((row, rowIndex) => {
                   const previousRow = comparisonMetrics?.campaigns?.[
                     String(row.campaign_id || row.campaign_name)
                   ] || (explicitComparisonDate && comparisonMetrics
@@ -3238,8 +3243,13 @@ function MetricasMensagensView({
                   const budgetBusy = budgetTarget.id && budgetLoading?.[budgetTarget.id];
                   const bidBusy = singleAdset && bidLoading?.[singleAdset.id];
                   return html`
-                    <tr key=${row.campaign_name}>
-                      <td>${row.campaign_name || "-"}</td>
+                    <tr key=${messageCampaignRowKey(row, rowIndex)}>
+                      <td>
+                        <div>${row.campaign_name || "-"}</div>
+                        ${visibleCampaignNameCounts.get(normalizeKey(row.campaign_name || "")) > 1 && row.campaign_id
+                          ? html`<div className="muted small">ID ${row.campaign_id}</div>`
+                          : null}
+                      </td>
                       <td>${number.format(row.meta_impressions || 0)}<${RefreshDelta} current=${row.meta_impressions} previous=${previousRow?.meta_impressions} /></td>
                       <td>${row.ctr_meta != null ? `${row.ctr_meta.toFixed(2)}%` : "-"}</td>
                       <td>${row.conversations ? number.format(row.conversations) : "-"}<${RefreshDelta} current=${row.conversations} previous=${previousRow?.conversations} /></td>
@@ -12944,6 +12954,7 @@ function App() {
           return structureRows
             .filter((row) => isMessageMetricsRow(row))
             .filter((row) => !insightAdIds.has(normalizeKey(row.ad_id || row.id || "")))
+            .filter((row) => shouldIncludeMessageStructureFallback(row))
             .map((row) => ({
               ...row,
               ad_id: row.ad_id || row.id,
