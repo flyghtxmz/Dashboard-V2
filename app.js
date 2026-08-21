@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 206;
+const APP_VERSION_BUILD = 207;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1483,6 +1483,7 @@ function MetricasMensagensView({
   refreshAttributionReady = true,
   dateComparisonSnapshot = null,
   dateComparisonError = "",
+  loadDiagnostic = null,
 }) {
   const label = performanceUnitLabel(usePmLabels);
   const messageScopeFiltered = pageScoped || messageTypeScoped;
@@ -3095,6 +3096,7 @@ function MetricasMensagensView({
   >${headerLabel}<span aria-hidden="true">${messageSort.key === key ? (messageSort.direction === "asc" ? "\u25B2" : "\u25BC") : "\u2195"}</span></button></th>`;
   return html`
     <main className="grid">
+      ${loadDiagnostic ? html`<${MessageLoadDiagnostics} diagnostic=${loadDiagnostic} />` : null}
       <section className="card wide">
         <div className="card-head">
           <div>
@@ -4275,6 +4277,85 @@ function Status({ error, lastRefreshed }) {
     <div className="status neutral">
       Informe o Dominio e clique em "Carregar dados".
     </div>
+  `;
+}
+
+function redactDiagnosticValue(value, key = "") {
+  if (/token|authorization|cookie|password|secret/i.test(String(key || ""))) {
+    return "[REMOVIDO]";
+  }
+  if (Array.isArray(value)) return value.map((item) => redactDiagnosticValue(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([childKey, childValue]) => [
+        childKey,
+        redactDiagnosticValue(childValue, childKey),
+      ])
+    );
+  }
+  if (typeof value === "string") {
+    return value
+      .replace(/(access_token=)[^&\s]+/gi, "$1[REMOVIDO]")
+      .replace(/(Bearer\s+)[A-Za-z0-9._~-]+/gi, "$1[REMOVIDO]");
+  }
+  return value;
+}
+
+function MessageLoadDiagnostics({ diagnostic }) {
+  const [copyState, setCopyState] = useState("idle");
+  const safeDiagnostic = redactDiagnosticValue(diagnostic || {});
+  const diagnosticText = JSON.stringify(safeDiagnostic, null, 2);
+  const copyDiagnostic = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(diagnosticText);
+      } else {
+        const field = document.createElement("textarea");
+        field.value = diagnosticText;
+        field.setAttribute("readonly", "");
+        field.style.position = "fixed";
+        field.style.opacity = "0";
+        document.body.appendChild(field);
+        field.select();
+        document.execCommand("copy");
+        field.remove();
+      }
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 2500);
+    } catch (copyError) {
+      setCopyState("error");
+    }
+  };
+  const campaignCount = Number(diagnostic?.counts?.messageCampaigns || 0);
+  const hasFailure = !!diagnostic?.error || diagnostic?.loadHealth?.complete === false;
+  return html`
+    <section className="card wide load-diagnostic-card">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">Diagnostico de carga</span>
+          <h2 className="section-title">Log para suporte</h2>
+        </div>
+        <div className="inline-actions">
+          <span className=${`chip ${campaignCount ? "good" : "danger"}`}>
+            ${campaignCount} campanhas visiveis
+          </span>
+          <button className="primary" onClick=${copyDiagnostic}>
+            ${copyState === "copied" ? "Diagnostico copiado" : "Copiar diagnostico"}
+          </button>
+        </div>
+      </div>
+      <p className="muted small">
+        Depois de clicar em <strong>Carregar dados</strong>, copie este diagnostico e envie inteiro.
+        Tokens, senhas e autorizacoes sao removidos automaticamente.
+      </p>
+      ${copyState === "error"
+        ? html`<div className="status error">O navegador bloqueou a copia automatica. Selecione o texto abaixo manualmente.</div>`
+        : null}
+      <details open=${campaignCount === 0 || hasFailure}>
+        <summary>Ver log completo</summary>
+        <pre className="debug-log load-diagnostic-log">${diagnosticText}</pre>
+      </details>
+    </section>
   `;
 }
 
@@ -11572,6 +11653,7 @@ function App() {
   const [metaRows, setMetaRows] = useState([]);
   const [metaLtvRows, setMetaLtvRows] = useState([]);
   const [metaDiagnostics, setMetaDiagnostics] = useState({});
+  const [metaStructureDiagnostics, setMetaStructureDiagnostics] = useState({});
   const [fxInfo, setFxInfo] = useState(() =>
     readCachedFxInfo(formatDate(new Date())) || readCachedFxInfo("")
   );
@@ -11663,6 +11745,7 @@ function App() {
     setLogs([]);
     setMetaRows([]);
     setMetaDiagnostics({});
+    setMetaStructureDiagnostics({});
     setFxStatus("idle");
     setParamPairs([]);
     setMetaSourceRows([]);
@@ -12221,6 +12304,11 @@ function App() {
 
     setLoading(true);
     setError("");
+    setMetaStructureDiagnostics({
+      status: "loading",
+      startedAt: new Date().toISOString(),
+      accountId: filters.metaAccountId.trim(),
+    });
     setDateComparisonSnapshot(null);
     setDateComparisonError("");
     const criticalFailures = [];
@@ -12350,7 +12438,8 @@ function App() {
         `${API_BASE}/meta-ad-edit-list?${liveMetaStructureParams.toString()}`,
         { force: true, cache: "no-store" }
       ), { timeoutMs: 20000, fallback: { data: [] }, critical: false }).then((result) => {
-        const structurePreviewRows = (Array.isArray(result?.data) ? result.data : [])
+        const structureRowsRaw = Array.isArray(result?.data) ? result.data : [];
+        const structurePreviewRows = structureRowsRaw
           .filter((row) => isMessageMetricsRow(row))
           .map((row) => ({
             ...row,
@@ -12363,6 +12452,34 @@ function App() {
             cost_per_result: null,
             meta_source: "structure_preview",
           }));
+        setMetaStructureDiagnostics({
+          status: result?._dashboardError ? "error" : "success",
+          completedAt: new Date().toISOString(),
+          error: result?._dashboardError || "",
+          response: result?.diagnostics || null,
+          counts: {
+            rows: structureRowsRaw.length,
+            messageRows: structurePreviewRows.length,
+          },
+          objectiveCounts: structureRowsRaw.reduce((counts, row) => {
+            const objective = String(row.objective || "sem_objective");
+            counts[objective] = (counts[objective] || 0) + 1;
+            return counts;
+          }, {}),
+          samples: structureRowsRaw.slice(0, 15).map((row) => ({
+            campaignId: row.campaign_id || "",
+            campaign: row.campaign_name || "",
+            adsetId: row.adset_id || "",
+            adset: row.adset_name || "",
+            adId: row.ad_id || row.id || "",
+            ad: row.ad_name || row.name || "",
+            objective: row.objective || "",
+            optimizationGoal: row.adset_optimization_goal || "",
+            pageId: row.page_id || "",
+            status: row.effective_status || row.status || "",
+            classifiedAsMessage: isMessageMetricsRow(row),
+          })),
+        });
         if (
           acceptQuickMetaPreview
           && !quickMetaPreviewLoaded
@@ -16149,6 +16266,91 @@ function App() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [mergedMeta, session?.role, session?.username]);
 
+  const messageLoadDiagnostic = useMemo(() => {
+    const messageCandidates = mergedMeta.filter((row) => isMessageMetricsRow(row));
+    const hiddenMessageRows = messageCandidates.filter((row) => hiddenCampaigns.has(row.campaign_id));
+    const activeFilters = appliedFilters || filters;
+    const sampleRow = (row) => ({
+      campaignId: row.campaign_id || "",
+      campaign: row.campaign_name || "",
+      adsetId: row.adset_id || "",
+      adset: row.adset_name || "",
+      adId: row.ad_id || "",
+      ad: row.ad_name || row.name || "",
+      objective: row.objective || "",
+      optimizationGoal: row.adset_optimization_goal || "",
+      pageId: row.page_id || "",
+      status: row.effective_status || row.status || "",
+      metaSource: row.meta_source || "",
+      classifiedAsMessage: isMessageMetricsRow(row),
+    });
+    return {
+      generatedAt: new Date().toISOString(),
+      appBuild: APP_VERSION_BUILD,
+      loading,
+      error: error || "",
+      lastRefreshed: lastRefreshed instanceof Date ? lastRefreshed.toISOString() : lastRefreshed || null,
+      filters: {
+        domain: activeFilters.domain || "",
+        metaAccountId: activeFilters.metaAccountId || "",
+        startDate: activeFilters.startDate || "",
+        endDate: activeFilters.endDate || "",
+        pageId: activeFilters.pageId || "",
+        messageType: activeFilters.messageType || "",
+        adsetFilter: activeFilters.adsetFilter || "",
+      },
+      counts: {
+        rawMetaRows: metaRows.length,
+        mergedMetaRows: mergedMeta.length,
+        messageCandidatesBeforeUiFilters: messageCandidates.length,
+        hiddenMessageRows: hiddenMessageRows.length,
+        messageRowsAfterAllFilters: metaMessageFiltered.length,
+        messageCampaigns: new Set(metaMessageFiltered.map((row) => row.campaign_id || row.campaign_name).filter(Boolean)).size,
+        availableMessagePages: messagePageOptions.length,
+        hiddenCampaignIds: hiddenCampaigns.size,
+        joinadsEarningsRows: earnings.length,
+        joinadsCampaignRows: joinadsCampaignRows.length,
+        joinadsKeyValueRows: keyValueContent.length,
+        messenleadSources: messenleadSources.length,
+      },
+      metaStructure: metaStructureDiagnostics,
+      metaInsights: metaDiagnostics,
+      loadHealth,
+      hiddenCampaignIds: Array.from(hiddenCampaigns).slice(0, 100),
+      samples: {
+        rawMeta: metaRows.slice(0, 15).map(sampleRow),
+        messageCandidates: messageCandidates.slice(0, 15).map(sampleRow),
+        visibleMessages: metaMessageFiltered.slice(0, 15).map(sampleRow),
+      },
+      recentLogs: logs.slice(0, 30).map((entry) => ({
+        time: entry.time instanceof Date ? entry.time.toISOString() : entry.time,
+        source: entry.source || "app",
+        status: entry.status || null,
+        message: entry.message || "",
+        detail: entry.detail || null,
+      })),
+    };
+  }, [
+    appliedFilters,
+    filters,
+    loading,
+    error,
+    lastRefreshed,
+    metaRows,
+    mergedMeta,
+    metaMessageFiltered,
+    messagePageOptions,
+    hiddenCampaigns,
+    earnings,
+    joinadsCampaignRows,
+    keyValueContent,
+    messenleadSources,
+    metaStructureDiagnostics,
+    metaDiagnostics,
+    loadHealth,
+    logs,
+  ]);
+
   const filteredMeta = useMemo(
     () => metaDomainFiltered,
     [metaDomainFiltered]
@@ -16722,6 +16924,7 @@ function App() {
                   metaDiagnostics,
                   messageSourceRowsCount: metaMessageFiltered.length,
                 }}
+                loadDiagnostic=${messageLoadDiagnostic}
               />
             `}
       </div>
@@ -16961,6 +17164,7 @@ function App() {
               metaDiagnostics,
               messageSourceRowsCount: metaMessageFiltered.length,
             }}
+            loadDiagnostic=${messageLoadDiagnostic}
           />`
         : activeTab === "gerenciar"
         ? html`
