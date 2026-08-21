@@ -58,15 +58,6 @@ export function messageCampaignRowKey(row = {}, index = 0) {
   return `campaign-name:${campaignName}:${index}`;
 }
 
-export function shouldIncludeMessageStructureFallback(row = {}) {
-  const status = String(row?.effective_status || row?.status || "")
-    .trim()
-    .toUpperCase();
-  // Mantem compatibilidade caso a Meta omita o status. Quando ele existe, uma
-  // linha estrutural sem insights so e util na tabela se o anuncio estiver ativo.
-  return !status || status === "ACTIVE";
-}
-
 export function matchesMessageCampaignFilter(row, filter = "") {
   const selected = String(filter || "").trim().toLowerCase();
   if (!selected) return true;

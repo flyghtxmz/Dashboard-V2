@@ -13,7 +13,7 @@ import {
 } from "./campaign-builder.mjs?v=200";
 import { buildCampaignCopyStructure, buildModelDraftNames, nextAnName, nextCampaignCopyName, readBidDraft, readBudgetDraft, resolveCampaignDraftAdsetPage, resolveManagedUrlTags, shiftCjName } from "./campaign-manager.mjs?v=200";
 import { buildDirectSalesCampaignRows, buildJoinadsAdAttributionIndex, buildJoinadsTermAttributionIndexes, buildMessageJoinadsSummary, buildMessenleadSourceAttributionIndex, hasJoinadsAttributionMatch, selectMessageSourceRows, selectPreferredJoinadsDimensionRows } from "./sales-attribution.mjs?v=200";
-import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, messageCampaignRowKey, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, shouldIncludeMessageStructureFallback, sortMessageCampaignRows } from "./message-metrics.mjs?v=201";
+import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, messageCampaignRowKey, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "./message-metrics.mjs?v=203";
 
 const html = htm.bind(React.createElement);
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 200;
+const APP_VERSION_BUILD = 203;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -12961,7 +12961,6 @@ function App() {
           return structureRows
             .filter((row) => isMessageMetricsRow(row))
             .filter((row) => !insightAdIds.has(normalizeKey(row.ad_id || row.id || "")))
-            .filter((row) => shouldIncludeMessageStructureFallback(row))
             .map((row) => ({
               ...row,
               ad_id: row.ad_id || row.id,

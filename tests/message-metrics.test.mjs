@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, messageCampaignRowKey, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, shouldIncludeMessageStructureFallback, sortMessageCampaignRows } from "../message-metrics.mjs";
+import { classifyMessageBidConfirmation, finalizeMessageCampaignAttribution, hasCompleteMessageCampaignAttribution, matchesMessageCampaignFilter, messageCampaignRowKey, resolveMessageBidConfirmationStrategy, resolveMessageBudgetTarget, sortMessageCampaignRows } from "../message-metrics.mjs";
 
 const rows = [
   { campaign_name: "Campanha 10", revenue_brl: 30, roas: null, margin_pct: -5, meta_impressions: 200, profit_per_conversation: null },
@@ -54,13 +54,6 @@ test("usa o id da campanha como chave quando nomes se repetem", () => {
   assert.equal(messageCampaignRowKey(first), "campaign:1201");
   assert.equal(messageCampaignRowKey(second), "campaign:1202");
   assert.notEqual(messageCampaignRowKey(first), messageCampaignRowKey(second));
-});
-
-test("nao inclui campanha estrutural pausada sem insights", () => {
-  assert.equal(shouldIncludeMessageStructureFallback({ effective_status: "ACTIVE" }), true);
-  assert.equal(shouldIncludeMessageStructureFallback({ effective_status: "PAUSED" }), false);
-  assert.equal(shouldIncludeMessageStructureFallback({ effective_status: "CAMPAIGN_PAUSED" }), false);
-  assert.equal(shouldIncludeMessageStructureFallback({}), true);
 });
 
 test("filtra mensagens por objetivo de vendas ou otimizacao de conversas", () => {
