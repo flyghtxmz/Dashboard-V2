@@ -66,13 +66,16 @@ export async function onRequest({ request, env }) {
     )}/ads?fields=${fields}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
-    const adsetIds = Array.from(
+    // O resumo serve para mostrar imediatamente a arvore campanha/conjunto/anuncio.
+    // Os nomes ja sao solicitados junto dos anuncios; consultas auxiliares em lote
+    // ficavam mais lentas que a propria carga de insights em contas maiores.
+    const adsetIds = summaryOnly ? [] : Array.from(
       new Set((ads || [])
         .filter((ad) => !ad.adset_name && !ad.adset?.name)
         .map((ad) => ad.adset_id)
         .filter(Boolean))
     );
-    const campaignIds = Array.from(
+    const campaignIds = summaryOnly ? [] : Array.from(
       new Set((ads || [])
         .filter((ad) => !ad.campaign_name && !ad.campaign?.name)
         .map((ad) => ad.campaign_id)
@@ -157,7 +160,9 @@ export async function onRequest({ request, env }) {
       };
     });
 
-    const pageIds = Array.from(new Set(rows.map((row) => row.page_id).filter(Boolean)));
+    const pageIds = summaryOnly
+      ? []
+      : Array.from(new Set(rows.map((row) => row.page_id).filter(Boolean)));
     const pageNameMap = new Map();
     for (let i = 0; i < pageIds.length; i += chunkSize) {
       const chunk = pageIds.slice(i, i + chunkSize);

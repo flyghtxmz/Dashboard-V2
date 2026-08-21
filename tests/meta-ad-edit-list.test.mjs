@@ -58,7 +58,9 @@ test("reaproveita a estrutura dos anuncios e devolve pagina sem consultas de nom
 test("modo resumido carrega a estrutura sem solicitar criativos pesados", async () => {
   const originalFetch = globalThis.fetch;
   let adsFields = "";
+  const urls = [];
   globalThis.fetch = async (url) => {
+    urls.push(String(url));
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/ads")) {
       adsFields = parsed.searchParams.get("fields") || "";
@@ -70,7 +72,12 @@ test("modo resumido carrega a estrutura sem solicitar criativos pesados", async 
           effective_status: "CAMPAIGN_PAUSED",
           adset_id: "set-2",
           adset_name: "Conjunto 2",
-          adset: { id: "set-2", name: "Conjunto 2", optimization_goal: "CONVERSATIONS" },
+          adset: {
+            id: "set-2",
+            name: "Conjunto 2",
+            optimization_goal: "CONVERSATIONS",
+            promoted_object: { page_id: "page-2" },
+          },
           campaign_id: "cmp-2",
           campaign_name: "Campanha Messenger",
           campaign: { id: "cmp-2", name: "Campanha Messenger", objective: "OUTCOME_SALES" },
@@ -90,8 +97,11 @@ test("modo resumido carrega a estrutura sem solicitar criativos pesados", async 
     assert.equal(body.summaryOnly, true);
     assert.equal(body.data.length, 1);
     assert.equal(body.data[0].objective, "OUTCOME_SALES");
+    assert.equal(body.data[0].page_id, "page-2");
+    assert.equal(body.data[0].page_name, "");
     assert.doesNotMatch(adsFields, /creative/);
     assert.match(adsFields, /optimization_goal/);
+    assert.equal(urls.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }

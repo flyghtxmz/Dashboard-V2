@@ -92,9 +92,7 @@ export async function onRequest({ request, env }) {
   if (!dateRange.ok) return jsonResponse(400, { error: dateRange.error });
 
   const q = new URLSearchParams();
-  q.set(
-    "fields",
-    [
+  const insightFields = [
       "date_start",
       "campaign_id",
       "campaign_name",
@@ -110,11 +108,11 @@ export async function onRequest({ request, env }) {
       "clicks",
       "actions",
       "cost_per_action_type",
-      "results",
-      "cpm",
-      "cost_per_result",
-    ].join(",")
-  );
+  ];
+  // No carregamento rapido de um unico dia, resultados e custos sao derivados de
+  // actions/spend no front. Evita tres campos redundantes e reduz o payload da Meta.
+  if (!summary_only) insightFields.push("results", "cpm", "cost_per_result");
+  q.set("fields", insightFields.join(","));
   q.set("time_range", JSON.stringify({ since: start_date, until: end_date }));
   q.set("level", "ad");
   q.set("time_increment", "1");
