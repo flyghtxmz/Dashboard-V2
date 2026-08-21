@@ -12320,6 +12320,23 @@ function App() {
         }
         return result;
       });
+      // O key-value-country e a fonte mais estavel para utm_campaign=src_. Ele
+      // comeca junto dos totais, sem aguardar o super-filter, para que uma
+      // lentidao desse endpoint nao deixe Metricas Mensagens sem receita.
+      const keyValueCampaignPromise = boundedLoad("joinads-key-value-country", fetchJsonWithRetry(
+        `${API_BASE}/key-value-country?${new URLSearchParams({
+          start_date: filters.startDate,
+          end_date: filters.endDate,
+          domain: filters.domain.trim(),
+          report_type: "Analytical",
+          custom_key: "utm_campaign",
+        }).toString()}`,
+        {
+          force: true,
+          cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
+          cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
+        }
+      ), { timeoutMs: 18000, fallback: { data: preservedJoinads.keyValue } });
       // A decisao de fallback usa os dois resultados, mas as consultas podem rodar juntas.
       // Inicia a Meta imediatamente. Essas chamadas nao dependem da JoinAds e antes
       // ficavam paradas ate a atribuicao e os relatorios da JoinAds terminarem.
@@ -12417,7 +12434,7 @@ function App() {
         boundedLoad("joinads-super-filter-campaign", fetchJsonWithRetry(`${API_BASE}/super-filter`, {
           method: "POST",
           body: JSON.stringify(campaignSuperPayload),
-        }), { timeoutMs: 15000, fallback: { data: preservedJoinads.campaign } }),
+        }), { timeoutMs: 15000, fallback: { data: preservedJoinads.campaign }, critical: false }),
       ]);
       if (contentSuperResult?._dashboardError) {
         contentSuperError = contentSuperResult._dashboardError;
@@ -12485,22 +12502,26 @@ function App() {
         superKeyUsed = "utm_campaign";
       }
 
-      const sourceKeys = Array.from(
-        new Set(
-          (campaignSuperRes?.data || [])
-            .map((row) => normalizeKey(row.custom_value))
-            .filter((value) => value.startsWith("src_"))
-        )
-      );
-      const messenleadSourcePromise = sourceKeys.length
-        ? boundedLoad("messenlead-source-resolution", fetchJsonWithRetry(`${API_BASE}/messenlead-resolve`, {
-            method: "POST",
-            body: JSON.stringify({ sourceKeys }),
-          }), {
-            timeoutMs: 12000,
-            fallback: { sources: preservedJoinads.sources, unresolved: sourceKeys },
+      const messenleadSourcePromise = keyValueCampaignPromise.then((keyValueCampaignRes) => {
+        const sourceKeys = Array.from(new Set(
+          selectMessageSourceRows({
+            primaryRows: campaignSuperRes?.data,
+            fallbackRows: keyValueCampaignRes?.data,
+            domain: filters.domain.trim(),
           })
-        : Promise.resolve({ sources: [], unresolved: [] });
+            .map((row) => normalizeKey(row.custom_value ?? row.custon_value))
+            .filter((value) => value.startsWith("src_"))
+        ));
+        return sourceKeys.length
+          ? boundedLoad("messenlead-source-resolution", fetchJsonWithRetry(`${API_BASE}/messenlead-resolve`, {
+              method: "POST",
+              body: JSON.stringify({ sourceKeys }),
+            }), {
+              timeoutMs: 12000,
+              fallback: { sources: preservedJoinads.sources, unresolved: sourceKeys },
+            })
+          : { sources: [], unresolved: [] };
+      });
 
       // Todas as demais requisições independentes em paralelo (elimina 4 awaits sequenciais)
       const bidHistoryPromise = session?.role === "admin" || session?.role === "gestor"
@@ -12545,21 +12566,7 @@ function App() {
             group: ["domain", "custom_value"],
           }),
         }), { timeoutMs: 15000, fallback: { data: preservedJoinads.term }, critical: false }),
-        boundedLoad("joinads-key-value-country", fetchJsonWithRetry(
-          `${API_BASE}/key-value-country?${new URLSearchParams({
-            start_date: filters.startDate,
-            end_date: filters.endDate,
-            domain: filters.domain.trim(),
-            // A exportacao de Metricas Mensagens precisa preservar cada ad_unit.
-            report_type: "Analytical",
-            custom_key: "utm_campaign",
-          }).toString()}`,
-          {
-            force: true,
-            cacheTtlMs: filters.endDate === formatDate(new Date()) ? 0 : 3 * 60 * 1000,
-            cacheKey: `key-value-country:${filters.domain}:${filters.startDate}:${filters.endDate}:Analytical`,
-          }
-        ), { timeoutMs: 18000, fallback: { data: preservedJoinads.keyValue } }),
+        keyValueCampaignPromise,
         boundedLoad("joinads-key-value-country-content", fetchJson(
           `${API_BASE}/key-value-country?${new URLSearchParams({
             start_date: filters.startDate,
@@ -13037,7 +13044,11 @@ function App() {
       setJoinadsContentRows(Array.isArray(contentSuperRes?.data) ? contentSuperRes.data : []);
       setJoinadsContentCountryRows(Array.isArray(keyValueAdContentCountryRes?.data) ? keyValueAdContentCountryRes.data : []);
       setJoinadsContentKeyValueRows(Array.isArray(keyValueAdContentRes?.data) ? keyValueAdContentRes.data : []);
-      setJoinadsCampaignRows(Array.isArray(campaignSuperRes?.data) ? campaignSuperRes.data : []);
+      setJoinadsCampaignRows(selectPreferredJoinadsDimensionRows({
+        primaryRows: campaignSuperRes?.data,
+        fallbackRows: keyValueContentRes?.data,
+        domain: filters.domain.trim(),
+      }));
       setJoinadsMediumRows(Array.isArray(metaMediumRes?.data) ? metaMediumRes.data : []);
       setMessenleadSources(Array.isArray(messenleadRes?.sources) ? messenleadRes.sources : []);
       setMessenleadUnresolved(Array.isArray(messenleadRes?.unresolved) ? messenleadRes.unresolved : []);
@@ -13142,7 +13153,11 @@ function App() {
         sources: {
           metaRows: loadedMetaRowsCount,
           joinadsKeyValueRows: Array.isArray(keyValueContentRes?.data) ? keyValueContentRes.data.length : 0,
-          joinadsCampaignRows: Array.isArray(campaignSuperRes?.data) ? campaignSuperRes.data.length : 0,
+          joinadsCampaignRows: selectPreferredJoinadsDimensionRows({
+            primaryRows: campaignSuperRes?.data,
+            fallbackRows: keyValueContentRes?.data,
+            domain: filters.domain.trim(),
+          }).length,
           joinadsContentRows: Array.isArray(contentSuperRes?.data) ? contentSuperRes.data.length : 0,
           joinadsContentCountryRows: Array.isArray(keyValueAdContentCountryRes?.data) ? keyValueAdContentCountryRes.data.length : 0,
           joinadsContentKeyValueRows: Array.isArray(keyValueAdContentRes?.data) ? keyValueAdContentRes.data.length : 0,
