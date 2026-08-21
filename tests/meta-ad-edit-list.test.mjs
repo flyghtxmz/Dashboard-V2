@@ -54,3 +54,45 @@ test("reaproveita a estrutura dos anuncios e devolve pagina sem consultas de nom
     globalThis.fetch = originalFetch;
   }
 });
+
+test("modo resumido carrega a estrutura sem solicitar criativos pesados", async () => {
+  const originalFetch = globalThis.fetch;
+  let adsFields = "";
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/ads")) {
+      adsFields = parsed.searchParams.get("fields") || "";
+      return Response.json({
+        data: [{
+          id: "ad-2",
+          name: "Anuncio 2",
+          status: "PAUSED",
+          effective_status: "CAMPAIGN_PAUSED",
+          adset_id: "set-2",
+          adset_name: "Conjunto 2",
+          adset: { id: "set-2", name: "Conjunto 2", optimization_goal: "CONVERSATIONS" },
+          campaign_id: "cmp-2",
+          campaign_name: "Campanha Messenger",
+          campaign: { id: "cmp-2", name: "Campanha Messenger", objective: "OUTCOME_SALES" },
+        }],
+      });
+    }
+    return Response.json({});
+  };
+
+  try {
+    const response = await onRequest({
+      request: new Request("https://example.com/api/meta-ad-edit-list?account_id=act_123&summary_only=1"),
+      env: { META_ACCESS_TOKEN: "token" },
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.summaryOnly, true);
+    assert.equal(body.data.length, 1);
+    assert.equal(body.data[0].objective, "OUTCOME_SALES");
+    assert.doesNotMatch(adsFields, /creative/);
+    assert.match(adsFields, /optimization_goal/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

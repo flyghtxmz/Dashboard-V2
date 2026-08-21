@@ -51,14 +51,19 @@ export async function onRequest({ request, env }) {
 
   const params = getQuery(request);
   const account_id = params.get("account_id");
+  const summaryOnly = params.get("summary_only") === "1" || params.get("summary_only") === "true";
   if (!account_id) {
     return jsonResponse(400, { error: "Parametros obrigatorios: account_id" });
   }
 
   try {
+    const baseFields = "id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy}";
+    const fields = summaryOnly
+      ? baseFields
+      : `${baseFields},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,asset_feed_spec,object_story_spec}`;
     const adsUrl = `${API_BASE}/${encodeURIComponent(
       account_id
-    )}/ads?fields=id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,asset_feed_spec,object_story_spec}&limit=200&access_token=${token}`;
+    )}/ads?fields=${fields}&limit=200&access_token=${token}`;
     const ads = await fetchAll(adsUrl);
 
     const adsetIds = Array.from(
@@ -170,7 +175,7 @@ export async function onRequest({ request, env }) {
       if (row.page_id) row.page_name = pageNameMap.get(row.page_id) || "";
     });
 
-    return jsonResponse(200, { code: "success", data: rows });
+    return jsonResponse(200, { code: "success", data: rows, summaryOnly });
   } catch (error) {
     return jsonResponse(500, {
       error: "Erro ao consultar Meta",

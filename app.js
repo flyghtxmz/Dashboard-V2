@@ -22,7 +22,7 @@ const BID_STRATEGY_WITH_BID = "LOWEST_COST_WITH_BID_CAP";
 const BID_STRATEGY_WITHOUT_BID = "LOWEST_COST_WITHOUT_CAP";
 const BID_STRATEGY_COST_CAP = "COST_CAP";
 const BID_STRATEGY_DEFAULT = BID_STRATEGY_WITH_BID;
-const APP_VERSION_BUILD = 203;
+const APP_VERSION_BUILD = 204;
 const APP_VERSION = (APP_VERSION_BUILD / 100).toFixed(2);
 const FX_CACHE_KEY = "__dashboard_fx_usd_brl__";
 const FX_CACHE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -12229,6 +12229,7 @@ function App() {
     const loadRequestId = ++loadRequestIdRef.current;
     let loadedMetaRowsCount = 0;
     let quickMetaPreviewLoaded = false;
+    let quickMetaStructureLoaded = false;
     let acceptQuickMetaPreview = true;
     const boundedLoad = (
       source,
@@ -12342,12 +12343,51 @@ function App() {
       // ficavam paradas ate a atribuicao e os relatorios da JoinAds terminarem.
       const liveMetaStructureParams = new URLSearchParams({
         account_id: filters.metaAccountId.trim(),
+        summary_only: "1",
         _ts: String(Date.now()),
       });
       const editListPromise = boundedLoad("meta-edit-list-load", fetchJson(
         `${API_BASE}/meta-ad-edit-list?${liveMetaStructureParams.toString()}`,
         { force: true, cache: "no-store" }
-      ), { timeoutMs: 20000, fallback: { data: [] }, critical: false });
+      ), { timeoutMs: 12000, fallback: { data: [] }, critical: false }).then((result) => {
+        const structurePreviewRows = (Array.isArray(result?.data) ? result.data : [])
+          .filter((row) => isMessageMetricsRow(row))
+          .map((row) => ({
+            ...row,
+            ad_id: row.ad_id || row.id,
+            ad_name: row.ad_name || row.name,
+            date_start: filters.endDate,
+            date: filters.endDate,
+            spend: 0,
+            results: null,
+            cost_per_result: null,
+            meta_source: "structure_preview",
+          }));
+        if (
+          acceptQuickMetaPreview
+          && !quickMetaPreviewLoaded
+          && loadRequestIdRef.current === loadRequestId
+          && structurePreviewRows.length
+        ) {
+          quickMetaStructureLoaded = true;
+          loadedMetaRowsCount = structurePreviewRows.length;
+          if (!preserveCurrentJoinads) {
+            setSuperFilter([]);
+            setJoinadsContentRows([]);
+            setJoinadsContentCountryRows([]);
+            setJoinadsContentKeyValueRows([]);
+            setJoinadsCampaignRows([]);
+            setKeyValueContent([]);
+            setSuperTermRows([]);
+            setEarnings([]);
+            setEarningsAll([]);
+          }
+          setMetaRows(structurePreviewRows);
+          setMetaLtvRows(structurePreviewRows);
+          setAppliedFilters({ ...filters });
+        }
+        return result;
+      });
       const metaParams = new URLSearchParams({
         account_id: filters.metaAccountId.trim(),
         start_date: filters.startDate,
@@ -13021,7 +13061,7 @@ function App() {
       } catch (err) {
         criticalFailures.push({ source: "meta-insights", error: formatError(err) });
         pushLog("meta", err);
-        if (!quickMetaPreviewLoaded) {
+        if (!quickMetaPreviewLoaded && !quickMetaStructureLoaded) {
           setMetaRows([]);
           setMetaLtvRows([]);
         }
@@ -13188,7 +13228,7 @@ function App() {
       setTopUrls([]);
       setEarnings([]);
       setEarningsAll([]);
-      if (!quickMetaPreviewLoaded) setMetaRows([]);
+      if (!quickMetaPreviewLoaded && !quickMetaStructureLoaded) setMetaRows([]);
       setParamPairs([]);
       setKeyValueContent([]);
       setMetaSourceRows([]);
