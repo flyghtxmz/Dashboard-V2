@@ -57,13 +57,34 @@ test("reaproveita a estrutura dos anuncios e devolve pagina sem consultas de nom
 
 test("modo resumido carrega a estrutura sem solicitar criativos pesados", async () => {
   const originalFetch = globalThis.fetch;
-  let adsFields = "";
+  const requestedFields = [];
   const urls = [];
   globalThis.fetch = async (url) => {
     urls.push(String(url));
     const parsed = new URL(url);
+    requestedFields.push(parsed.searchParams.get("fields") || "");
+    if (parsed.pathname.endsWith("/campaigns")) {
+      return Response.json({ data: [{
+        id: "cmp-2",
+        name: "Campanha Messenger",
+        objective: "OUTCOME_SALES",
+        status: "PAUSED",
+        effective_status: "PAUSED",
+        daily_budget: "900",
+      }] });
+    }
+    if (parsed.pathname.endsWith("/adsets")) {
+      return Response.json({ data: [{
+        id: "set-2",
+        name: "Conjunto Messenger",
+        campaign_id: "cmp-2",
+        status: "PAUSED",
+        effective_status: "CAMPAIGN_PAUSED",
+        optimization_goal: "CONVERSATIONS",
+        promoted_object: { page_id: "page-2" },
+      }] });
+    }
     if (parsed.pathname.endsWith("/ads")) {
-      adsFields = parsed.searchParams.get("fields") || "";
       return Response.json({
         data: [{
           id: "ad-2",
@@ -71,16 +92,7 @@ test("modo resumido carrega a estrutura sem solicitar criativos pesados", async 
           status: "PAUSED",
           effective_status: "CAMPAIGN_PAUSED",
           adset_id: "set-2",
-          adset_name: "Conjunto 2",
-          adset: {
-            id: "set-2",
-            name: "Conjunto 2",
-            optimization_goal: "CONVERSATIONS",
-            promoted_object: { page_id: "page-2" },
-          },
           campaign_id: "cmp-2",
-          campaign_name: "Campanha Messenger",
-          campaign: { id: "cmp-2", name: "Campanha Messenger", objective: "OUTCOME_SALES" },
         }],
       });
     }
@@ -97,11 +109,16 @@ test("modo resumido carrega a estrutura sem solicitar criativos pesados", async 
     assert.equal(body.summaryOnly, true);
     assert.equal(body.data.length, 1);
     assert.equal(body.data[0].objective, "OUTCOME_SALES");
+    assert.equal(body.data[0].campaign_name, "Campanha Messenger");
+    assert.equal(body.data[0].adset_name, "Conjunto Messenger");
+    assert.equal(body.data[0].campaign_daily_budget, "900");
+    assert.equal(body.data[0].adset_optimization_goal, "CONVERSATIONS");
     assert.equal(body.data[0].page_id, "page-2");
     assert.equal(body.data[0].page_name, "");
-    assert.doesNotMatch(adsFields, /creative/);
-    assert.match(adsFields, /optimization_goal/);
-    assert.equal(urls.length, 1);
+    requestedFields.forEach((fields) => assert.doesNotMatch(fields, /creative/));
+    assert.ok(requestedFields.some((fields) => /optimization_goal/.test(fields)));
+    assert.equal(urls.length, 3);
+    assert.equal(body.diagnostics.mode, "parallel-flat-structure");
   } finally {
     globalThis.fetch = originalFetch;
   }

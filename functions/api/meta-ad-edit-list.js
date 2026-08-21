@@ -57,10 +57,80 @@ export async function onRequest({ request, env }) {
   }
 
   try {
+    if (summaryOnly) {
+      const act = account_id.startsWith("act_") ? account_id : `act_${account_id}`;
+      const encodedToken = encodeURIComponent(token);
+      const campaignFields = "id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy";
+      const adsetFields = "id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object,campaign_id";
+      const adFields = "id,name,status,effective_status,adset_id,campaign_id";
+      const startedAt = Date.now();
+      const [campaigns, adsets, ads] = await Promise.all([
+        fetchAll(`${API_BASE}/${encodeURIComponent(act)}/campaigns?fields=${campaignFields}&limit=500&access_token=${encodedToken}`),
+        fetchAll(`${API_BASE}/${encodeURIComponent(act)}/adsets?fields=${adsetFields}&limit=500&access_token=${encodedToken}`),
+        fetchAll(`${API_BASE}/${encodeURIComponent(act)}/ads?fields=${adFields}&limit=500&access_token=${encodedToken}`),
+      ]);
+      const campaignById = new Map((campaigns || []).map((campaign) => [String(campaign.id || ""), campaign]));
+      const adsetById = new Map((adsets || []).map((adset) => [String(adset.id || ""), adset]));
+      const rows = (ads || []).map((ad) => {
+        const adset = adsetById.get(String(ad.adset_id || "")) || {};
+        const campaignId = String(ad.campaign_id || adset.campaign_id || "");
+        const campaign = campaignById.get(campaignId) || {};
+        return {
+          id: ad.id,
+          ad_id: ad.id,
+          name: ad.name,
+          status: ad.status,
+          effective_status: ad.effective_status,
+          adset_id: ad.adset_id || adset.id || "",
+          adset_name: adset.name || "",
+          adset_status: adset.status || "",
+          adset_effective_status: adset.effective_status || "",
+          adset_daily_budget: adset.daily_budget ?? null,
+          adset_lifetime_budget: adset.lifetime_budget ?? null,
+          adset_budget_remaining: adset.budget_remaining ?? null,
+          adset_bid_amount: adset.bid_amount ?? null,
+          adset_bid_strategy: adset.bid_strategy || "",
+          adset_optimization_goal: adset.optimization_goal || "",
+          adset_bid_constraints: adset.bid_constraints || null,
+          page_id: adset.promoted_object?.page_id
+            ? String(adset.promoted_object.page_id)
+            : "",
+          page_name: "",
+          campaign_id: campaignId,
+          campaign_name: campaign.name || "",
+          objective: campaign.objective || "",
+          campaign_status: campaign.status || "",
+          campaign_effective_status: campaign.effective_status || "",
+          campaign_daily_budget: campaign.daily_budget ?? null,
+          campaign_lifetime_budget: campaign.lifetime_budget ?? null,
+          campaign_budget_remaining: campaign.budget_remaining ?? null,
+          campaign_bid_strategy: campaign.bid_strategy || "",
+          url_tags: "",
+          url: "",
+          object_story_id: "",
+          destination_url: "",
+          updated_time: "",
+          primary_text: "",
+          headline: "",
+          description: "",
+        };
+      });
+      return jsonResponse(200, {
+        code: "success",
+        data: rows,
+        summaryOnly: true,
+        diagnostics: {
+          campaigns: campaigns.length,
+          adsets: adsets.length,
+          ads: ads.length,
+          elapsedMs: Date.now() - startedAt,
+          mode: "parallel-flat-structure",
+        },
+      });
+    }
+
     const baseFields = "id,name,status,effective_status,adset_id,adset_name,adset{id,name,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_amount,bid_strategy,optimization_goal,bid_constraints,promoted_object},campaign_id,campaign_name,campaign{id,name,objective,status,effective_status,daily_budget,lifetime_budget,budget_remaining,bid_strategy}";
-    const fields = summaryOnly
-      ? baseFields
-      : `${baseFields},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,asset_feed_spec,object_story_spec}`;
+    const fields = `${baseFields},updated_time,creative{url_tags,object_story_id,effective_object_story_id,link_url,object_url,asset_feed_spec,object_story_spec}`;
     const adsUrl = `${API_BASE}/${encodeURIComponent(
       account_id
     )}/ads?fields=${fields}&limit=200&access_token=${token}`;
@@ -69,13 +139,13 @@ export async function onRequest({ request, env }) {
     // O resumo serve para mostrar imediatamente a arvore campanha/conjunto/anuncio.
     // Os nomes ja sao solicitados junto dos anuncios; consultas auxiliares em lote
     // ficavam mais lentas que a propria carga de insights em contas maiores.
-    const adsetIds = summaryOnly ? [] : Array.from(
+    const adsetIds = Array.from(
       new Set((ads || [])
         .filter((ad) => !ad.adset_name && !ad.adset?.name)
         .map((ad) => ad.adset_id)
         .filter(Boolean))
     );
-    const campaignIds = summaryOnly ? [] : Array.from(
+    const campaignIds = Array.from(
       new Set((ads || [])
         .filter((ad) => !ad.campaign_name && !ad.campaign?.name)
         .map((ad) => ad.campaign_id)
@@ -160,9 +230,7 @@ export async function onRequest({ request, env }) {
       };
     });
 
-    const pageIds = summaryOnly
-      ? []
-      : Array.from(new Set(rows.map((row) => row.page_id).filter(Boolean)));
+    const pageIds = Array.from(new Set(rows.map((row) => row.page_id).filter(Boolean)));
     const pageNameMap = new Map();
     for (let i = 0; i < pageIds.length; i += chunkSize) {
       const chunk = pageIds.slice(i, i + chunkSize);
